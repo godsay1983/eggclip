@@ -12,7 +12,7 @@
 - 模型：Stage Model
 - 入口 Ability：`EntryAbility`
 - 当前首页：`entry/src/main/ets/pages/Index.ets`
-- 当前状态：H0 工程基线、主题和空壳首页已建立，尚未进入真机网络与剪贴板 POC。
+- 当前状态：H0 工程基线、主题、目标模块目录和空壳首页已建立，尚未进入真机网络与剪贴板 POC。
 - 参考项目：`D:\Develop\EggDoneHarmony\EggDone`
 - 架构基线：`docs/EggClip最佳实现方案.md`
 
@@ -77,7 +77,7 @@ harmony/entry/src/main/ets/
 - [ ] 使用 `docs/icon.png` 生成或适配 HarmonyOS 分层图标和启动图。
 - [x] 建立 `Colors.ets`、`Spacing.ets` 和 `Typography.ets`。
 - [x] 建立亮色、暗色和跟随系统资源。
-- [ ] 建立上述目标模块目录和空入口。
+- [x] 建立上述目标模块目录和空入口。
 - [x] 将 `Index.ets` 改为轻量路由入口，不在其中堆积业务。
 - [ ] 统一 ArkTS linter、格式和测试命令。
 - [x] 编写 HarmonyOS 本地 README 或在根 README 中补充运行方式。

@@ -169,6 +169,18 @@ footer {
   background: var(--offline);
 }
 
+.status-dot.connecting {
+  background: var(--primary);
+}
+
+.status-dot.auth-failed {
+  background: #d65c4a;
+}
+
+.status-dot.paused {
+  background: var(--muted);
+}
+
 .clipboard-card {
   padding: 20px;
   border-radius: 28px;
@@ -312,4 +324,3 @@ footer {
     animation-duration: 0.01ms !important;
   }
 }
-

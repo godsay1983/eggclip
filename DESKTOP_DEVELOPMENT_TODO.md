@@ -5,7 +5,7 @@
 ## 当前状态
 
 - 工程目录：`D:\Develop\eggclip\desktop`
-- D0 工程基线已建立，尚未进入剪贴板和网络 POC。
+- D0 工程基线已建立，桌面 UI 已拆出 TypeScript API / store / component 基线，尚未进入剪贴板和网络 POC。
 - 目标平台：Windows 10/11。
 - 目标技术栈：Tauri 2、Svelte 5、SvelteKit、TypeScript、Rust、SQLite。
 - 应用标识建议：`com.eggclip.desktop`。
@@ -65,7 +65,7 @@ desktop/
 - [x] 复用多显示器面板定位和 DPI 计算逻辑。
 - [ ] 复用单实例、开机启动和系统凭据库接入模式。
 - [ ] 复用 SQLite WAL、migration runner 和参数绑定模式。
-- [ ] 复用 TypeScript API / store / component 分层。
+- [x] 复用 TypeScript API / store / component 分层。
 - [x] 复用主题 token 和发布检查结构，不复制 Todo、提醒或 S3 业务。
 - [ ] 使用 `docs/icon.png` 生成 Tauri 图标集并核对透明背景效果。
 

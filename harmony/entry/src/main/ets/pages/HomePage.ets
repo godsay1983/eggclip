@@ -1,9 +1,14 @@
+import { StatusDot } from '../components/common/StatusDot';
+import { HomeShellState } from '../models/ShellModels';
+import { createInitialHomeShellState } from '../store/HomeStore';
 import { EggClipColors } from '../theme/Colors';
 import { EggClipSpacing } from '../theme/Spacing';
 import { EggClipTypography } from '../theme/Typography';
 
 @Component
 export struct HomePage {
+  private readonly state: HomeShellState = createInitialHomeShellState();
+
   build() {
     Scroll() {
       Column({ space: EggClipSpacing.sectionGap }) {
@@ -49,16 +54,15 @@ export struct HomePage {
   @Builder
   private ConnectionCard() {
     Row({ space: 10 }) {
-      Circle({ width: 9, height: 9 })
-        .fill(EggClipColors.textSecondary)
+      StatusDot({ state: this.state.connection.state })
 
       Column({ space: 3 }) {
-        Text('等待配对设备')
+        Text(this.state.connection.title)
           .fontSize(EggClipTypography.bodySize)
           .fontWeight(FontWeight.Medium)
           .fontColor(EggClipColors.textPrimary)
 
-        Text('前台打开后将自动发现局域网桌面端')
+        Text(this.state.connection.description)
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
       }
@@ -81,13 +85,13 @@ export struct HomePage {
           .fontColor(EggClipColors.textPrimary)
           .layoutWeight(1)
 
-        Text('暂无内容')
+        Text(this.state.latest === null ? '暂无内容' : this.state.latest.source)
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
       }
       .width('100%')
 
-      Text('完成配对后，桌面端的最新文本会显示在这里。历史补同步不会覆盖本机剪贴板。')
+      Text(this.state.latest === null ? '完成配对后，桌面端的最新文本会显示在这里。历史补同步不会覆盖本机剪贴板。' : this.state.latest.preview)
         .fontSize(EggClipTypography.bodySize)
         .fontColor(EggClipColors.textSecondary)
         .lineHeight(24)
@@ -95,7 +99,7 @@ export struct HomePage {
       Button('复制到本机')
         .width('100%')
         .height(46)
-        .enabled(false)
+        .enabled(this.state.latest !== null && this.state.latest.canCopy)
         .fontColor(EggClipColors.onPrimary)
         .backgroundColor(EggClipColors.primary)
         .borderRadius(23)
@@ -116,7 +120,7 @@ export struct HomePage {
         .fontWeight(FontWeight.Bold)
         .fontColor(EggClipColors.textPrimary)
 
-      Text('这里会保存最近 50 条记录，最长保留 7 天。')
+      Text(`这里会保存最近 ${this.state.history.limit} 条记录，最长保留 7 天。`)
         .width('100%')
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
@@ -127,4 +131,3 @@ export struct HomePage {
     .borderRadius(EggClipSpacing.radiusMedium)
   }
 }
-
