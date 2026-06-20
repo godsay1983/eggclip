@@ -1,8 +1,16 @@
 {
   "float": [
     {
-      "name": "page_text_font_size",
-      "value": "50fp"
+      "name": "eggclip_title_font_size",
+      "value": "28fp"
+    },
+    {
+      "name": "eggclip_body_font_size",
+      "value": "16fp"
+    },
+    {
+      "name": "eggclip_caption_font_size",
+      "value": "13fp"
     }
   ]
 }

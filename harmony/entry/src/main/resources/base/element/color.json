@@ -2,7 +2,39 @@
   "color": [
     {
       "name": "start_window_background",
-      "value": "#FFFFFF"
+      "value": "#FFF8E7"
+    },
+    {
+      "name": "eggclip_page_background",
+      "value": "#FFF8E7"
+    },
+    {
+      "name": "eggclip_card_background",
+      "value": "#FFFFFFFF"
+    },
+    {
+      "name": "eggclip_control_background",
+      "value": "#FFF3C4"
+    },
+    {
+      "name": "eggclip_primary",
+      "value": "#F4C430"
+    },
+    {
+      "name": "eggclip_on_primary",
+      "value": "#3D2D00"
+    },
+    {
+      "name": "eggclip_text_primary",
+      "value": "#29251E"
+    },
+    {
+      "name": "eggclip_text_secondary",
+      "value": "#746B5D"
+    },
+    {
+      "name": "eggclip_status_online",
+      "value": "#4E9F6D"
     }
   ]
 }

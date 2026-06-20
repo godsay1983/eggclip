@@ -2,15 +2,15 @@
   "string": [
     {
       "name": "module_desc",
-      "value": "module description"
+      "value": "EggClip 局域网剪贴板同步"
     },
     {
       "name": "EntryAbility_desc",
-      "value": "description"
+      "value": "EggClip 主程序"
     },
     {
       "name": "EntryAbility_label",
-      "value": "label"
+      "value": "蛋定 Clip"
     }
   ]
 }

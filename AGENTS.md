@@ -36,7 +36,7 @@ D:\Develop\eggclip\
 ├─ AGENTS.md
 ├─ DESKTOP_DEVELOPMENT_TODO.md
 ├─ HARMONY_DEVELOPMENT_TODO.md
-├─ desktop\                         # 待生成的 Tauri 2 桌面工程
+├─ desktop\                         # Tauri 2 + Svelte 5 桌面工程
 ├─ harmony\                         # 已生成的 DevEco Studio 工程
 │  ├─ AppScope\
 │  ├─ entry\
@@ -259,4 +259,3 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 - 修改协议或安全假设时同步更新 `docs/EggClip最佳实现方案.md`。
 - 不自动提交、推送、创建分支或发布安装包，除非用户明确要求。
 - 不加入遥测、崩溃上报、云同步、自动更新或公网中继，除非另行设计并获得确认。
-

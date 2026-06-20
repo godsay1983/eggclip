@@ -1,9 +1,9 @@
 {
   "name": "entry",
   "version": "1.0.0",
-  "description": "Please describe the basic information.",
+  "description": "EggClip HarmonyOS LAN clipboard client",
   "main": "",
-  "author": "",
+  "author": "EggClip Contributors",
   "license": "",
   "dependencies": {}
 }

@@ -5,7 +5,7 @@
 ## 当前状态
 
 - 工程目录：`D:\Develop\eggclip\desktop`
-- 当前目录为空，尚未生成 Tauri 工程。
+- D0 工程基线已建立，尚未进入剪贴板和网络 POC。
 - 目标平台：Windows 10/11。
 - 目标技术栈：Tauri 2、Svelte 5、SvelteKit、TypeScript、Rust、SQLite。
 - 应用标识建议：`com.eggclip.desktop`。
@@ -50,31 +50,31 @@ desktop/
 
 ### Tauri/Svelte 工程
 
-- [ ] 在 `desktop/` 创建 Tauri 2 + Svelte 5 + SvelteKit 工程。
-- [ ] 设置产品名 `EggClip`、中文名“蛋定 Clip”和标识 `com.eggclip.desktop`。
-- [ ] 将版本统一设置为 `0.1.0`：`package.json`、`Cargo.toml`、`tauri.conf.json` 和 `Cargo.lock`。
-- [ ] 使用 pnpm，固定 Node、pnpm 和 Rust 最低版本。
-- [ ] 配置 SvelteKit static adapter、严格 TypeScript 和路径别名。
-- [ ] 接入 Vitest，建立 Rust unit/integration test 目录。
-- [ ] 添加 `check`、`test`、`build`、`release:check` 脚本。
-- [ ] 完善根目录和桌面端 `.gitignore`。
+- [x] 在 `desktop/` 创建 Tauri 2 + Svelte 5 + SvelteKit 工程。
+- [x] 设置产品名 `EggClip`、中文名“蛋定 Clip”和标识 `com.eggclip.desktop`。
+- [x] 将版本统一设置为 `0.1.0`：`package.json`、`Cargo.toml`、`tauri.conf.json` 和 `Cargo.lock`。
+- [x] 使用 pnpm，固定 Node、pnpm 和 Rust 最低版本。
+- [x] 配置 SvelteKit static adapter、严格 TypeScript 和路径别名。
+- [x] 接入 Vitest，建立 Rust unit/integration test 目录。
+- [x] 添加 `check`、`test`、`build`、`release:check` 脚本。
+- [x] 完善根目录和桌面端 `.gitignore`。
 
 ### 从 EggDone 提取基础设施
 
-- [ ] 复用托盘创建、左键显隐、关闭转隐藏和失焦隐藏模式。
-- [ ] 复用多显示器面板定位和 DPI 计算逻辑。
+- [x] 复用托盘创建、左键显隐、关闭转隐藏和失焦隐藏模式。
+- [x] 复用多显示器面板定位和 DPI 计算逻辑。
 - [ ] 复用单实例、开机启动和系统凭据库接入模式。
 - [ ] 复用 SQLite WAL、migration runner 和参数绑定模式。
 - [ ] 复用 TypeScript API / store / component 分层。
-- [ ] 复用主题 token 和发布检查结构，不复制 Todo、提醒或 S3 业务。
+- [x] 复用主题 token 和发布检查结构，不复制 Todo、提醒或 S3 业务。
 - [ ] 使用 `docs/icon.png` 生成 Tauri 图标集并核对透明背景效果。
 
 ### 基础页面
 
-- [ ] 建立 EggClip 空壳页面：品牌、连接状态、当前剪贴板、设备和历史区域。
-- [ ] 建立亮色、暗色和跟随系统主题。
-- [ ] 启动时隐藏普通窗口，只显示托盘图标。
-- [ ] 再次启动时唤醒已有进程，不创建第二个托盘图标。
+- [x] 建立 EggClip 空壳页面：品牌、连接状态、当前剪贴板、设备和历史区域。
+- [x] 建立亮色、暗色和跟随系统主题。
+- [x] 启动时隐藏普通窗口，只显示托盘图标。
+- [x] 再次启动时唤醒已有进程，不创建第二个托盘图标。
 
 验收标准：
 
@@ -330,4 +330,3 @@ desktop/
 - 多同步空间和团队权限。
 - 自动识别密码或 Token。
 - 遥测、崩溃内容上报和未经设计的自动更新。
-

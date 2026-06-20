@@ -12,11 +12,11 @@
 - 模型：Stage Model
 - 入口 Ability：`EntryAbility`
 - 当前首页：`entry/src/main/ets/pages/Index.ets`
-- 当前状态：DevEco Studio 空工程已创建，业务代码尚未开始。
+- 当前状态：H0 工程基线、主题和空壳首页已建立，尚未进入真机网络与剪贴板 POC。
 - 参考项目：`D:\Develop\EggDoneHarmony\EggDone`
 - 架构基线：`docs/EggClip最佳实现方案.md`
 
-当前 `build-profile.json5` 属于本机签名配置。首次提交工程前必须完成脱敏和忽略策略，不得提交签名材料、密码字段或本机绝对路径。
+当前 `build-profile.json5` 已改为无签名材料的共享配置。历史提交 `74d9bb1` 曾包含本机签名配置，相关证书/密码仍需轮换，并决定是否重写远端 Git 历史。
 
 ## 目标目录
 
@@ -64,23 +64,23 @@ harmony/entry/src/main/ets/
 
 ### 首次提交前阻断项
 
-- [ ] 制定 `build-profile.json5` 本机签名处理方案，不提交 `material` 内容。
-- [ ] 确认 `.p12`、`.p7b`、`.cer`、本机路径和密码字段均不进入版本库。
-- [ ] 扩充 `.gitignore`：`.hvigor/`、`.idea/`、`oh_modules/`、`local.properties`、build、测试输出和本地数据库。
-- [ ] 检查 Git 暂存内容，确认没有签名、缓存和依赖目录。
-- [ ] 将 vendor 从模板值改为项目正式值。
-- [ ] 将版本策略调整为开发期 `0.1.0`，并记录 versionCode 递增规则。
+- [x] 制定 `build-profile.json5` 本机签名处理方案，不提交 `material` 内容。
+- [x] 确认当前工作树的 `.p12`、`.p7b`、`.cer`、本机路径和密码字段均不进入版本库。
+- [x] 扩充 `.gitignore`：`.hvigor/`、`.idea/`、`oh_modules/`、`local.properties`、build、测试输出和本地数据库。
+- [x] 检查 Git 暂存内容，确认没有签名、缓存和依赖目录。
+- [x] 将 vendor 从模板值改为项目正式值。
+- [x] 将版本策略调整为开发期 `0.1.0`，并记录 versionCode 递增规则。
 
 ### 工程基础
 
-- [ ] 替换模板 App/Ability 名称和字符串资源为 EggClip / 蛋定 Clip。
+- [x] 替换模板 App/Ability 名称和字符串资源为 EggClip / 蛋定 Clip。
 - [ ] 使用 `docs/icon.png` 生成或适配 HarmonyOS 分层图标和启动图。
-- [ ] 建立 `Colors.ets`、`Spacing.ets` 和 `Typography.ets`。
-- [ ] 建立亮色、暗色和跟随系统资源。
+- [x] 建立 `Colors.ets`、`Spacing.ets` 和 `Typography.ets`。
+- [x] 建立亮色、暗色和跟随系统资源。
 - [ ] 建立上述目标模块目录和空入口。
-- [ ] 将 `Index.ets` 改为轻量路由入口，不在其中堆积业务。
+- [x] 将 `Index.ets` 改为轻量路由入口，不在其中堆积业务。
 - [ ] 统一 ArkTS linter、格式和测试命令。
-- [ ] 编写 HarmonyOS 本地 README 或在根 README 中补充运行方式。
+- [x] 编写 HarmonyOS 本地 README 或在根 README 中补充运行方式。
 
 验收标准：
 
@@ -351,4 +351,3 @@ harmony/entry/src/main/ets/
 - 账号、服务器、S3、公网中继和远程推送。
 - 多同步空间和团队权限。
 - 依赖 `READ_PASTEBOARD` system_basic 权限的发布方案。
-

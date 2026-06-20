@@ -10,3 +10,12 @@
 /.clang-tidy
 **/.test
 /.appanalyzer
+*.p12
+*.p7b
+*.cer
+*.pem
+*.key
+*.sqlite
+*.sqlite3
+*.db
+*.log

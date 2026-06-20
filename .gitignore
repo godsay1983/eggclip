@@ -1,0 +1,33 @@
+# Desktop generated files
+desktop/node_modules/
+desktop/.svelte-kit/
+desktop/build/
+desktop/src-tauri/target/
+
+# HarmonyOS generated and local files
+harmony/.hvigor/
+harmony/.idea/
+harmony/oh_modules/
+harmony/local.properties
+harmony/**/build/
+harmony/**/.preview/
+harmony/**/.test/
+harmony/.appanalyzer/
+
+# Signing material must remain outside the repository
+*.p12
+*.p7b
+*.cer
+*.pem
+*.key
+
+# Local application data and diagnostics
+*.sqlite
+*.sqlite3
+*.db
+*.log
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+
