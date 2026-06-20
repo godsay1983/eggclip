@@ -1,7 +1,8 @@
 import { defineConfig } from "vite";
 import { sveltekit } from "@sveltejs/kit/vite";
 
-const host = process.env.TAURI_DEV_HOST;
+const remoteDevHost = process.env.TAURI_DEV_HOST;
+const host = remoteDevHost || "127.0.0.1";
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
@@ -16,10 +17,10 @@ export default defineConfig(async () => ({
     port: 1420,
     strictPort: true,
     host: host || false,
-    hmr: host
+    hmr: remoteDevHost
       ? {
           protocol: "ws",
-          host,
+          host: remoteDevHost,
           port: 1421,
         }
       : undefined,
