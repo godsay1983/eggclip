@@ -1,0 +1,56 @@
+{
+  "app": {
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "storeFile": "C:/Users/caozhipeng/Documents/hongmeng/com.eggclip.app.p12",
+          "storePassword": "0000001EDBEBFF794781E1549A0D6CF04FDBAC40FA719E336019B35CA248305A5A654143C78498014DBA18D6276D",
+          "keyAlias": "com.eggclip.app",
+          "keyPassword": "0000001E6CE43AE6A3077F720D17F1B23A2B748F2FFC90FFD0AC6276EFED35E51DFAB61AC34BBEB12CE59BCC0B54",
+          "signAlg": "SHA256withECDSA",
+          "profile": "C:/Users/caozhipeng/Documents/hongmeng/com.eggclip.appRelease.p7b",
+          "certpath": "C:/Users/caozhipeng/Documents/hongmeng/com.eggclip.app.cer"
+        }
+      }
+    ],
+    "products": [
+      {
+        "name": "default",
+        "signingConfig": "default",
+        "targetSdkVersion": "6.1.1(24)",
+        "compatibleSdkVersion": "6.1.0(23)",
+        "runtimeOS": "HarmonyOS",
+        "buildOption": {
+          "strictMode": {
+            "caseSensitiveCheck": true,
+            "useNormalizedOHMUrl": true
+          }
+        }
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug",
+      },
+      {
+        "name": "release"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    }
+  ]
+}

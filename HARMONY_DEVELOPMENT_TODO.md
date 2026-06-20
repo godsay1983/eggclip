@@ -1,0 +1,354 @@
+# EggClip HarmonyOS 开发 TODO
+
+本文档规划 HarmonyOS 6 客户端从 DevEco 空工程到可发布 MVP 的开发顺序。HarmonyOS 端是前台同步客户端，不复制桌面端后台常驻行为。
+
+## 当前工程分析
+
+- 工程根目录：`D:\Develop\eggclip\harmony`
+- 应用包名：`com.eggclip.app`
+- target SDK：`6.1.1(24)`
+- compatible SDK：`6.1.0(23)`
+- 设备类型：phone、tablet
+- 模型：Stage Model
+- 入口 Ability：`EntryAbility`
+- 当前首页：`entry/src/main/ets/pages/Index.ets`
+- 当前状态：DevEco Studio 空工程已创建，业务代码尚未开始。
+- 参考项目：`D:\Develop\EggDoneHarmony\EggDone`
+- 架构基线：`docs/EggClip最佳实现方案.md`
+
+当前 `build-profile.json5` 属于本机签名配置。首次提交工程前必须完成脱敏和忽略策略，不得提交签名材料、密码字段或本机绝对路径。
+
+## 目标目录
+
+```text
+harmony/entry/src/main/ets/
+├─ entryability/
+├─ pages/
+│  ├─ HomePage.ets
+│  ├─ PairingPage.ets
+│  ├─ DevicesPage.ets
+│  └─ SettingsPage.ets
+├─ components/
+│  ├─ clipboard/
+│  ├─ devices/
+│  ├─ pairing/
+│  ├─ settings/
+│  └─ common/
+├─ models/
+├─ store/
+├─ data/
+│  ├─ db/
+│  ├─ migrations/
+│  └─ repositories/
+├─ services/
+│  ├─ discovery/
+│  ├─ transport/
+│  ├─ clipboard/
+│  ├─ crypto/
+│  ├─ pairing/
+│  └─ sync/
+├─ theme/
+└─ utils/
+```
+
+## H0：工程与安全基线
+
+### 已完成的空工程工作
+
+- [x] 使用 DevEco Studio 创建 ArkTS Stage Model 工程。
+- [x] 设置 Bundle Name 为 `com.eggclip.app`。
+- [x] 设置 target SDK `6.1.1(24)`。
+- [x] 设置 compatible SDK `6.1.0(23)`。
+- [x] 启用 phone 和 tablet 设备类型。
+- [x] 生成 EntryAbility、资源和基础测试目录。
+
+### 首次提交前阻断项
+
+- [ ] 制定 `build-profile.json5` 本机签名处理方案，不提交 `material` 内容。
+- [ ] 确认 `.p12`、`.p7b`、`.cer`、本机路径和密码字段均不进入版本库。
+- [ ] 扩充 `.gitignore`：`.hvigor/`、`.idea/`、`oh_modules/`、`local.properties`、build、测试输出和本地数据库。
+- [ ] 检查 Git 暂存内容，确认没有签名、缓存和依赖目录。
+- [ ] 将 vendor 从模板值改为项目正式值。
+- [ ] 将版本策略调整为开发期 `0.1.0`，并记录 versionCode 递增规则。
+
+### 工程基础
+
+- [ ] 替换模板 App/Ability 名称和字符串资源为 EggClip / 蛋定 Clip。
+- [ ] 使用 `docs/icon.png` 生成或适配 HarmonyOS 分层图标和启动图。
+- [ ] 建立 `Colors.ets`、`Spacing.ets` 和 `Typography.ets`。
+- [ ] 建立亮色、暗色和跟随系统资源。
+- [ ] 建立上述目标模块目录和空入口。
+- [ ] 将 `Index.ets` 改为轻量路由入口，不在其中堆积业务。
+- [ ] 统一 ArkTS linter、格式和测试命令。
+- [ ] 编写 HarmonyOS 本地 README 或在根 README 中补充运行方式。
+
+验收标准：
+
+- 模拟器和至少一台真机能启动 EggClip 空壳首页。
+- 手机和平板预览不报错。
+- `hvigorw test` 和 `assembleHap` 通过。
+- `git status` 不包含缓存、依赖、签名材料和本机配置。
+
+## H1：前台网络与剪贴板 POC
+
+本阶段先验证 HarmonyOS 平台能力，不做正式配对和完整 UI。
+
+### mDNS
+
+- [ ] 在 `module.json5` 声明 POC 所需最小网络权限。
+- [ ] 使用 `@ohos.net.mdns` 搜索 `_eggclip._tcp.local.`。
+- [ ] 展示发现服务的地址、端口和协议版本，不记录敏感 TXT 字段。
+- [ ] 实现开始搜索、停止搜索、重复回调去重和页面销毁清理。
+- [ ] 验证真机 Wi-Fi、访客网络和 AP 隔离下的行为。
+
+### WebSocket
+
+- [ ] 使用 NetworkKit WebSocket 连接桌面 POC server。
+- [ ] 实现 open、message、error、close 监听。
+- [ ] 实现连接超时、主动关闭和页面前后台生命周期处理。
+- [ ] 增加最大消息大小和基础 JSON 校验。
+- [ ] 先支持手动 IP，mDNS 发现结果作为候选地址。
+
+### 剪贴板
+
+- [ ] 使用真实 ArkUI `PasteButton` 构建“粘贴并发送”操作。
+- [ ] 点击授权成功后调用 Pasteboard 读取纯文本。
+- [ ] 授权失败、空剪贴板、不支持格式和超过 256 KiB 时显示明确错误。
+- [ ] 收到桌面文本后只显示预览，不自动写入系统剪贴板。
+- [ ] 用户点击“复制到本机”后调用 `pasteboard.setData()`。
+- [ ] 不申请或依赖普通三方应用无法获得的 `READ_PASTEBOARD` 常规权限路径。
+
+验收标准：
+
+- HarmonyOS 真机能发现或手动连接 Windows POC 服务。
+- 用户点击 PasteButton 后可将本机文本发送到桌面端。
+- HarmonyOS 收到桌面文本后可由用户点击复制。
+- App 切到后台后停止 POC 连接，回到前台可以恢复。
+- 模拟器结果只作辅助，不能代替本阶段真机验收。
+
+## H2：本地模型、RDB 和页面结构
+
+### 模型和 store
+
+- [ ] 定义 `ClipboardItem`、`Device`、`Space`、`SyncHead`、`ConnectionState` 和 `AppSettings`。
+- [ ] 定义 `ClipboardStore`、`ConnectionStore`、`DeviceStore` 和 `SettingsStore`。
+- [ ] store 统一处理 loading、empty、ready、offline 和 error 状态。
+- [ ] 页面不直接操作 RDB 和网络 service。
+
+### ArkData RDB
+
+- [ ] 创建 `schema_migrations`。
+- [ ] 创建 `clipboard_items`、`devices`、`spaces`、`sync_heads` 和 `app_metadata`。
+- [ ] 实现 transaction 和顺序 migration runner。
+- [ ] 实现 ClipboardRepository、DeviceRepository、SpaceRepository 和 SettingsRepository。
+- [ ] 生成并持久化随机 `deviceId` 和本机 `originSeq`。
+- [ ] 实现最近 50 条、最长 7 天 retention。
+- [ ] 支持历史数量 0、20、50、100。
+- [ ] 为新库、重复 migration 和旧版本升级添加测试。
+
+### 页面和主题
+
+- [ ] HomePage：连接状态、最新收到、PasteButton、最近历史。
+- [ ] PairingPage：扫码/邀请导入和人工确认。
+- [ ] DevicesPage：设备状态、重命名、移除。
+- [ ] SettingsPage：历史、隐私、主题和诊断。
+- [ ] 手机使用单栏；平板使用设备/历史与内容预览双栏。
+- [ ] 复用 EggDoneHarmony 的视觉 token 思路，不复制 Todo 组件和业务状态。
+
+验收标准：
+
+- 应用重启后本机 ID、历史和设置保持。
+- RDB 错误不会造成页面白屏。
+- 360vp 手机和常见平板宽度下内容不截断、不拥挤。
+- 首页使用真实 PasteButton，不能被普通自定义按钮替换。
+
+## H3：设备身份与本地密钥
+
+### HUKS/CryptoFramework
+
+- [ ] 验证目标 SDK 上 Ed25519、X25519、HKDF 和 AES-GCM 的具体 API。
+- [ ] 生成 Ed25519 长期设备身份。
+- [ ] 将私钥和 `spaceKey` 保存到 HUKS 或等效系统安全存储。
+- [ ] RDB 只保存公钥、密钥版本和安全存储 alias。
+- [ ] 实现密钥存在、缺失、损坏和重新初始化路径。
+- [ ] 禁止日志输出密钥、邀请、正文、HMAC 摘要和完整帧。
+
+### 跨语言测试向量
+
+- [ ] 读取 `protocol/test-vectors/`。
+- [ ] ArkTS 实现通过 Ed25519 签名/验签向量。
+- [ ] ArkTS 实现通过 X25519/HKDF 派生向量。
+- [ ] ArkTS 实现通过 AES-GCM 加解密和篡改拒绝向量。
+- [ ] 明确字节序、字符串编码、Base64 变体和 transcript 规范化规则。
+
+验收标准：
+
+- Rust 与 ArkTS 对相同输入生成完全一致的派生结果和密文结果。
+- 私钥不会出现在 RDB、导出文件和普通日志。
+- 篡改 tag、错误 nonce 和错误关联数据全部解密失败。
+
+## H4：邀请与配对
+
+### 邀请导入
+
+- [ ] 定义 `eggclip://pair` 邀请格式或等效版本化字符串。
+- [ ] 接入系统扫码能力或安全二维码解析组件。
+- [ ] 支持从剪贴文本/输入框导入邀请，但不得把邀请保存到历史。
+- [ ] 校验 app、协议版本、spaceId、过期时间和字段长度。
+- [ ] 邀请页面显示邀请设备名称和公钥短指纹。
+
+### 安全配对
+
+- [ ] 使用 128/256 位一次性 `pairingSecret` 建立配对通道。
+- [ ] 完成设备身份交换和握手 transcript 验证。
+- [ ] 显示六位人工确认码供双方核对，但不把它当成唯一秘密。
+- [ ] 安全接收 `spaceKey` 和成员信息。
+- [ ] 成功后持久化 trusted device 并清理邀请秘密。
+- [ ] 拒绝过期、重复消费、身份不匹配和空间不匹配邀请。
+
+验收标准：
+
+- 手机扫码后可以与 Windows 完成一次配对。
+- 同一邀请第二次使用失败。
+- 过期邀请和被篡改二维码不会创建信任记录。
+- 配对失败不会遗留半完成 device 或密钥。
+
+## H5：认证连接与同步协议
+
+### 会话状态机
+
+- [ ] 实现 disconnected、discovering、connecting、handshaking、authenticated、syncing、ready、failed。
+- [ ] X25519 建立临时共享秘密。
+- [ ] Ed25519 验证设备身份和空间绑定。
+- [ ] HKDF 派生双向会话密钥。
+- [ ] AES-256-GCM 解密认证后业务帧。
+- [ ] 维护接收计数器和 replay window。
+- [ ] 未认证连接不能访问同步 service 和 RDB 正文。
+
+### 前台连接
+
+- [ ] App 前台时自动发现已配对桌面端。
+- [ ] 优先连接最近成功桌面端，失败后尝试其他 trusted desktop。
+- [ ] 同一 peer 只保留一条 WebSocket。
+- [ ] 实现 PING/PONG、前台重连和带 jitter 的退避。
+- [ ] App 进入后台时安全停止发现和连接；回前台重新同步。
+
+### 补同步
+
+- [ ] 发送本地 `SYNC_HEADS`。
+- [ ] 按来源设备和 `originSeq` 请求缺失范围。
+- [ ] 处理 `ITEM_BATCH`、ACK 和 retention gap。
+- [ ] batch 持久化成功后更新 sync head。
+- [ ] 补到的记录只进入历史，不自动写入 HarmonyOS 剪贴板。
+- [ ] 对 itemId、来源序号和 HMAC digest 去重。
+- [ ] 使用 HLC 稳定排序，不使用设备本地时间作为唯一决胜依据。
+
+### HarmonyOS → Desktop
+
+- [ ] PasteButton 授权读取成功后创建本地不可变 item。
+- [ ] 本地持久化成功后发送 `ITEM_LIVE`。
+- [ ] 网络失败时保留待同步记录，不能假装发送成功。
+- [ ] 显示已发送、待同步和失败状态。
+
+验收标准：
+
+- 打开 App 后自动连接已配对桌面端并拉取缺失记录。
+- 历史 batch 不会覆盖手机当前剪贴板。
+- PasteButton 发送的 item 能实时写入在线桌面端。
+- 错误密钥、重放、乱序、重复和超限帧均按协议处理。
+
+## H6：设备、设置与移动端体验
+
+### 首页
+
+- [ ] 最新收到卡片显示预览、来源、时间和“复制到本机”。
+- [ ] PasteButton 作为主要发送入口。
+- [ ] 最近历史支持复制、删除和详情展开。
+- [ ] 长文本默认折叠，显示字符数和大小。
+- [ ] 在线、连接中、离线、认证失败和暂停状态使用不同反馈。
+- [ ] 首次使用、无设备、无历史和网络失败空状态完整。
+
+### 设备管理
+
+- [ ] 显示设备名称、公钥短指纹、在线状态和最后在线时间。
+- [ ] 支持设备重命名和移除。
+- [ ] 移除设备时显示空间密钥轮换影响。
+- [ ] 支持重新配对，不复用旧邀请秘密。
+
+### 设置和隐私
+
+- [ ] 历史数量和最长保留时间设置。
+- [ ] 清空历史和重置本机身份入口。
+- [ ] 亮色、暗色和跟随系统主题。
+- [ ] 局域网诊断：mDNS、候选地址、WebSocket 状态和错误码。
+- [ ] 隐私说明：无云服务、前台同步、用户触发读取和本地保留。
+- [ ] 诊断信息不显示正文、摘要、邀请和密钥。
+
+### 生命周期与适配
+
+- [ ] 前后台切换不会重复创建 listener 和 timer。
+- [ ] 页面销毁时释放 mDNS searcher 和 WebSocket。
+- [ ] 网络切换时刷新候选地址和连接状态。
+- [ ] 手机单栏和平板双栏共享业务 store。
+- [ ] 尊重系统字体缩放、暗色模式和减少动态效果。
+
+验收标准：
+
+- 常用“接收并复制”和“粘贴并发送”均在两次点击内完成。
+- 手机和平板没有裁切、遮挡和横向溢出。
+- 连续前后台切换不会产生重复连接、重复消息或 listener 泄漏。
+
+## H7：测试与发布准备
+
+### 自动化测试
+
+- [ ] RDB：migration、CRUD、retention 和 sync heads。
+- [ ] Protocol：解析、版本、字段长度、batch 和错误消息。
+- [ ] Crypto：共享向量、篡改、重放和计数器。
+- [ ] Sync：live/batch、range、gap、重复和 HLC。
+- [ ] Stores：加载、离线、错误、PasteButton 结果和前后台状态。
+- [ ] UI smoke：手机首页、平板布局、配对和设置导航。
+
+### 真机回归
+
+- [ ] HarmonyOS 手机和平板。
+- [ ] mDNS 正常、mDNS 被阻断、手动 IP 和最近地址回退。
+- [ ] Wi-Fi 切换、前后台、锁屏恢复和桌面端重启。
+- [ ] PasteButton 成功、临时授权失败、空文本和超限文本。
+- [ ] 配对成功、过期、重复使用、错误确认码和设备移除。
+- [ ] 中英文、Emoji、多行、最大文本和快速连续发送。
+
+### 发布
+
+- [ ] 使用正式应用名称、图标、启动页、版本和 vendor。
+- [ ] 只声明实际使用且可获批的权限。
+- [ ] 准备隐私说明和应用市场权限说明。
+- [ ] 使用正式签名/Profile 构建 release HAP/App。
+- [ ] 确认发布包不包含测试密钥、邀请、日志、RDB、缓存和本机路径。
+- [ ] 编写发布前回归、升级和回滚清单。
+
+验收标准：
+
+- `hvigorw test`、`assembleHap` 和发布构建通过。
+- 正式签名真机完成桌面双向互通。
+- 应用市场权限集合不依赖 `system_basic` 的常规剪贴板读取能力。
+- 发布包和仓库均不包含签名秘密与本机配置。
+
+## 推荐里程碑
+
+| 版本 | 范围 |
+| --- | --- |
+| `0.1.0-poc` | H0–H1：工程、真机 mDNS/WebSocket/PasteButton POC |
+| `0.2.0-alpha` | H2–H4：本地数据、页面、HUKS 和配对 |
+| `0.3.0-beta` | H5–H6：正式协议、同步和完整移动体验 |
+| `1.0.0` | H7 与 Windows 正式互通、签名和发布回归 |
+
+## 暂不计划
+
+- 后台常驻、后台静默剪贴板读取和自动写入。
+- 桌面卡片、通知和后台任务。
+- 图片、文件、HTML 和富文本同步。
+- 账号、服务器、S3、公网中继和远程推送。
+- 多同步空间和团队权限。
+- 依赖 `READ_PASTEBOARD` system_basic 权限的发布方案。
+
