@@ -3,6 +3,7 @@ import {
   createInitialShellSnapshot,
   getPocTransportStatus,
   onLocalClipboardText,
+  onPocClipboardText,
   readSystemClipboardText,
   startPocTransport,
   writeSystemClipboardText,
@@ -11,6 +12,7 @@ import type { ClipboardPreview } from "$lib/types/shell";
 
 const snapshot = writable(createInitialShellSnapshot());
 let monitorStarted = false;
+let pocEventsStarted = false;
 let pocTransportStarted = false;
 
 function setCurrentClipboard(
@@ -54,6 +56,31 @@ export const shellSnapshot = {
           state: "authFailed",
           title: "WebSocket POC 服务启动失败",
           description: error instanceof Error ? error.message : "无法启动本地 POC 服务",
+        },
+      }));
+    }
+  },
+  async startPocEventListeners() {
+    if (pocEventsStarted) {
+      return;
+    }
+    pocEventsStarted = true;
+    try {
+      await onPocClipboardText((current, peer) => {
+        setCurrentClipboard(
+          current,
+          "已收到 Harmony POC 文本",
+          `来自 ${peer}；当前只进入面板预览，不自动写入系统剪贴板`,
+        );
+      });
+    } catch (error) {
+      pocEventsStarted = false;
+      snapshot.update((state) => ({
+        ...state,
+        connection: {
+          state: "authFailed",
+          title: "WebSocket POC 事件监听失败",
+          description: error instanceof Error ? error.message : "无法监听 POC 文本事件",
         },
       }));
     }

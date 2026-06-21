@@ -1,7 +1,8 @@
 use std::sync::Mutex;
 
+use crate::clipboard::ClipboardText;
 use futures_util::StreamExt;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 use tokio::{net::TcpListener, sync::oneshot};
 use tokio_tungstenite::tungstenite::Message;
@@ -46,6 +47,19 @@ struct PocPeerEvent {
 struct PocTextFrameEvent {
     peer: String,
     byte_len: usize,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+enum PocClientMessage {
+    ClipboardText { text: String },
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PocClipboardTextEvent {
+    peer: String,
+    item: ClipboardText,
 }
 
 #[tauri::command]
@@ -219,6 +233,19 @@ async fn handle_poc_peer(app: AppHandle, peer: String, stream: tokio::net::TcpSt
                         byte_len,
                     },
                 );
+                if let Ok(PocClientMessage::ClipboardText { text }) =
+                    serde_json::from_str::<PocClientMessage>(&text)
+                {
+                    if let Ok(item) = ClipboardText::parse(text) {
+                        let _ = app.emit(
+                            "transport://poc-clipboard-text",
+                            PocClipboardTextEvent {
+                                peer: peer.clone(),
+                                item,
+                            },
+                        );
+                    }
+                }
             }
             Message::Binary(bytes) if bytes.len() > POC_MAX_FRAME_BYTES => break,
             Message::Close(_) => break,
@@ -236,5 +263,20 @@ mod tests {
     #[test]
     fn poc_frame_limit_is_one_mib() {
         assert_eq!(POC_MAX_FRAME_BYTES, 1024 * 1024);
+    }
+
+    #[test]
+    fn parses_poc_clipboard_text_message() {
+        let message = serde_json::from_str::<PocClientMessage>(
+            r#"{"kind":"clipboardText","text":"from harmony"}"#,
+        )
+        .expect("valid poc message");
+
+        assert_eq!(
+            message,
+            PocClientMessage::ClipboardText {
+                text: "from harmony".to_owned(),
+            },
+        );
     }
 }

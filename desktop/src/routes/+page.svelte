@@ -9,6 +9,7 @@
 
   onMount(() => {
     void shellSnapshot.startPocTransport();
+    void shellSnapshot.startPocEventListeners();
     void shellSnapshot.startClipboardMonitor();
   });
 </script>

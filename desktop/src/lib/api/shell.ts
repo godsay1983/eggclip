@@ -26,6 +26,11 @@ interface ClipboardMonitorEvent {
   item: ClipboardTextItem;
 }
 
+interface PocClipboardTextEvent {
+  peer: string;
+  item: ClipboardTextItem;
+}
+
 interface PocTransportStatus {
   state: "running" | "stopped" | "failed";
   bindAddress: string;
@@ -87,6 +92,22 @@ export async function onLocalClipboardText(
     "clipboard://local-text",
     (event) => {
       handler(toClipboardPreview(event.payload.item, "本机剪贴板 · 自动监听"));
+    },
+  );
+
+  return unlisten;
+}
+
+export async function onPocClipboardText(
+  handler: (preview: ClipboardPreview, peer: string) => void,
+): Promise<() => void> {
+  const unlisten = await listen<PocClipboardTextEvent>(
+    "transport://poc-clipboard-text",
+    (event) => {
+      handler(
+        toClipboardPreview(event.payload.item, `Harmony POC · ${event.payload.peer}`),
+        event.payload.peer,
+      );
     },
   );
 

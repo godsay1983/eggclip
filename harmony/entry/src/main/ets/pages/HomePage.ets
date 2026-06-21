@@ -1,7 +1,8 @@
-import { EGGCLIP_MDNS_SERVICE_TYPE, PocRuntimeState } from '../models/PocModels';
+import { EGGCLIP_MDNS_SERVICE_TYPE, ManualEndpoint, PocLifecycleState, PocRuntimeState } from '../models/PocModels';
 import { StatusDot } from '../components/common/StatusDot';
 import { HomeShellState } from '../models/ShellModels';
 import { ClipboardBridgeService } from '../services/clipboard/ClipboardBridgeService';
+import { WebSocketTransportService } from '../services/transport/WebSocketTransportService';
 import { createInitialHomeShellState } from '../store/HomeStore';
 import { createInitialPocRuntimeState } from '../store/PocStore';
 import { EggClipColors } from '../theme/Colors';
@@ -13,7 +14,11 @@ export struct HomePage {
   private readonly state: HomeShellState = createInitialHomeShellState();
   private readonly pocState: PocRuntimeState = createInitialPocRuntimeState();
   private readonly clipboardBridge: ClipboardBridgeService = new ClipboardBridgeService();
+  private readonly transport: WebSocketTransportService = new WebSocketTransportService();
+  @State private manualHost: string = '127.0.0.1';
+  @State private manualPort: string = '0';
   @State private pasteStatus: string = '等待点击 PasteButton 触发一次性授权';
+  @State private transportStatus: string = '输入桌面端 IP 和端口后手动连接';
 
   build() {
     Scroll() {
@@ -21,6 +26,7 @@ export struct HomePage {
         this.Header()
         this.ConnectionCard()
         this.PocStatusCard()
+        this.ManualTransportCard()
         this.LatestClipboardCard()
         this.HistoryPlaceholder()
       }
@@ -121,6 +127,66 @@ export struct HomePage {
   }
 
   @Builder
+  private ManualTransportCard() {
+    Column({ space: 10 }) {
+      Row() {
+        Text('手动连接')
+          .fontSize(EggClipTypography.bodySize)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(EggClipColors.textPrimary)
+          .layoutWeight(1)
+
+        Text(this.transport.currentState())
+          .fontSize(EggClipTypography.captionSize)
+          .fontColor(EggClipColors.textSecondary)
+      }
+      .width('100%')
+
+      Row({ space: 8 }) {
+        TextInput({ text: this.manualHost, placeholder: '桌面端 IP' })
+          .layoutWeight(1)
+          .height(42)
+          .backgroundColor(EggClipColors.controlBackground)
+          .borderRadius(14)
+          .onChange((value: string) => {
+            this.manualHost = value;
+          })
+
+        TextInput({ text: this.manualPort, placeholder: '端口' })
+          .width(96)
+          .height(42)
+          .backgroundColor(EggClipColors.controlBackground)
+          .borderRadius(14)
+          .type(InputType.Number)
+          .onChange((value: string) => {
+            this.manualPort = value;
+          })
+      }
+      .width('100%')
+
+      Button('连接桌面 POC')
+        .width('100%')
+        .height(44)
+        .fontColor(EggClipColors.onPrimary)
+        .backgroundColor(EggClipColors.primary)
+        .borderRadius(22)
+        .onClick(() => {
+          this.connectManualEndpoint();
+        })
+
+      Text(this.transportStatus)
+        .width('100%')
+        .fontSize(EggClipTypography.captionSize)
+        .fontColor(EggClipColors.textSecondary)
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(EggClipSpacing.cardPadding)
+    .backgroundColor(EggClipColors.cardBackground)
+    .borderRadius(EggClipSpacing.radiusMedium)
+  }
+
+  @Builder
   private LatestClipboardCard() {
     Column({ space: 14 }) {
       Row() {
@@ -160,6 +226,9 @@ export struct HomePage {
             this.clipboardBridge.readPlainTextAfterPasteButton()
               .then((readResult) => {
                 this.pasteStatus = readResult.message;
+                if (readResult.ok) {
+                  this.sendPocClipboardText(readResult.text);
+                }
               })
               .catch(() => {
                 this.pasteStatus = '读取剪贴板失败，请确认当前内容是纯文本并重试';
@@ -207,5 +276,50 @@ export struct HomePage {
     .padding(EggClipSpacing.cardPadding)
     .backgroundColor(EggClipColors.cardBackground)
     .borderRadius(EggClipSpacing.radiusMedium)
+  }
+
+  private connectManualEndpoint(): void {
+    const port = Number(this.manualPort);
+    const endpoint: ManualEndpoint = {
+      host: this.manualHost,
+      port
+    };
+    this.transportStatus = '正在连接桌面 POC';
+    this.transport.connect(endpoint, {
+      onOpen: () => {
+        this.transportStatus = '已连接桌面 POC，PasteButton 读取后会发送文本';
+      },
+      onClose: (reason: string) => {
+        this.transportStatus = `连接已关闭：${reason}`;
+      },
+      onError: (reason: string) => {
+        this.transportStatus = `连接失败：${reason}`;
+      },
+      onMessage: () => {
+      }
+    })
+      .then((result) => {
+        if (!result.ok) {
+          this.transportStatus = result.reason === undefined ? '连接参数无效' : `连接参数无效：${result.reason}`;
+        }
+      })
+      .catch(() => {
+        this.transportStatus = '连接桌面 POC 失败';
+      });
+  }
+
+  private sendPocClipboardText(text: string): void {
+    if (!this.transport.isConnected()) {
+      this.pasteStatus = '已读取纯文本；尚未连接桌面 POC，未发送';
+      return;
+    }
+
+    this.transport.sendClipboardText(text)
+      .then((sent) => {
+        this.pasteStatus = sent ? '已发送到桌面 POC' : '发送失败：WebSocket 未连接';
+      })
+      .catch(() => {
+        this.pasteStatus = '发送到桌面 POC 失败';
+      });
   }
 }
