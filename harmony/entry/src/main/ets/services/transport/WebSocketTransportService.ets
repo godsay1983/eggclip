@@ -1,5 +1,6 @@
 import webSocket from '@ohos.net.webSocket';
 import { EndpointValidationResult, ManualEndpoint, POC_MAX_FRAME_BYTES, PocLifecycleState } from '../../models/PocModels';
+import { estimateUtf8Bytes, MAX_TEXT_BYTES } from '../../utils/TextLimits';
 
 const CONNECT_TIMEOUT_MS: number = 8000;
 
@@ -30,19 +31,19 @@ export class WebSocketTransportService {
   }
 
   validateEndpoint(endpoint: ManualEndpoint): EndpointValidationResult {
-    const host = endpoint.host.trim();
-    if (host.length === 0) {
+    const host = this.normalizeIpv4Address(endpoint.host);
+    if (host === null) {
       return {
         ok: false,
         normalizedUrl: '',
-        reason: 'host is required'
+        reason: '请输入有效的 IPv4 地址，例如 192.168.1.10'
       };
     }
     if (endpoint.port < 1 || endpoint.port > 65535) {
       return {
         ok: false,
         normalizedUrl: '',
-        reason: 'port is out of range'
+        reason: '请输入 1 到 65535 之间的端口'
       };
     }
     return {
@@ -67,7 +68,7 @@ export class WebSocketTransportService {
       if (this.state === PocLifecycleState.STARTING) {
         this.state = PocLifecycleState.FAILED;
         this.connected = false;
-        callbacks.onError('connect timeout');
+        callbacks.onError('连接桌面 POC 超时');
         this.close();
       }
     }, CONNECT_TIMEOUT_MS);
@@ -82,7 +83,7 @@ export class WebSocketTransportService {
       if (typeof data === 'string') {
         callbacks.onMessage(data);
       } else {
-        callbacks.onError('binary messages are not supported in POC');
+        callbacks.onError('POC 不支持二进制消息');
       }
     });
     socket.on('close', (_error, closeResult: webSocket.CloseResult) => {
@@ -95,7 +96,7 @@ export class WebSocketTransportService {
       this.clearConnectTimeout();
       this.state = PocLifecycleState.FAILED;
       this.connected = false;
-      callbacks.onError(error.message);
+      callbacks.onError(`WebSocket 错误：${error.message}`);
     });
 
     try {
@@ -111,7 +112,7 @@ export class WebSocketTransportService {
       return {
         ok: false,
         normalizedUrl: result.normalizedUrl,
-        reason: 'connect failed'
+        reason: '连接桌面 POC 失败'
       };
     }
     return result;
@@ -121,12 +122,12 @@ export class WebSocketTransportService {
     if (this.socket === null || !this.connected) {
       return false;
     }
-    const message: PocClipboardTextMessage = {
-      kind: 'clipboardText',
-      text
-    };
+    const message = this.encodeClipboardTextMessage(text);
+    if (message === null) {
+      return false;
+    }
     try {
-      return await this.socket.send(JSON.stringify(message));
+      return await this.socket.send(message);
     } catch (_) {
       this.state = PocLifecycleState.FAILED;
       this.connected = false;
@@ -135,7 +136,7 @@ export class WebSocketTransportService {
   }
 
   parseClipboardTextMessage(message: string): string | null {
-    if (this.estimateUtf8Bytes(message) > POC_MAX_FRAME_BYTES) {
+    if (estimateUtf8Bytes(message) > POC_MAX_FRAME_BYTES) {
       return null;
     }
     try {
@@ -143,7 +144,8 @@ export class WebSocketTransportService {
       if (
         parsed.kind === 'clipboardText' &&
         typeof parsed.text === 'string' &&
-        this.estimateUtf8Bytes(parsed.text) <= POC_MAX_FRAME_BYTES
+        estimateUtf8Bytes(parsed.text) > 0 &&
+        estimateUtf8Bytes(parsed.text) <= MAX_TEXT_BYTES
       ) {
         return parsed.text;
       }
@@ -151,6 +153,19 @@ export class WebSocketTransportService {
       return null;
     }
     return null;
+  }
+
+  encodeClipboardTextMessage(text: string): string | null {
+    const byteLength = estimateUtf8Bytes(text);
+    if (byteLength === 0 || byteLength > MAX_TEXT_BYTES) {
+      return null;
+    }
+    const message: PocClipboardTextMessage = {
+      kind: 'clipboardText',
+      text
+    };
+    const serialized = JSON.stringify(message);
+    return estimateUtf8Bytes(serialized) <= POC_MAX_FRAME_BYTES ? serialized : null;
   }
 
   close(): void {
@@ -175,21 +190,27 @@ export class WebSocketTransportService {
     }
   }
 
-  private estimateUtf8Bytes(text: string): number {
-    let bytes = 0;
-    for (let index = 0; index < text.length; index += 1) {
-      const code = text.charCodeAt(index);
-      if (code <= 0x7f) {
-        bytes += 1;
-      } else if (code <= 0x7ff) {
-        bytes += 2;
-      } else if (code >= 0xd800 && code <= 0xdbff) {
-        bytes += 4;
-        index += 1;
-      } else {
-        bytes += 3;
-      }
+  private normalizeIpv4Address(value: string): string | null {
+    const host = value.trim();
+    const parts = host.split('.');
+    if (parts.length !== 4) {
+      return null;
     }
-    return bytes;
+    const octets: number[] = [];
+    for (let index = 0; index < parts.length; index += 1) {
+      const part = parts[index];
+      if (!/^\d{1,3}$/.test(part) || (part.length > 1 && part.startsWith('0'))) {
+        return null;
+      }
+      const octet = Number(part);
+      if (octet < 0 || octet > 255) {
+        return null;
+      }
+      octets.push(octet);
+    }
+    if (octets[0] === 0 || octets[0] >= 224 || octets.every((octet: number) => octet === 255)) {
+      return null;
+    }
+    return octets.join('.');
   }
 }

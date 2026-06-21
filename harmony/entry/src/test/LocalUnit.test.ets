@@ -22,15 +22,28 @@ export default function localUnitTest() {
       expect(valid.ok).assertEqual(true);
       expect(valid.normalizedUrl).assertEqual('ws://192.168.1.20:4567');
       expect(transport.validateEndpoint({ host: '', port: 4567 }).ok).assertEqual(false);
+      expect(transport.validateEndpoint({ host: 'desktop.local', port: 4567 }).ok).assertEqual(false);
+      expect(transport.validateEndpoint({ host: '01.2.3.4', port: 4567 }).ok).assertEqual(false);
+      expect(transport.validateEndpoint({ host: '224.0.0.1', port: 4567 }).ok).assertEqual(false);
+      expect(transport.validateEndpoint({ host: '255.255.255.255', port: 4567 }).ok).assertEqual(false);
       expect(transport.validateEndpoint({ host: '127.0.0.1', port: 0 }).ok).assertEqual(false);
     });
 
     it('parsesOnlyBoundedClipboardTextFrames', 0, () => {
       const transport = new WebSocketTransportService();
+      expect(transport.encodeClipboardTextMessage('from harmony'))
+        .assertEqual('{"kind":"clipboardText","text":"from harmony"}');
       expect(transport.parseClipboardTextMessage('{"kind":"clipboardText","text":"蛋定"}'))
         .assertEqual('蛋定');
       expect(transport.parseClipboardTextMessage('{"kind":"other","text":"ignored"}')).assertEqual(null);
       expect(transport.parseClipboardTextMessage('not json')).assertEqual(null);
+      expect(transport.parseClipboardTextMessage('{"kind":"clipboardText","text":""}')).assertEqual(null);
+      const exactText = 'a'.repeat(MAX_TEXT_BYTES);
+      const exactMessage = transport.encodeClipboardTextMessage(exactText);
+      expect(exactMessage === null).assertEqual(false);
+      expect(transport.parseClipboardTextMessage(exactMessage ?? '')).assertEqual(exactText);
+      expect(transport.encodeClipboardTextMessage('')).assertEqual(null);
+      expect(transport.encodeClipboardTextMessage('a'.repeat(MAX_TEXT_BYTES + 1))).assertEqual(null);
       expect(transport.parseClipboardTextMessage('a'.repeat(POC_MAX_FRAME_BYTES + 1))).assertEqual(null);
     });
 

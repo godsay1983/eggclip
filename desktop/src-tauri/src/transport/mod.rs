@@ -398,18 +398,14 @@ where
                         byte_len,
                     },
                 );
-                if let Ok(PocClientMessage::ClipboardText { text }) =
-                    serde_json::from_str::<PocClientMessage>(&text)
-                {
-                    if let Ok(item) = ClipboardText::parse(text) {
-                        let _ = app.emit(
-                            "transport://poc-clipboard-text",
-                            PocClipboardTextEvent {
-                                peer: peer.clone(),
-                                item,
-                            },
-                        );
-                    }
+                if let Some(item) = parse_poc_clipboard_text_message(&text) {
+                    let _ = app.emit(
+                        "transport://poc-clipboard-text",
+                        PocClipboardTextEvent {
+                            peer: peer.clone(),
+                            item,
+                        },
+                    );
                 }
             }
             Message::Binary(bytes) if bytes.len() > POC_MAX_FRAME_BYTES => break,
@@ -430,6 +426,15 @@ fn serialize_poc_server_message(message: &PocServerMessage) -> Result<String, St
         .map_err(|error| format!("无法序列化 WebSocket POC 消息：{error}"))
 }
 
+fn parse_poc_clipboard_text_message(message: &str) -> Option<ClipboardText> {
+    if message.len() > POC_MAX_FRAME_BYTES {
+        return None;
+    }
+    let PocClientMessage::ClipboardText { text } =
+        serde_json::from_str::<PocClientMessage>(message).ok()?;
+    ClipboardText::parse(text).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -441,17 +446,46 @@ mod tests {
 
     #[test]
     fn parses_poc_clipboard_text_message() {
-        let message = serde_json::from_str::<PocClientMessage>(
-            r#"{"kind":"clipboardText","text":"from harmony"}"#,
-        )
-        .expect("valid poc message");
+        let item =
+            parse_poc_clipboard_text_message(r#"{"kind":"clipboardText","text":"from harmony"}"#)
+                .expect("valid poc message");
 
-        assert_eq!(
-            message,
-            PocClientMessage::ClipboardText {
-                text: "from harmony".to_owned(),
-            },
+        assert_eq!(item.as_str(), "from harmony");
+    }
+
+    #[test]
+    fn rejects_invalid_or_out_of_bounds_poc_text() {
+        assert!(parse_poc_clipboard_text_message("not json").is_none());
+        assert!(
+            parse_poc_clipboard_text_message(r#"{"kind":"clipboardText","text":""}"#).is_none()
         );
+
+        let exact = serialize_poc_server_message(&PocServerMessage::ClipboardText {
+            text: "a".repeat(crate::clipboard::MAX_TEXT_BYTES),
+        })
+        .expect("valid boundary frame");
+        assert!(parse_poc_clipboard_text_message(&exact).is_some());
+
+        let oversized = serialize_poc_server_message(&PocServerMessage::ClipboardText {
+            text: "a".repeat(crate::clipboard::MAX_TEXT_BYTES + 1),
+        })
+        .expect("serializable oversized frame");
+        assert!(parse_poc_clipboard_text_message(&oversized).is_none());
+        assert!(parse_poc_clipboard_text_message(&"a".repeat(POC_MAX_FRAME_BYTES + 1)).is_none());
+    }
+
+    #[test]
+    fn round_trips_one_hundred_poc_text_messages() {
+        for index in 0..100 {
+            let expected = format!("POC text {index} · 蛋定🥚");
+            let serialized = serialize_poc_server_message(&PocServerMessage::ClipboardText {
+                text: expected.clone(),
+            })
+            .expect("valid poc frame");
+            let item = parse_poc_clipboard_text_message(&serialized).expect("round-trip text");
+
+            assert_eq!(item.as_str(), expected);
+        }
     }
 
     #[test]
@@ -471,7 +505,10 @@ mod tests {
             "192.168.1.20:4567"
         );
         assert!(validate_poc_endpoint("example.com", 4567).is_err());
+        assert!(validate_poc_endpoint("01.2.3.4", 4567).is_err());
+        assert!(validate_poc_endpoint("0.0.0.0", 4567).is_err());
         assert!(validate_poc_endpoint("224.0.0.1", 4567).is_err());
+        assert!(validate_poc_endpoint("255.255.255.255", 4567).is_err());
         assert!(validate_poc_endpoint("127.0.0.1", 0).is_err());
     }
 }

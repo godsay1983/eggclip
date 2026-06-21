@@ -5,7 +5,7 @@
 ## 当前状态
 
 - 工程目录：`D:\Develop\eggclip\desktop`
-- D0 工程基线已建立，桌面 UI 已拆出 TypeScript API / store / component 基线；D1 剪贴板 POC 已开始，当前完成文本边界、Win32 剪贴板事件监听、WebSocket POC server/手动客户端、最小 mDNS POC 发布、网卡/IPv4 诊断、POC peer 状态、Desktop ↔ Desktop/Harmony 临时文本消息和 sequence/digest/TTL 回环抑制基础。未认证 POC 只允许用户触发发送和复制。
+- D0 工程基线已建立，桌面 UI 已拆出 TypeScript API / store / component 基线；D1 剪贴板 POC 已开始，当前完成文本边界、Win32 剪贴板事件监听、WebSocket POC server/手动客户端、最小 mDNS POC 发布、网卡/IPv4 诊断、POC peer 状态、Desktop ↔ Desktop/Harmony 临时文本消息、100 条消息编解码回归和 sequence/digest/TTL 回环抑制基础。未认证 POC 只允许用户触发发送和复制。
 - 目标平台：Windows 10/11。
 - 目标技术栈：Tauri 2、Svelte 5、SvelteKit、TypeScript、Rust、SQLite。
 - 应用标识建议：`com.eggclip.desktop`。

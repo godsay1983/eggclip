@@ -2,7 +2,7 @@
 
 EggClip 是纯局域网剪贴板同步工具。Windows 桌面端负责自动监听和同步，HarmonyOS 端在前台连接，并通过系统授权操作发送或复制文本。
 
-当前处于 D1/H1 技术 POC 阶段：Windows 剪贴板监听、双向 WebSocket 文本传输、桌面端手动 IP/端口出站连接、最小 mDNS 服务发布、局域网候选地址诊断和 POC peer 状态已接通；HarmonyOS 已接入真实 PasteButton、手动 IP、前台 mDNS 搜索和动态连接状态。当前 POC 尚未认证，因此远端文本只进入预览，必须由用户点击复制；配对、端到端加密、历史存储和正式协议尚未实现。
+当前处于 D1/H1 技术 POC 阶段：Windows 剪贴板监听、双向 WebSocket 文本传输、桌面端手动 IP/端口出站连接、最小 mDNS 服务发布、局域网候选地址诊断和 POC peer 状态已接通；HarmonyOS 已接入真实 PasteButton、严格 IPv4 手动连接、前台 mDNS 搜索和动态连接状态。两端统一限制正文最大 256 KiB，外层 POC 帧最大 1 MiB。当前 POC 尚未认证，因此远端文本只进入预览，必须由用户点击复制；配对、端到端加密、历史存储和正式协议尚未实现。
 
 最后核对：2026-06-21。
 
@@ -84,7 +84,7 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 
 ## 当前验证结果
 
-- 桌面：Svelte 类型检查、Vitest、前端构建、Rust fmt/check/test 通过；Rust 共 16 个测试通过。
+- 桌面：Svelte 类型检查、Vitest、前端构建、Rust fmt/check/test 通过；Rust 共 18 个测试通过。
 - 桌面：Tauri dev 进程、Vite 服务和 `eggclip.exe` 已成功启动；托盘交互仍需人工回归。
 - HarmonyOS：mDNS 搜索代码、WebSocket/PasteButton POC 以及 H1 边界单测已通过 `hvigorw test`，当前产物未签名。
 - 桌面 POC server 启动时会发布 `_eggclip._tcp.local.` 临时服务；mDNS 只提供候选地址，不代表设备可信。
