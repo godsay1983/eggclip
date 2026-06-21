@@ -2,14 +2,20 @@ use std::{
     collections::{hash_map::DefaultHasher, VecDeque},
     fmt,
     hash::{Hash, Hasher},
+    sync::Mutex,
     time::{Duration, Instant},
 };
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 pub const MAX_TEXT_BYTES: usize = 256 * 1024;
 const DEFAULT_SUPPRESSION_TTL: Duration = Duration::from_millis(1500);
+
+#[derive(Default)]
+pub struct ClipboardRuntime {
+    suppression: Mutex<SuppressionTracker>,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -214,6 +220,21 @@ pub fn write_clipboard_text(text: String) -> Result<(), String> {
         .map_err(|error| format!("无法写入系统剪贴板：{error}"))
 }
 
+pub fn write_remote_clipboard_text(app: &AppHandle, item: &ClipboardText) -> Result<(), String> {
+    let runtime = app.state::<ClipboardRuntime>();
+    let mut suppression = runtime
+        .suppression
+        .lock()
+        .map_err(|_| "剪贴板回环抑制状态锁已损坏".to_owned())?;
+    let mut clipboard =
+        arboard::Clipboard::new().map_err(|error| format!("无法访问系统剪贴板：{error}"))?;
+    clipboard
+        .set_text(item.as_str().to_owned())
+        .map_err(|error| format!("无法写入系统剪贴板：{error}"))?;
+    suppression.remember_remote_write(item, clipboard_sequence());
+    Ok(())
+}
+
 #[cfg(target_os = "windows")]
 pub fn start_clipboard_monitor(app: AppHandle) {
     let monitor_app = app.clone();
@@ -230,8 +251,6 @@ pub fn start_clipboard_monitor(app: AppHandle) {
                     return;
                 }
             };
-            let mut last_digest: Option<u64> = None;
-
             loop {
                 match monitor.recv() {
                     Ok(true) => {
@@ -240,13 +259,21 @@ pub fn start_clipboard_monitor(app: AppHandle) {
                             Err(_) => continue,
                         };
 
-                        if last_digest == Some(item.digest()) {
+                        let source = match classify_monitored_update(&monitor_app, &item) {
+                            Ok(source) => source,
+                            Err(error) => {
+                                let _ = monitor_app.emit("clipboard://monitor-error", error);
+                                continue;
+                            }
+                        };
+                        if source == ClipboardEventSource::RemoteWriteEcho {
                             continue;
                         }
-                        last_digest = Some(item.digest());
 
-                        let _ = monitor_app
-                            .emit("clipboard://local-text", ClipboardMonitorEvent { item });
+                        let _ = monitor_app.emit(
+                            "clipboard://local-text",
+                            ClipboardMonitorEvent { item: item.clone() },
+                        );
                     }
                     Ok(false) => break,
                     Err(error) => {
@@ -266,6 +293,29 @@ pub fn start_clipboard_monitor(app: AppHandle) {
             format!("无法创建剪贴板监听线程：{error}"),
         );
     }
+}
+
+#[cfg(target_os = "windows")]
+fn classify_monitored_update(
+    app: &AppHandle,
+    item: &ClipboardText,
+) -> Result<ClipboardEventSource, String> {
+    let runtime = app.state::<ClipboardRuntime>();
+    let mut suppression = runtime
+        .suppression
+        .lock()
+        .map_err(|_| "剪贴板回环抑制状态锁已损坏".to_owned())?;
+    Ok(suppression.classify_update(item, clipboard_sequence()))
+}
+
+#[cfg(target_os = "windows")]
+fn clipboard_sequence() -> Option<u64> {
+    clipboard_win::seq_num().map(|sequence| u64::from(sequence.get()))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn clipboard_sequence() -> Option<u64> {
+    None
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -356,6 +406,23 @@ mod tests {
         assert_eq!(
             tracker.classify_update(&item, None),
             ClipboardEventSource::Local
+        );
+    }
+
+    #[test]
+    fn allows_same_text_with_a_different_clipboard_sequence() {
+        let item = ClipboardText::parse("same text, new copy").expect("valid clipboard text");
+        let mut tracker = SuppressionTracker::default();
+
+        tracker.remember_remote_write(&item, Some(7));
+
+        assert_eq!(
+            tracker.classify_update(&item, Some(8)),
+            ClipboardEventSource::Local
+        );
+        assert_eq!(
+            tracker.classify_update(&item, Some(7)),
+            ClipboardEventSource::RemoteWriteEcho
         );
     }
 }

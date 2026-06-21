@@ -12,7 +12,7 @@
 - 模型：Stage Model
 - 入口 Ability：`EntryAbility`
 - 当前首页：`entry/src/main/ets/pages/Index.ets`
-- 当前状态：H0 工程基线、主题、目标模块目录和空壳首页已建立；HarmonyOS 图标已与桌面端同源，H1 已声明网络 POC 所需最小权限，首页已展示 POC 状态并接入真实 PasteButton、pasteboard 纯文本读取、手动 IP WebSocket 连接、Desktop ↔ Harmony 临时文本收发、用户触发复制到本机和 POC 连接生命周期清理。
+- 当前状态：H0 工程基线、主题、目标模块目录和空壳首页已建立；HarmonyOS 图标已与桌面端同源，H1 已声明网络 POC 所需最小权限，首页已接入真实 PasteButton、pasteboard 纯文本读取、手动 IP WebSocket、Desktop ↔ Harmony 临时文本收发、用户触发复制到本机、前台 mDNS 搜索和前后台连接清理。
 - 参考项目：`D:\Develop\EggDoneHarmony\EggDone`
 - 架构基线：`docs/EggClip最佳实现方案.md`
 
@@ -96,16 +96,16 @@ harmony/entry/src/main/ets/
 ### mDNS
 
 - [x] 在 `module.json5` 声明 POC 所需最小网络权限。
-- [ ] 使用 `@ohos.net.mdns` 搜索 `_eggclip._tcp.local.`。
-- [ ] 展示发现服务的地址、端口和协议版本，不记录敏感 TXT 字段。
-- [ ] 实现开始搜索、停止搜索、重复回调去重和页面销毁清理。
+- [x] 使用 `@ohos.net.mdns` 搜索 `_eggclip._tcp.local.`。
+- [x] 展示发现服务的地址、端口和协议版本，不记录敏感 TXT 字段。
+- [x] 实现开始搜索、停止搜索、重复回调去重和页面销毁清理。
 - [ ] 验证真机 Wi-Fi、访客网络和 AP 隔离下的行为。
 
 ### WebSocket
 
 - [x] 使用 NetworkKit WebSocket 连接桌面 POC server。
 - [x] 实现 open、message、error、close 监听。
-- [x] 实现连接超时、主动关闭和页面前台销毁清理；后台生命周期待真机进一步验证。
+- [x] 实现连接超时、主动关闭、页面销毁和应用进入后台时的清理；前后台恢复待真机进一步验证。
 - [x] 增加最大消息大小和基础 JSON 校验。
 - [x] 先支持手动 IP，mDNS 发现结果作为候选地址。
 

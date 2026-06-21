@@ -1,22 +1,36 @@
-import { EGGCLIP_MDNS_SERVICE_TYPE, ManualEndpoint, PocLifecycleState, PocRuntimeState } from '../models/PocModels';
+import { common } from '@kit.AbilityKit';
+import {
+  EGGCLIP_MDNS_SERVICE_TYPE,
+  ManualEndpoint,
+  MdnsServiceCandidate,
+  PocLifecycleState
+} from '../models/PocModels';
 import { StatusDot } from '../components/common/StatusDot';
 import { HomeShellState } from '../models/ShellModels';
 import { ClipboardBridgeService } from '../services/clipboard/ClipboardBridgeService';
+import { MdnsDiscoveryService } from '../services/discovery/MdnsDiscoveryService';
 import { WebSocketTransportService } from '../services/transport/WebSocketTransportService';
 import { createInitialHomeShellState } from '../store/HomeStore';
-import { createInitialPocRuntimeState } from '../store/PocStore';
 import { EggClipColors } from '../theme/Colors';
 import { EggClipSpacing } from '../theme/Spacing';
 import { EggClipTypography } from '../theme/Typography';
+import { APP_FOREGROUND_STORAGE_KEY } from '../utils/AppLifecycle';
 
 @Component
 export struct HomePage {
   private readonly state: HomeShellState = createInitialHomeShellState();
-  private readonly pocState: PocRuntimeState = createInitialPocRuntimeState();
   private readonly clipboardBridge: ClipboardBridgeService = new ClipboardBridgeService();
   private readonly transport: WebSocketTransportService = new WebSocketTransportService();
+  private discovery: MdnsDiscoveryService | null = null;
+  private reconnectOnForeground: boolean = false;
+  @StorageLink(APP_FOREGROUND_STORAGE_KEY) @Watch('onAppForegroundChanged')
+  private appInForeground: boolean = false;
   @State private manualHost: string = '127.0.0.1';
   @State private manualPort: string = '0';
+  @State private discoveryState: PocLifecycleState = PocLifecycleState.IDLE;
+  @State private discoveryStatus: string = '等待开始局域网发现';
+  @State private discoveryCandidates: MdnsServiceCandidate[] = [];
+  @State private transportState: PocLifecycleState = PocLifecycleState.IDLE;
   @State private pasteStatus: string = '等待点击 PasteButton 触发一次性授权';
   @State private transportStatus: string = '输入桌面端 IP 和端口后手动连接';
   @State private copyStatus: string = '收到桌面文本后可手动复制到本机';
@@ -24,7 +38,23 @@ export struct HomePage {
   @State private latestReceivedPreview: string = '';
   @State private latestReceivedSource: string = '暂无内容';
 
+  aboutToAppear(): void {
+    if (this.discovery === null) {
+      const hostContext = this.getUIContext().getHostContext();
+      if (hostContext === undefined) {
+        this.discoveryState = PocLifecycleState.FAILED;
+        this.discoveryStatus = '无法获取页面上下文，mDNS 搜索不可用';
+        return;
+      }
+      this.discovery = new MdnsDiscoveryService(hostContext as common.UIAbilityContext);
+    }
+    if (this.appInForeground) {
+      this.startDiscovery();
+    }
+  }
+
   aboutToDisappear(): void {
+    this.discovery?.stopSearch();
     this.transport.close();
   }
 
@@ -117,15 +147,73 @@ export struct HomePage {
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
 
-      Text(`发现服务：${this.pocState.discoveryState} · WebSocket：${this.pocState.transportState}`)
+      Text(`发现服务：${this.discoveryState} · WebSocket：${this.transportState}`)
         .width('100%')
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
 
-      Text('已声明局域网网络权限；PasteButton 已接入 pasteboard 纯文本读取，真机连接待接入。')
+      Text(this.discoveryStatus)
         .width('100%')
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
+
+      Row({ space: 8 }) {
+        Button('开始发现')
+          .layoutWeight(1)
+          .height(38)
+          .fontColor(EggClipColors.onPrimary)
+          .backgroundColor(EggClipColors.primary)
+          .borderRadius(19)
+          .onClick(() => {
+            this.startDiscovery();
+          })
+
+        Button('停止发现')
+          .layoutWeight(1)
+          .height(38)
+          .fontColor(EggClipColors.textSecondary)
+          .backgroundColor(EggClipColors.controlBackground)
+          .borderRadius(19)
+          .onClick(() => {
+            this.discovery?.stopSearch();
+          })
+      }
+      .width('100%')
+
+      if (this.discoveryCandidates.length === 0) {
+        Text('暂未发现桌面端；手动 IP 连接始终可用。')
+          .width('100%')
+          .fontSize(EggClipTypography.captionSize)
+          .fontColor(EggClipColors.textSecondary)
+      } else {
+        ForEach(this.discoveryCandidates, (candidate: MdnsServiceCandidate) => {
+          Row({ space: 8 }) {
+            Column({ space: 2 }) {
+              Text(`${candidate.host}:${candidate.port}`)
+                .fontSize(EggClipTypography.captionSize)
+                .fontColor(EggClipColors.textPrimary)
+              Text(`协议版本 ${candidate.protocolVersion === 0 ? 'POC' : candidate.protocolVersion}`)
+                .fontSize(EggClipTypography.captionSize)
+                .fontColor(EggClipColors.textSecondary)
+            }
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
+
+            Button('连接')
+              .height(34)
+              .fontColor(EggClipColors.onPrimary)
+              .backgroundColor(EggClipColors.primary)
+              .borderRadius(17)
+              .onClick(() => {
+                this.connectCandidate(candidate);
+              })
+          }
+          .width('100%')
+          .padding(10)
+          .backgroundColor(EggClipColors.controlBackground)
+          .borderRadius(14)
+        }, (candidate: MdnsServiceCandidate) => candidate.instanceId)
+      }
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -311,14 +399,19 @@ export struct HomePage {
       port
     };
     this.transportStatus = '正在连接桌面 POC';
+    this.transportState = PocLifecycleState.STARTING;
     this.transport.connect(endpoint, {
       onOpen: () => {
+        this.reconnectOnForeground = true;
+        this.transportState = PocLifecycleState.RUNNING;
         this.transportStatus = '已连接桌面 POC，PasteButton 读取后会发送文本';
       },
       onClose: (reason: string) => {
+        this.transportState = PocLifecycleState.IDLE;
         this.transportStatus = `连接已关闭：${reason}`;
       },
       onError: (reason: string) => {
+        this.transportState = PocLifecycleState.FAILED;
         this.transportStatus = `连接失败：${reason}`;
       },
       onMessage: (message: string) => {
@@ -336,12 +429,38 @@ export struct HomePage {
     })
       .then((result) => {
         if (!result.ok) {
+          this.transportState = PocLifecycleState.FAILED;
           this.transportStatus = result.reason === undefined ? '连接参数无效' : `连接参数无效：${result.reason}`;
         }
       })
       .catch(() => {
+        this.transportState = PocLifecycleState.FAILED;
         this.transportStatus = '连接桌面 POC 失败';
       });
+  }
+
+  private startDiscovery(): void {
+    if (this.discovery === null) {
+      return;
+    }
+    this.discovery.startSearch({
+      onStateChanged: (state: PocLifecycleState, reason: string) => {
+        this.discoveryState = state;
+        this.discoveryStatus = reason;
+      },
+      onCandidatesChanged: (candidates: MdnsServiceCandidate[]) => {
+        this.discoveryCandidates = candidates;
+        if (candidates.length > 0) {
+          this.discoveryStatus = `已发现 ${candidates.length} 个候选地址；mDNS 仅用于发现，不代表设备可信`;
+        }
+      }
+    });
+  }
+
+  private connectCandidate(candidate: MdnsServiceCandidate): void {
+    this.manualHost = candidate.host;
+    this.manualPort = candidate.port.toString();
+    this.connectManualEndpoint();
   }
 
   private sendPocClipboardText(text: string): void {
@@ -360,8 +479,28 @@ export struct HomePage {
   }
 
   private disconnectManualEndpoint(): void {
+    this.reconnectOnForeground = false;
     this.transport.close();
+    this.transportState = PocLifecycleState.IDLE;
     this.transportStatus = '已主动断开桌面 POC';
+  }
+
+  private onAppForegroundChanged(): void {
+    if (this.appInForeground) {
+      this.startDiscovery();
+      if (this.reconnectOnForeground) {
+        this.connectManualEndpoint();
+      }
+      return;
+    }
+
+    this.reconnectOnForeground = this.transport.isConnected();
+    this.discovery?.stopSearch();
+    this.transport.close();
+    this.transportState = PocLifecycleState.IDLE;
+    this.transportStatus = this.reconnectOnForeground
+      ? '应用进入后台，已断开；回到前台后将重新连接'
+      : '应用进入后台，已停止发现和连接';
   }
 
   private copyLatestReceivedToLocal(): void {

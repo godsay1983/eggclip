@@ -5,7 +5,7 @@
 ## 当前状态
 
 - 工程目录：`D:\Develop\eggclip\desktop`
-- D0 工程基线已建立，桌面 UI 已拆出 TypeScript API / store / component 基线；D1 剪贴板 POC 已开始，当前完成文本边界、手动读写系统剪贴板、Win32 剪贴板事件监听、回环抑制核心逻辑、WebSocket POC server 骨架和 Desktop ↔ Harmony 临时文本消息。
+- D0 工程基线已建立，桌面 UI 已拆出 TypeScript API / store / component 基线；D1 剪贴板 POC 已开始，当前完成文本边界、Win32 剪贴板事件监听、WebSocket POC server、最小 mDNS POC 发布、Desktop ↔ Harmony 临时文本消息和 sequence/digest/TTL 回环抑制基础。未认证 POC 只允许用户触发发送和复制。
 - 目标平台：Windows 10/11。
 - 目标技术栈：Tauri 2、Svelte 5、SvelteKit、TypeScript、Rust、SQLite。
 - 应用标识建议：`com.eggclip.desktop`。
@@ -94,9 +94,9 @@ desktop/
 - [x] 读取 Unicode 纯文本并转换为 UTF-8。
 - [x] 拒绝空文本和超过 256 KiB 的文本。
 - [x] 实现文本写入系统剪贴板。
-- [ ] 使用 digest、系统 sequence 和短时 suppression token 防止远端写入回环。
+- [ ] 使用 digest、系统 sequence 和短时 suppression token 防止远端写入回环；核心实现与单元测试已完成，等待认证 `ITEM_LIVE` 接入后做真机闭环。
 - [x] 将本机剪贴板变化通过 Tauri event 推送到前端 POC 面板。
-- [ ] 连续复制相同文本时验证“立即重复”和“稍后再次复制”的差异。
+- [ ] 连续复制相同文本时验证“立即重复”和“稍后再次复制”的差异；sequence/TTL 单元测试已覆盖，Windows 真机快速复制仍待验收。
 - [ ] 调研并尽量尊重 Windows 剪贴板历史/监控排除格式。
 
 ### 手动 WebSocket
@@ -205,7 +205,7 @@ desktop/
 
 ### mDNS
 
-- [ ] 使用 `_eggclip._tcp.local.` 发布桌面服务。
+- [ ] 使用 `_eggclip._tcp.local.` 发布桌面服务；D1 已实现最小 POC 发布，正式版本待协议版本、ConnectionManager 和生命周期接管。
 - [ ] TXT 只发布协议版本、临时实例 ID 和能力位。
 - [ ] 不广播设备名称、空间名称、`spaceKey`、正文或长期公钥。
 - [ ] 浏览局域网候选节点并交给 ConnectionManager。

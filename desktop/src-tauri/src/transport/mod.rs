@@ -29,6 +29,7 @@ pub struct PocTransportStatus {
     state: PocTransportState,
     bind_address: String,
     port: u16,
+    discovery_published: bool,
     last_error: Option<String>,
 }
 
@@ -91,10 +92,18 @@ pub async fn start_poc_transport(
         .map_err(|error| format!("无法读取 WebSocket POC 监听地址：{error}"))?;
 
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let discovery_published = match crate::discovery::publish_poc_service(&app, local_addr.port()) {
+        Ok(()) => true,
+        Err(error) => {
+            let _ = app.emit("discovery://poc-error", error);
+            false
+        }
+    };
     let status = PocTransportStatus {
         state: PocTransportState::Running,
         bind_address: local_addr.ip().to_string(),
         port: local_addr.port(),
+        discovery_published,
         last_error: None,
     };
 
@@ -136,11 +145,13 @@ pub fn stop_poc_transport(
             let _ = shutdown.send(());
         }
     }
+    crate::discovery::unpublish_poc_service(&app);
 
     let status = PocTransportStatus {
         state: PocTransportState::Stopped,
         bind_address: "0.0.0.0".to_owned(),
         port: 0,
+        discovery_published: false,
         last_error: None,
     };
     let _ = app.emit("transport://poc-status", status.clone());
@@ -156,6 +167,7 @@ pub fn get_poc_transport_status(
             state: PocTransportState::Stopped,
             bind_address: "0.0.0.0".to_owned(),
             port: 0,
+            discovery_published: false,
             last_error: None,
         }),
     )
@@ -167,6 +179,13 @@ pub fn send_poc_clipboard_text(
     text: String,
 ) -> Result<usize, String> {
     let item = ClipboardText::parse(text).map_err(|error| error.to_string())?;
+    broadcast_poc_clipboard_item_with_runtime(&runtime, &item)
+}
+
+fn broadcast_poc_clipboard_item_with_runtime(
+    runtime: &PocTransportRuntime,
+    item: &ClipboardText,
+) -> Result<usize, String> {
     let message = serialize_poc_server_message(&PocServerMessage::ClipboardText {
         text: item.as_str().to_owned(),
     })?;
@@ -214,6 +233,7 @@ async fn run_poc_server(
                             state: PocTransportState::Failed,
                             bind_address: "0.0.0.0".to_owned(),
                             port: 0,
+                            discovery_published: false,
                             last_error: Some(format!("WebSocket POC 接收连接失败：{error}")),
                         });
                         break;
@@ -228,6 +248,7 @@ async fn run_poc_server(
             }
         }
     }
+    crate::discovery::unpublish_poc_service(&app);
 }
 
 async fn handle_poc_peer(app: AppHandle, peer: String, stream: tokio::net::TcpStream) {
@@ -240,6 +261,7 @@ async fn handle_poc_peer(app: AppHandle, peer: String, stream: tokio::net::TcpSt
                     state: PocTransportState::Failed,
                     bind_address: "0.0.0.0".to_owned(),
                     port: 0,
+                    discovery_published: false,
                     last_error: Some(format!("WebSocket POC 握手失败：{error}")),
                 },
             );

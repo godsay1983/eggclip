@@ -2,9 +2,9 @@
 
 EggClip 是纯局域网剪贴板同步工具。Windows 桌面端负责自动监听和同步，HarmonyOS 端在前台连接，并通过系统授权操作发送或复制文本。
 
-当前处于工程基线阶段：两端空壳、主题和构建链路已建立，剪贴板监听、mDNS、WebSocket、配对与端到端加密尚未进入实现。
+当前处于 D1/H1 技术 POC 阶段：Windows 剪贴板监听、双向 WebSocket 文本传输和最小 mDNS 服务发布已接通；HarmonyOS 已接入真实 PasteButton、手动 IP 连接和前台 mDNS 搜索。当前 POC 尚未认证，因此远端文本只进入预览，必须由用户点击复制；配对、端到端加密、历史存储和正式协议尚未实现。
 
-最后核对：2026-06-20。
+最后核对：2026-06-21。
 
 ## v1 范围
 
@@ -84,16 +84,17 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 
 ## 当前验证结果
 
-- 桌面：Svelte 类型检查、Vitest、前端构建、Rust fmt/check/test 通过。
+- 桌面：Svelte 类型检查、Vitest、前端构建、Rust fmt/check/test 通过；Rust 共 14 个测试通过。
 - 桌面：Tauri dev 进程、Vite 服务和 `eggclip.exe` 已成功启动；托盘交互仍需人工回归。
-- HarmonyOS：单元测试和 `assembleHap` 通过，当前产物未签名。
+- HarmonyOS：mDNS 搜索代码、WebSocket/PasteButton POC 已通过单元测试和 `assembleHap` 编译，当前产物未签名。
+- 桌面 POC server 启动时会发布 `_eggclip._tcp.local.` 临时服务；mDNS 只提供候选地址，不代表设备可信。
 - 当前工作树未发现签名密码、证书路径或剪贴板正文。
 
 ## 开发顺序
 
-1. 完成两端 H0/D0 人工回归和签名处理。
-2. 验证 Windows 原生剪贴板事件和手动 WebSocket。
-3. 验证 HarmonyOS 真机 mDNS、WebSocket、PasteButton 和 Pasteboard 写入。
+1. 在 Windows 与 HarmonyOS 真机上回归当前双向手动传输链路和前后台行为。
+2. 完成 H1 mDNS 发现与前后台生命周期的真机验证。
+3. 补齐 D1 连续重复复制、防火墙和两台 Windows 互通测试。
 4. 固化版本化协议、配对和端到端加密。
 5. 实现自动发现、补同步、设备管理和发布回归。
 

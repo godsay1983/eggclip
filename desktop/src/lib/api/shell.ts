@@ -35,6 +35,7 @@ interface PocTransportStatus {
   state: "running" | "stopped" | "failed";
   bindAddress: string;
   port: number;
+  discoveryPublished: boolean;
   lastError: string | null;
 }
 
@@ -120,7 +121,10 @@ export async function onPocClipboardText(
 
 function formatPocTransportStatus(status: PocTransportStatus): string {
   if (status.state === "running") {
-    return `WebSocket POC 正在监听 ${status.bindAddress}:${status.port}；局域网设备连接时请使用这台电脑的实际 IP 和该端口`;
+    const discovery = status.discoveryPublished
+      ? "mDNS POC 服务已发布"
+      : "mDNS 发布失败，可继续使用手动 IP";
+    return `WebSocket POC 正在监听 ${status.bindAddress}:${status.port}；${discovery}；手动连接请使用这台电脑的实际局域网 IP`;
   }
   if (status.state === "failed") {
     return status.lastError ?? "WebSocket POC 服务启动失败";

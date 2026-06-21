@@ -2,6 +2,8 @@ mod panel_position;
 mod tray;
 
 pub mod clipboard;
+pub mod discovery;
+pub mod sync;
 pub mod transport;
 
 use serde::Serialize;
@@ -35,6 +37,8 @@ pub fn run() {
             Some(vec!["--autostart"]),
         ))
         .manage(tray::PanelState::default())
+        .manage(clipboard::ClipboardRuntime::default())
+        .manage(discovery::PocDiscoveryRuntime::default())
         .manage(transport::PocTransportRuntime::default())
         .setup(|app| {
             let tray_icon = tray::create_tray(app.handle())?;

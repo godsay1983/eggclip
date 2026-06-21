@@ -1,4 +1,6 @@
 export const EGGCLIP_MDNS_SERVICE_TYPE: string = '_eggclip._tcp.local.';
+// Harmony mDNS APIs expect the DNS-SD service type without the `.local.` domain.
+export const EGGCLIP_MDNS_DISCOVERY_TYPE: string = '_eggclip._tcp';
 export const POC_MAX_FRAME_BYTES: number = 1024 * 1024;
 
 export enum PocLifecycleState {
@@ -32,6 +34,7 @@ export interface EndpointValidationResult {
 
 export interface MdnsServiceCandidate {
   instanceId: string;
+  serviceName: string;
   host: string;
   port: number;
   protocolVersion: number;

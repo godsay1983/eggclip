@@ -71,7 +71,7 @@ export const shellSnapshot = {
         setCurrentClipboard(
           current,
           "已收到 Harmony POC 文本",
-          `来自 ${peer}；当前只进入面板预览，不自动写入系统剪贴板`,
+          `来自 ${peer}；POC 尚未认证，只进入面板预览，请由用户点击复制`,
         );
       });
     } catch (error) {
@@ -106,7 +106,7 @@ export const shellSnapshot = {
         setCurrentClipboard(
           current,
           "已监听到本机剪贴板",
-          "这是 D1 POC：本机文本变化会自动显示在面板中，尚未同步到其他设备",
+          "这是 D1 POC：本机文本变化只更新面板，需由用户点击发送给 Harmony POC",
         );
       });
     } catch (error) {
