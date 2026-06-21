@@ -1,8 +1,31 @@
 import { MAX_TEXT_BYTES } from '../../utils/TextLimits';
+import { ClipboardValidationError, ClipboardValidationResult } from '../../models/PocModels';
 
 export class ClipboardBridgeService {
   validatePlainText(text: string): boolean {
-    return text.length > 0 && this.estimateUtf8Bytes(text) <= MAX_TEXT_BYTES;
+    return this.inspectPlainText(text).ok;
+  }
+
+  inspectPlainText(text: string): ClipboardValidationResult {
+    const byteLength = this.estimateUtf8Bytes(text);
+    if (byteLength === 0) {
+      return {
+        ok: false,
+        byteLength,
+        error: ClipboardValidationError.EMPTY
+      };
+    }
+    if (byteLength > MAX_TEXT_BYTES) {
+      return {
+        ok: false,
+        byteLength,
+        error: ClipboardValidationError.TOO_LARGE
+      };
+    }
+    return {
+      ok: true,
+      byteLength
+    };
   }
 
   private estimateUtf8Bytes(text: string): number {

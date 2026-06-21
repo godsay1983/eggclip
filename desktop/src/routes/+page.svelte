@@ -30,7 +30,11 @@
     description={$shellSnapshot.connection.description}
   />
 
-  <ClipboardCard current={$shellSnapshot.current} />
+  <ClipboardCard
+    current={$shellSnapshot.current}
+    onRead={() => shellSnapshot.readLocalClipboard()}
+    onCopy={() => shellSnapshot.copyCurrentToClipboard()}
+  />
 
   <DeviceChips devices={$shellSnapshot.devices} />
 

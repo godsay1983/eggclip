@@ -11,6 +11,14 @@
     {
       "name": "EntryAbility_label",
       "value": "蛋定 Clip"
+    },
+    {
+      "name": "permission_internet_reason",
+      "value": "用于在局域网内连接已配对的 EggClip 桌面端"
+    },
+    {
+      "name": "permission_network_info_reason",
+      "value": "用于判断当前网络状态并发现局域网内的 EggClip 服务"
     }
   ]
 }

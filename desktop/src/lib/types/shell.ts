@@ -14,6 +14,7 @@ export interface DeviceSummary {
 export interface ClipboardPreview {
   id: string;
   title: string;
+  text: string;
   preview: string;
   source: string;
   receivedAt: string;

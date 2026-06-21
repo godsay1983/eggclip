@@ -2,6 +2,8 @@
   import type { ClipboardPreview } from "$lib/types/shell";
 
   export let current: ClipboardPreview | null = null;
+  export let onRead: () => void = () => {};
+  export let onCopy: () => void = () => {};
 </script>
 
 <section class="clipboard-card">
@@ -22,5 +24,10 @@
     </p>
   {/if}
 
-  <button class="primary-action" type="button" disabled={!current?.canCopy}>复制此内容</button>
+  <div class="action-row">
+    <button class="secondary-action" type="button" on:click={onRead}>读取本机剪贴板</button>
+    <button class="primary-action" type="button" disabled={!current?.canCopy} on:click={onCopy}>
+      复制此内容
+    </button>
+  </div>
 </section>

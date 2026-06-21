@@ -1,6 +1,8 @@
+import { EGGCLIP_MDNS_SERVICE_TYPE, PocRuntimeState } from '../models/PocModels';
 import { StatusDot } from '../components/common/StatusDot';
 import { HomeShellState } from '../models/ShellModels';
 import { createInitialHomeShellState } from '../store/HomeStore';
+import { createInitialPocRuntimeState } from '../store/PocStore';
 import { EggClipColors } from '../theme/Colors';
 import { EggClipSpacing } from '../theme/Spacing';
 import { EggClipTypography } from '../theme/Typography';
@@ -8,12 +10,14 @@ import { EggClipTypography } from '../theme/Typography';
 @Component
 export struct HomePage {
   private readonly state: HomeShellState = createInitialHomeShellState();
+  private readonly pocState: PocRuntimeState = createInitialPocRuntimeState();
 
   build() {
     Scroll() {
       Column({ space: EggClipSpacing.sectionGap }) {
         this.Header()
         this.ConnectionCard()
+        this.PocStatusCard()
         this.LatestClipboardCard()
         this.HistoryPlaceholder()
       }
@@ -70,6 +74,44 @@ export struct HomePage {
       .layoutWeight(1)
     }
     .width('100%')
+    .padding(EggClipSpacing.cardPadding)
+    .backgroundColor(EggClipColors.cardBackground)
+    .borderRadius(EggClipSpacing.radiusMedium)
+  }
+
+  @Builder
+  private PocStatusCard() {
+    Column({ space: 10 }) {
+      Row() {
+        Text('POC 状态')
+          .fontSize(EggClipTypography.bodySize)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(EggClipColors.textPrimary)
+          .layoutWeight(1)
+
+        Text('H1')
+          .fontSize(EggClipTypography.captionSize)
+          .fontColor(EggClipColors.textSecondary)
+      }
+      .width('100%')
+
+      Text(`mDNS: ${EGGCLIP_MDNS_SERVICE_TYPE}`)
+        .width('100%')
+        .fontSize(EggClipTypography.captionSize)
+        .fontColor(EggClipColors.textSecondary)
+
+      Text(`发现服务：${this.pocState.discoveryState} · WebSocket：${this.pocState.transportState}`)
+        .width('100%')
+        .fontSize(EggClipTypography.captionSize)
+        .fontColor(EggClipColors.textSecondary)
+
+      Text('已声明局域网网络权限；PasteButton 和真机连接仍待接入。')
+        .width('100%')
+        .fontSize(EggClipTypography.captionSize)
+        .fontColor(EggClipColors.textSecondary)
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
     .padding(EggClipSpacing.cardPadding)
     .backgroundColor(EggClipColors.cardBackground)
     .borderRadius(EggClipSpacing.radiusMedium)

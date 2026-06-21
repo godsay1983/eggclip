@@ -12,7 +12,7 @@
 - 模型：Stage Model
 - 入口 Ability：`EntryAbility`
 - 当前首页：`entry/src/main/ets/pages/Index.ets`
-- 当前状态：H0 工程基线、主题、目标模块目录和空壳首页已建立，尚未进入真机网络与剪贴板 POC。
+- 当前状态：H0 工程基线、主题、目标模块目录和空壳首页已建立；HarmonyOS 图标已与桌面端同源，H1 已声明网络 POC 所需最小权限并在首页展示 POC 状态，尚未接入真机 mDNS/WebSocket/PasteButton。
 - 参考项目：`D:\Develop\EggDoneHarmony\EggDone`
 - 架构基线：`docs/EggClip最佳实现方案.md`
 
@@ -74,7 +74,7 @@ harmony/entry/src/main/ets/
 ### 工程基础
 
 - [x] 替换模板 App/Ability 名称和字符串资源为 EggClip / 蛋定 Clip。
-- [ ] 使用 `docs/icon.png` 生成或适配 HarmonyOS 分层图标和启动图。
+- [x] 使用 `docs/icon.png` 生成或适配 HarmonyOS 分层图标和启动图。
 - [x] 建立 `Colors.ets`、`Spacing.ets` 和 `Typography.ets`。
 - [x] 建立亮色、暗色和跟随系统资源。
 - [x] 建立上述目标模块目录和空入口。
@@ -95,7 +95,7 @@ harmony/entry/src/main/ets/
 
 ### mDNS
 
-- [ ] 在 `module.json5` 声明 POC 所需最小网络权限。
+- [x] 在 `module.json5` 声明 POC 所需最小网络权限。
 - [ ] 使用 `@ohos.net.mdns` 搜索 `_eggclip._tcp.local.`。
 - [ ] 展示发现服务的地址、端口和协议版本，不记录敏感 TXT 字段。
 - [ ] 实现开始搜索、停止搜索、重复回调去重和页面销毁清理。

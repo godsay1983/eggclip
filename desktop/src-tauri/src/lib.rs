@@ -1,6 +1,8 @@
 mod panel_position;
 mod tray;
 
+pub mod clipboard;
+
 use serde::Serialize;
 use tauri::{Emitter, Manager, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
@@ -50,6 +52,10 @@ pub fn run() {
             }
             _ => {}
         })
+        .invoke_handler(tauri::generate_handler![
+            clipboard::read_clipboard_text,
+            clipboard::write_clipboard_text,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
