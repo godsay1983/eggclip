@@ -19,6 +19,8 @@ export struct HomePage {
   @State private manualPort: string = '0';
   @State private pasteStatus: string = '等待点击 PasteButton 触发一次性授权';
   @State private transportStatus: string = '输入桌面端 IP 和端口后手动连接';
+  @State private copyStatus: string = '收到桌面文本后可手动复制到本机';
+  @State private latestReceivedText: string = '';
   @State private latestReceivedPreview: string = '';
   @State private latestReceivedSource: string = '暂无内容';
 
@@ -248,10 +250,18 @@ export struct HomePage {
       Button('复制到本机')
         .width('100%')
         .height(46)
-        .enabled(this.state.latest !== null && this.state.latest.canCopy)
+        .enabled(this.latestReceivedText.length > 0)
         .fontColor(EggClipColors.onPrimary)
         .backgroundColor(EggClipColors.primary)
         .borderRadius(23)
+        .onClick(() => {
+          this.copyLatestReceivedToLocal();
+        })
+
+      Text(this.copyStatus)
+        .width('100%')
+        .fontSize(EggClipTypography.captionSize)
+        .fontColor(EggClipColors.textSecondary)
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -300,8 +310,10 @@ export struct HomePage {
       onMessage: (message: string) => {
         const text = this.transport.parseClipboardTextMessage(message);
         if (text !== null) {
+          this.latestReceivedText = text;
           this.latestReceivedPreview = this.trimPreview(text);
           this.latestReceivedSource = 'Desktop POC';
+          this.copyStatus = '已收到桌面 POC 文本，可点击复制到本机';
           this.transportStatus = `收到桌面 POC 文本：${text.length} 字符`;
         }
       }
@@ -328,6 +340,22 @@ export struct HomePage {
       })
       .catch(() => {
         this.pasteStatus = '发送到桌面 POC 失败';
+      });
+  }
+
+  private copyLatestReceivedToLocal(): void {
+    if (this.latestReceivedText.length === 0) {
+      this.copyStatus = '暂无可复制内容';
+      return;
+    }
+
+    this.copyStatus = '正在写入本机剪贴板';
+    this.clipboardBridge.writePlainTextByUserAction(this.latestReceivedText)
+      .then((result) => {
+        this.copyStatus = result.message;
+      })
+      .catch(() => {
+        this.copyStatus = '写入本机剪贴板失败，请稍后重试';
       });
   }
 

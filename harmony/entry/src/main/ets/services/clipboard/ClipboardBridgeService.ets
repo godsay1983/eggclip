@@ -10,6 +10,13 @@ export interface ClipboardPlainTextReadResult {
   message: string;
 }
 
+export interface ClipboardPlainTextWriteResult {
+  ok: boolean;
+  byteLength: number;
+  error?: ClipboardValidationError;
+  message: string;
+}
+
 export class ClipboardBridgeService {
   async readPlainTextAfterPasteButton(): Promise<ClipboardPlainTextReadResult> {
     let pasteData: pasteboard.PasteData;
@@ -58,6 +65,35 @@ export class ClipboardBridgeService {
 
   validatePlainText(text: string): boolean {
     return this.inspectPlainText(text).ok;
+  }
+
+  async writePlainTextByUserAction(text: string): Promise<ClipboardPlainTextWriteResult> {
+    const validation = this.inspectPlainText(text);
+    if (!validation.ok) {
+      return {
+        ok: false,
+        byteLength: validation.byteLength,
+        error: validation.error,
+        message: this.formatValidationMessage(validation)
+      };
+    }
+
+    try {
+      const systemPasteboard = pasteboard.getSystemPasteboard();
+      const pasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
+      await systemPasteboard.setData(pasteData);
+      return {
+        ok: true,
+        byteLength: validation.byteLength,
+        message: `已复制 ${validation.byteLength} 字节纯文本到本机剪贴板`
+      };
+    } catch (_) {
+      return {
+        ok: false,
+        byteLength: validation.byteLength,
+        message: '写入本机剪贴板失败，请稍后重试'
+      };
+    }
   }
 
   inspectPlainText(text: string): ClipboardValidationResult {

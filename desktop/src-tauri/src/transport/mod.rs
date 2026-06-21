@@ -170,16 +170,22 @@ pub fn send_poc_clipboard_text(
     let message = serialize_poc_server_message(&PocServerMessage::ClipboardText {
         text: item.as_str().to_owned(),
     })?;
-    let peers = runtime
+    let mut peers = runtime
         .peers
         .lock()
         .map_err(|_| "WebSocket POC peer 状态锁已损坏".to_owned())?;
 
     let mut sent_count = 0;
-    for sender in peers.values() {
+    let mut stale_peers = Vec::new();
+    for (peer, sender) in peers.iter() {
         if sender.send(Message::Text(message.clone().into())).is_ok() {
             sent_count += 1;
+        } else {
+            stale_peers.push(peer.clone());
         }
+    }
+    for peer in stale_peers {
+        peers.remove(&peer);
     }
     Ok(sent_count)
 }

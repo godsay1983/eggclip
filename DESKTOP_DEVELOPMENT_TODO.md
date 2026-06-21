@@ -106,6 +106,7 @@ desktop/
 - [x] 定义临时 POC 消息，完成双向文本传输。
 - [x] 接收 HarmonyOS 端发送的临时 `clipboardText` JSON 消息并显示到面板预览。
 - [x] 将当前面板文本通过临时 `clipboardText` JSON 广播给已连接 POC peer。
+- [x] 发送到 POC peer 失败时清理断开的临时连接引用。
 - [x] 连接和剪贴板处理运行在 Rust 后端，不阻塞 Tauri UI 线程。
 - [x] 增加消息大小和基础错误处理；连接超时待补。
 - [ ] 验证 Windows 防火墙首次提示和专用/公用网络差异。
