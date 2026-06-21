@@ -26,6 +26,13 @@ interface ClipboardMonitorEvent {
   item: ClipboardTextItem;
 }
 
+interface PocTransportStatus {
+  state: "running" | "stopped" | "failed";
+  bindAddress: string;
+  port: number;
+  lastError: string | null;
+}
+
 export function createInitialShellSnapshot(): ShellSnapshot {
   return {
     connection: {
@@ -61,6 +68,18 @@ export async function writeSystemClipboardText(text: string): Promise<void> {
   await invoke("write_clipboard_text", { text });
 }
 
+export async function startPocTransport(): Promise<string> {
+  const status = await invoke<PocTransportStatus>("start_poc_transport", {
+    port: null,
+  });
+  return formatPocTransportStatus(status);
+}
+
+export async function getPocTransportStatus(): Promise<string> {
+  const status = await invoke<PocTransportStatus>("get_poc_transport_status");
+  return formatPocTransportStatus(status);
+}
+
 export async function onLocalClipboardText(
   handler: (preview: ClipboardPreview) => void,
 ): Promise<() => void> {
@@ -72,6 +91,16 @@ export async function onLocalClipboardText(
   );
 
   return unlisten;
+}
+
+function formatPocTransportStatus(status: PocTransportStatus): string {
+  if (status.state === "running") {
+    return `WebSocket POC 正在监听 ${status.bindAddress}:${status.port}；局域网设备连接时请使用这台电脑的实际 IP 和该端口`;
+  }
+  if (status.state === "failed") {
+    return status.lastError ?? "WebSocket POC 服务启动失败";
+  }
+  return "WebSocket POC 尚未启动";
 }
 
 function toClipboardPreview(

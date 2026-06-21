@@ -2,6 +2,7 @@ mod panel_position;
 mod tray;
 
 pub mod clipboard;
+pub mod transport;
 
 use serde::Serialize;
 use tauri::{Emitter, Manager, WindowEvent};
@@ -34,6 +35,7 @@ pub fn run() {
             Some(vec!["--autostart"]),
         ))
         .manage(tray::PanelState::default())
+        .manage(transport::PocTransportRuntime::default())
         .setup(|app| {
             let tray_icon = tray::create_tray(app.handle())?;
             app.manage(tray_icon);
@@ -56,6 +58,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             clipboard::read_clipboard_text,
             clipboard::write_clipboard_text,
+            transport::get_poc_transport_status,
+            transport::start_poc_transport,
+            transport::stop_poc_transport,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

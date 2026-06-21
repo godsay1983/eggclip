@@ -12,7 +12,7 @@
 - 模型：Stage Model
 - 入口 Ability：`EntryAbility`
 - 当前首页：`entry/src/main/ets/pages/Index.ets`
-- 当前状态：H0 工程基线、主题、目标模块目录和空壳首页已建立；HarmonyOS 图标已与桌面端同源，H1 已声明网络 POC 所需最小权限，首页已展示 POC 状态并接入真实 PasteButton，尚未接入真机 mDNS/WebSocket 和 pasteboard 读取。
+- 当前状态：H0 工程基线、主题、目标模块目录和空壳首页已建立；HarmonyOS 图标已与桌面端同源，H1 已声明网络 POC 所需最小权限，首页已展示 POC 状态并接入真实 PasteButton + pasteboard 纯文本读取，尚未接入真机 mDNS/WebSocket。
 - 参考项目：`D:\Develop\EggDoneHarmony\EggDone`
 - 架构基线：`docs/EggClip最佳实现方案.md`
 
@@ -112,7 +112,7 @@ harmony/entry/src/main/ets/
 ### 剪贴板
 
 - [x] 使用真实 ArkUI `PasteButton` 构建“粘贴并发送”操作。
-- [ ] 点击授权成功后调用 Pasteboard 读取纯文本。
+- [x] 点击授权成功后调用 Pasteboard 读取纯文本。
 - [ ] 授权失败、空剪贴板、不支持格式和超过 256 KiB 时显示明确错误。
 - [ ] 收到桌面文本后只显示预览，不自动写入系统剪贴板。
 - [ ] 用户点击“复制到本机”后调用 `pasteboard.setData()`。

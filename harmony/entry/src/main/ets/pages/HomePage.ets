@@ -1,6 +1,7 @@
 import { EGGCLIP_MDNS_SERVICE_TYPE, PocRuntimeState } from '../models/PocModels';
 import { StatusDot } from '../components/common/StatusDot';
 import { HomeShellState } from '../models/ShellModels';
+import { ClipboardBridgeService } from '../services/clipboard/ClipboardBridgeService';
 import { createInitialHomeShellState } from '../store/HomeStore';
 import { createInitialPocRuntimeState } from '../store/PocStore';
 import { EggClipColors } from '../theme/Colors';
@@ -11,6 +12,7 @@ import { EggClipTypography } from '../theme/Typography';
 export struct HomePage {
   private readonly state: HomeShellState = createInitialHomeShellState();
   private readonly pocState: PocRuntimeState = createInitialPocRuntimeState();
+  private readonly clipboardBridge: ClipboardBridgeService = new ClipboardBridgeService();
   @State private pasteStatus: string = '等待点击 PasteButton 触发一次性授权';
 
   build() {
@@ -106,7 +108,7 @@ export struct HomePage {
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
 
-      Text('已声明局域网网络权限；PasteButton 安全组件已接入，pasteboard 读取和真机连接待接入。')
+      Text('已声明局域网网络权限；PasteButton 已接入 pasteboard 纯文本读取，真机连接待接入。')
         .width('100%')
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
@@ -150,9 +152,18 @@ export struct HomePage {
           .backgroundColor(EggClipColors.primary)
           .borderRadius(23)
           .onClick((_event: ClickEvent, result: PasteButtonOnClickResult) => {
-            this.pasteStatus = result === PasteButtonOnClickResult.SUCCESS
-              ? 'PasteButton 已授权；下一步接入 pasteboard.getData() 读取纯文本'
-              : 'PasteButton 临时授权失败，未读取系统剪贴板';
+            if (result !== PasteButtonOnClickResult.SUCCESS) {
+              this.pasteStatus = 'PasteButton 临时授权失败，未读取系统剪贴板';
+              return;
+            }
+            this.pasteStatus = 'PasteButton 已授权，正在读取纯文本';
+            this.clipboardBridge.readPlainTextAfterPasteButton()
+              .then((readResult) => {
+                this.pasteStatus = readResult.message;
+              })
+              .catch(() => {
+                this.pasteStatus = '读取剪贴板失败，请确认当前内容是纯文本并重试';
+              });
           })
 
         Text(this.pasteStatus)

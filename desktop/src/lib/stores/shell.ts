@@ -1,14 +1,17 @@
 import { derived, writable } from "svelte/store";
 import {
   createInitialShellSnapshot,
+  getPocTransportStatus,
   onLocalClipboardText,
   readSystemClipboardText,
+  startPocTransport,
   writeSystemClipboardText,
 } from "$lib/api/shell";
 import type { ClipboardPreview } from "$lib/types/shell";
 
 const snapshot = writable(createInitialShellSnapshot());
 let monitorStarted = false;
+let pocTransportStarted = false;
 
 function setCurrentClipboard(
   current: ClipboardPreview,
@@ -28,6 +31,43 @@ function setCurrentClipboard(
 
 export const shellSnapshot = {
   subscribe: snapshot.subscribe,
+  async startPocTransport() {
+    if (pocTransportStarted) {
+      return;
+    }
+    pocTransportStarted = true;
+    try {
+      const description = await startPocTransport();
+      snapshot.update((state) => ({
+        ...state,
+        connection: {
+          state: "connecting",
+          title: "WebSocket POC 服务已启动",
+          description,
+        },
+      }));
+    } catch (error) {
+      pocTransportStarted = false;
+      snapshot.update((state) => ({
+        ...state,
+        connection: {
+          state: "authFailed",
+          title: "WebSocket POC 服务启动失败",
+          description: error instanceof Error ? error.message : "无法启动本地 POC 服务",
+        },
+      }));
+    }
+  },
+  async refreshPocTransportStatus() {
+    const description = await getPocTransportStatus();
+    snapshot.update((state) => ({
+      ...state,
+      connection: {
+        ...state.connection,
+        description,
+      },
+    }));
+  },
   async startClipboardMonitor() {
     if (monitorStarted) {
       return;

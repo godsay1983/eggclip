@@ -5,7 +5,7 @@
 ## 当前状态
 
 - 工程目录：`D:\Develop\eggclip\desktop`
-- D0 工程基线已建立，桌面 UI 已拆出 TypeScript API / store / component 基线；D1 剪贴板 POC 已开始，当前完成文本边界、手动读写系统剪贴板、Win32 剪贴板事件监听和回环抑制核心逻辑，尚未接入手动 WebSocket。
+- D0 工程基线已建立，桌面 UI 已拆出 TypeScript API / store / component 基线；D1 剪贴板 POC 已开始，当前完成文本边界、手动读写系统剪贴板、Win32 剪贴板事件监听、回环抑制核心逻辑和 WebSocket POC server 骨架。
 - 目标平台：Windows 10/11。
 - 目标技术栈：Tauri 2、Svelte 5、SvelteKit、TypeScript、Rust、SQLite。
 - 应用标识建议：`com.eggclip.desktop`。
@@ -101,11 +101,11 @@ desktop/
 
 ### 手动 WebSocket
 
-- [ ] 使用 `tokio` 和 `tokio-tungstenite` 启动本地 server。
+- [x] 使用 `tokio` 和 `tokio-tungstenite` 启动本地 server。
 - [ ] 支持手动输入 IP/端口连接另一个桌面进程。
 - [ ] 定义临时 POC 消息，完成双向文本传输。
-- [ ] 连接和剪贴板处理运行在 Rust 后端，不阻塞 Tauri UI 线程。
-- [ ] 增加消息大小、连接超时和基础错误处理。
+- [x] 连接和剪贴板处理运行在 Rust 后端，不阻塞 Tauri UI 线程。
+- [x] 增加消息大小和基础错误处理；连接超时待补。
 - [ ] 验证 Windows 防火墙首次提示和专用/公用网络差异。
 
 验收标准：
