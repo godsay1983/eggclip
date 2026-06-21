@@ -24,6 +24,10 @@ export struct HomePage {
   @State private latestReceivedPreview: string = '';
   @State private latestReceivedSource: string = '暂无内容';
 
+  aboutToDisappear(): void {
+    this.transport.close();
+  }
+
   build() {
     Scroll() {
       Column({ space: EggClipSpacing.sectionGap }) {
@@ -178,6 +182,16 @@ export struct HomePage {
           this.connectManualEndpoint();
         })
 
+      Button('断开 POC 连接')
+        .width('100%')
+        .height(40)
+        .fontColor(EggClipColors.textSecondary)
+        .backgroundColor(EggClipColors.controlBackground)
+        .borderRadius(20)
+        .onClick(() => {
+          this.disconnectManualEndpoint();
+        })
+
       Text(this.transportStatus)
         .width('100%')
         .fontSize(EggClipTypography.captionSize)
@@ -315,6 +329,8 @@ export struct HomePage {
           this.latestReceivedSource = 'Desktop POC';
           this.copyStatus = '已收到桌面 POC 文本，可点击复制到本机';
           this.transportStatus = `收到桌面 POC 文本：${text.length} 字符`;
+        } else {
+          this.transportStatus = '收到无法识别或超限的 POC 消息，已忽略';
         }
       }
     })
@@ -341,6 +357,11 @@ export struct HomePage {
       .catch(() => {
         this.pasteStatus = '发送到桌面 POC 失败';
       });
+  }
+
+  private disconnectManualEndpoint(): void {
+    this.transport.close();
+    this.transportStatus = '已主动断开桌面 POC';
   }
 
   private copyLatestReceivedToLocal(): void {

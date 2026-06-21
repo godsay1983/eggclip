@@ -1,5 +1,7 @@
 import webSocket from '@ohos.net.webSocket';
-import { EndpointValidationResult, ManualEndpoint, PocLifecycleState } from '../../models/PocModels';
+import { EndpointValidationResult, ManualEndpoint, POC_MAX_FRAME_BYTES, PocLifecycleState } from '../../models/PocModels';
+
+const CONNECT_TIMEOUT_MS: number = 8000;
 
 export interface PocTransportCallbacks {
   onOpen: () => void;
@@ -17,6 +19,7 @@ export class WebSocketTransportService {
   private state: PocLifecycleState = PocLifecycleState.IDLE;
   private socket: webSocket.WebSocket | null = null;
   private connected: boolean = false;
+  private connectTimeoutId: number = -1;
 
   currentState(): PocLifecycleState {
     return this.state;
@@ -60,8 +63,17 @@ export class WebSocketTransportService {
     this.connected = false;
     const socket = webSocket.createWebSocket();
     this.socket = socket;
+    this.connectTimeoutId = setTimeout(() => {
+      if (this.state === PocLifecycleState.STARTING) {
+        this.state = PocLifecycleState.FAILED;
+        this.connected = false;
+        callbacks.onError('connect timeout');
+        this.close();
+      }
+    }, CONNECT_TIMEOUT_MS);
 
     socket.on('open', () => {
+      this.clearConnectTimeout();
       this.state = PocLifecycleState.RUNNING;
       this.connected = true;
       callbacks.onOpen();
@@ -69,14 +81,18 @@ export class WebSocketTransportService {
     socket.on('message', (_error, data: string | ArrayBuffer) => {
       if (typeof data === 'string') {
         callbacks.onMessage(data);
+      } else {
+        callbacks.onError('binary messages are not supported in POC');
       }
     });
     socket.on('close', (_error, closeResult: webSocket.CloseResult) => {
+      this.clearConnectTimeout();
       this.state = PocLifecycleState.IDLE;
       this.connected = false;
       callbacks.onClose(`${closeResult.code}: ${closeResult.reason}`);
     });
     socket.on('error', (error) => {
+      this.clearConnectTimeout();
       this.state = PocLifecycleState.FAILED;
       this.connected = false;
       callbacks.onError(error.message);
@@ -89,6 +105,7 @@ export class WebSocketTransportService {
         pongTimeout: 10
       });
     } catch (_) {
+      this.clearConnectTimeout();
       this.state = PocLifecycleState.FAILED;
       this.connected = false;
       return {
@@ -118,9 +135,16 @@ export class WebSocketTransportService {
   }
 
   parseClipboardTextMessage(message: string): string | null {
+    if (this.estimateUtf8Bytes(message) > POC_MAX_FRAME_BYTES) {
+      return null;
+    }
     try {
       const parsed = JSON.parse(message) as PocClipboardTextMessage;
-      if (parsed.kind === 'clipboardText' && typeof parsed.text === 'string') {
+      if (
+        parsed.kind === 'clipboardText' &&
+        typeof parsed.text === 'string' &&
+        this.estimateUtf8Bytes(parsed.text) <= POC_MAX_FRAME_BYTES
+      ) {
         return parsed.text;
       }
     } catch (_) {
@@ -130,6 +154,7 @@ export class WebSocketTransportService {
   }
 
   close(): void {
+    this.clearConnectTimeout();
     if (this.socket !== null) {
       this.socket.off('open');
       this.socket.off('message');
@@ -141,5 +166,30 @@ export class WebSocketTransportService {
     }
     this.connected = false;
     this.state = PocLifecycleState.IDLE;
+  }
+
+  private clearConnectTimeout(): void {
+    if (this.connectTimeoutId >= 0) {
+      clearTimeout(this.connectTimeoutId);
+      this.connectTimeoutId = -1;
+    }
+  }
+
+  private estimateUtf8Bytes(text: string): number {
+    let bytes = 0;
+    for (let index = 0; index < text.length; index += 1) {
+      const code = text.charCodeAt(index);
+      if (code <= 0x7f) {
+        bytes += 1;
+      } else if (code <= 0x7ff) {
+        bytes += 2;
+      } else if (code >= 0xd800 && code <= 0xdbff) {
+        bytes += 4;
+        index += 1;
+      } else {
+        bytes += 3;
+      }
+    }
+    return bytes;
   }
 }

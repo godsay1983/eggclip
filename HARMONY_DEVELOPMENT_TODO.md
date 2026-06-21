@@ -12,7 +12,7 @@
 - 模型：Stage Model
 - 入口 Ability：`EntryAbility`
 - 当前首页：`entry/src/main/ets/pages/Index.ets`
-- 当前状态：H0 工程基线、主题、目标模块目录和空壳首页已建立；HarmonyOS 图标已与桌面端同源，H1 已声明网络 POC 所需最小权限，首页已展示 POC 状态并接入真实 PasteButton、pasteboard 纯文本读取、手动 IP WebSocket 连接、Desktop ↔ Harmony 临时文本收发和用户触发复制到本机。
+- 当前状态：H0 工程基线、主题、目标模块目录和空壳首页已建立；HarmonyOS 图标已与桌面端同源，H1 已声明网络 POC 所需最小权限，首页已展示 POC 状态并接入真实 PasteButton、pasteboard 纯文本读取、手动 IP WebSocket 连接、Desktop ↔ Harmony 临时文本收发、用户触发复制到本机和 POC 连接生命周期清理。
 - 参考项目：`D:\Develop\EggDoneHarmony\EggDone`
 - 架构基线：`docs/EggClip最佳实现方案.md`
 
@@ -105,8 +105,8 @@ harmony/entry/src/main/ets/
 
 - [x] 使用 NetworkKit WebSocket 连接桌面 POC server。
 - [x] 实现 open、message、error、close 监听。
-- [ ] 实现连接超时、主动关闭和页面前后台生命周期处理。
-- [ ] 增加最大消息大小和基础 JSON 校验。
+- [x] 实现连接超时、主动关闭和页面前台销毁清理；后台生命周期待真机进一步验证。
+- [x] 增加最大消息大小和基础 JSON 校验。
 - [x] 先支持手动 IP，mDNS 发现结果作为候选地址。
 
 ### 剪贴板
@@ -117,7 +117,7 @@ harmony/entry/src/main/ets/
 - [x] 连接桌面 POC 后，PasteButton 读取成功可发送临时 `clipboardText` JSON。
 - [x] 收到桌面 POC 文本后只显示预览，不自动写入系统剪贴板。
 - [x] 用户点击“复制到本机”后调用 `pasteboard.setData()`。
-- [ ] 不申请或依赖普通三方应用无法获得的 `READ_PASTEBOARD` 常规权限路径。
+- [x] 不申请或依赖普通三方应用无法获得的 `READ_PASTEBOARD` 常规权限路径。
 
 验收标准：
 
