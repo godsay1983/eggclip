@@ -11,7 +11,7 @@ pnpm tauri dev
 
 应用启动后默认隐藏，请从系统托盘打开“蛋定 Clip”。
 
-启动 POC server 后，桌面端会发布 `_eggclip._tcp.local.` 临时服务；HarmonyOS 也可使用面板显示的端口和本机局域网 IP 手动连接。未认证 POC 不自动广播或写入系统剪贴板：桌面发送需要点击面板操作，收到 HarmonyOS 文本后也需要用户点击复制。
+启动 POC server 后，桌面端会发布 `_eggclip._tcp.local.` 临时服务，并在状态卡中列出可用 IPv4、所属网卡及隧道标记；HarmonyOS 也可使用这些地址和面板端口手动连接。设备区域会显示当前 POC peer。未认证 POC 不自动广播或写入系统剪贴板：桌面发送需要点击面板操作，收到 HarmonyOS 文本后也需要用户点击复制。
 
 ## 检查
 

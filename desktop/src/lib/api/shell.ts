@@ -36,7 +36,19 @@ interface PocTransportStatus {
   bindAddress: string;
   port: number;
   discoveryPublished: boolean;
+  networkAddresses: PocNetworkAddress[];
+  connectedPeers: number;
   lastError: string | null;
+}
+
+interface PocNetworkAddress {
+  interfaceName: string;
+  address: string;
+  isTunnel: boolean;
+}
+
+interface PocPeerEvent {
+  peer: string;
 }
 
 export function createInitialShellSnapshot(): ShellSnapshot {
@@ -119,17 +131,55 @@ export async function onPocClipboardText(
   return unlisten;
 }
 
+export async function onPocPeerConnected(
+  handler: (peer: string) => void,
+): Promise<() => void> {
+  return listen<PocPeerEvent>("transport://poc-peer-connected", (event) => {
+    handler(event.payload.peer);
+  });
+}
+
+export async function onPocPeerDisconnected(
+  handler: (peer: string) => void,
+): Promise<() => void> {
+  return listen<PocPeerEvent>("transport://poc-peer-disconnected", (event) => {
+    handler(event.payload.peer);
+  });
+}
+
+export async function onPocDiscoveryError(
+  handler: (message: string) => void,
+): Promise<() => void> {
+  return listen<string>("discovery://poc-error", (event) => {
+    handler(event.payload);
+  });
+}
+
 function formatPocTransportStatus(status: PocTransportStatus): string {
   if (status.state === "running") {
     const discovery = status.discoveryPublished
       ? "mDNS POC 服务已发布"
       : "mDNS 发布失败，可继续使用手动 IP";
-    return `WebSocket POC 正在监听 ${status.bindAddress}:${status.port}；${discovery}；手动连接请使用这台电脑的实际局域网 IP`;
+    const addresses = formatPocNetworkAddresses(status.networkAddresses);
+    const peers = status.connectedPeers > 0 ? `；已连接 ${status.connectedPeers} 个 POC` : "";
+    return `WebSocket POC 端口 ${status.port}；${discovery}；${addresses}${peers}`;
   }
   if (status.state === "failed") {
     return status.lastError ?? "WebSocket POC 服务启动失败";
   }
   return "WebSocket POC 尚未启动";
+}
+
+function formatPocNetworkAddresses(addresses: PocNetworkAddress[]): string {
+  if (addresses.length === 0) {
+    return "未找到可用 IPv4，请检查网络适配器";
+  }
+  const visible = addresses.slice(0, 5).map((item) => {
+    const tunnel = item.isTunnel ? "，隧道" : "";
+    return `${item.interfaceName} ${item.address}${tunnel}`;
+  });
+  const remaining = addresses.length - visible.length;
+  return `候选地址：${visible.join("；")}${remaining > 0 ? `；另有 ${remaining} 个` : ""}`;
 }
 
 function toClipboardPreview(

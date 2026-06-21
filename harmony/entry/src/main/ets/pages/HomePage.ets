@@ -6,7 +6,7 @@ import {
   PocLifecycleState
 } from '../models/PocModels';
 import { StatusDot } from '../components/common/StatusDot';
-import { HomeShellState } from '../models/ShellModels';
+import { ConnectionState, HomeShellState } from '../models/ShellModels';
 import { ClipboardBridgeService } from '../services/clipboard/ClipboardBridgeService';
 import { MdnsDiscoveryService } from '../services/discovery/MdnsDiscoveryService';
 import { WebSocketTransportService } from '../services/transport/WebSocketTransportService';
@@ -31,6 +31,9 @@ export struct HomePage {
   @State private discoveryStatus: string = '等待开始局域网发现';
   @State private discoveryCandidates: MdnsServiceCandidate[] = [];
   @State private transportState: PocLifecycleState = PocLifecycleState.IDLE;
+  @State private connectionState: ConnectionState = ConnectionState.OFFLINE;
+  @State private connectionTitle: string = '等待桌面端';
+  @State private connectionDescription: string = '正在等待 mDNS 候选，也可以使用手动 IP';
   @State private pasteStatus: string = '等待点击 PasteButton 触发一次性授权';
   @State private transportStatus: string = '输入桌面端 IP 和端口后手动连接';
   @State private copyStatus: string = '收到桌面文本后可手动复制到本机';
@@ -105,15 +108,15 @@ export struct HomePage {
   @Builder
   private ConnectionCard() {
     Row({ space: 10 }) {
-      StatusDot({ state: this.state.connection.state })
+      StatusDot({ state: this.connectionState })
 
       Column({ space: 3 }) {
-        Text(this.state.connection.title)
+        Text(this.connectionTitle)
           .fontSize(EggClipTypography.bodySize)
           .fontWeight(FontWeight.Medium)
           .fontColor(EggClipColors.textPrimary)
 
-        Text(this.state.connection.description)
+        Text(this.connectionDescription)
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
       }
@@ -400,19 +403,31 @@ export struct HomePage {
     };
     this.transportStatus = '正在连接桌面 POC';
     this.transportState = PocLifecycleState.STARTING;
+    this.connectionState = ConnectionState.CONNECTING;
+    this.connectionTitle = '正在连接桌面 POC';
+    this.connectionDescription = `${endpoint.host}:${endpoint.port}`;
     this.transport.connect(endpoint, {
       onOpen: () => {
         this.reconnectOnForeground = true;
         this.transportState = PocLifecycleState.RUNNING;
         this.transportStatus = '已连接桌面 POC，PasteButton 读取后会发送文本';
+        this.connectionState = ConnectionState.ONLINE;
+        this.connectionTitle = '已连接桌面 POC';
+        this.connectionDescription = `${endpoint.host}:${endpoint.port} · 当前连接尚未认证`;
       },
       onClose: (reason: string) => {
         this.transportState = PocLifecycleState.IDLE;
         this.transportStatus = `连接已关闭：${reason}`;
+        this.connectionState = ConnectionState.OFFLINE;
+        this.connectionTitle = '桌面 POC 已断开';
+        this.connectionDescription = reason;
       },
       onError: (reason: string) => {
         this.transportState = PocLifecycleState.FAILED;
         this.transportStatus = `连接失败：${reason}`;
+        this.connectionState = ConnectionState.OFFLINE;
+        this.connectionTitle = '连接桌面 POC 失败';
+        this.connectionDescription = `${reason}；可尝试其他候选或手动 IP`;
       },
       onMessage: (message: string) => {
         const text = this.transport.parseClipboardTextMessage(message);
@@ -422,6 +437,9 @@ export struct HomePage {
           this.latestReceivedSource = 'Desktop POC';
           this.copyStatus = '已收到桌面 POC 文本，可点击复制到本机';
           this.transportStatus = `收到桌面 POC 文本：${text.length} 字符`;
+          this.connectionState = ConnectionState.ONLINE;
+          this.connectionTitle = '已收到桌面 POC 文本';
+          this.connectionDescription = '内容只进入预览，点击后才会复制到本机';
         } else {
           this.transportStatus = '收到无法识别或超限的 POC 消息，已忽略';
         }
@@ -431,11 +449,17 @@ export struct HomePage {
         if (!result.ok) {
           this.transportState = PocLifecycleState.FAILED;
           this.transportStatus = result.reason === undefined ? '连接参数无效' : `连接参数无效：${result.reason}`;
+          this.connectionState = ConnectionState.OFFLINE;
+          this.connectionTitle = '连接参数无效';
+          this.connectionDescription = result.reason ?? '请检查桌面端 IP 和端口';
         }
       })
       .catch(() => {
         this.transportState = PocLifecycleState.FAILED;
         this.transportStatus = '连接桌面 POC 失败';
+        this.connectionState = ConnectionState.OFFLINE;
+        this.connectionTitle = '连接桌面 POC 失败';
+        this.connectionDescription = '请检查候选地址、Windows 防火墙和当前网络';
       });
   }
 
@@ -447,11 +471,23 @@ export struct HomePage {
       onStateChanged: (state: PocLifecycleState, reason: string) => {
         this.discoveryState = state;
         this.discoveryStatus = reason;
+        if (this.transportState !== PocLifecycleState.RUNNING) {
+          this.connectionState = state === PocLifecycleState.STARTING || state === PocLifecycleState.RUNNING
+            ? ConnectionState.CONNECTING
+            : ConnectionState.OFFLINE;
+          this.connectionTitle = state === PocLifecycleState.FAILED ? '局域网发现不可用' : '正在发现桌面端';
+          this.connectionDescription = reason;
+        }
       },
       onCandidatesChanged: (candidates: MdnsServiceCandidate[]) => {
         this.discoveryCandidates = candidates;
         if (candidates.length > 0) {
           this.discoveryStatus = `已发现 ${candidates.length} 个候选地址；mDNS 仅用于发现，不代表设备可信`;
+          if (this.transportState !== PocLifecycleState.RUNNING) {
+            this.connectionState = ConnectionState.CONNECTING;
+            this.connectionTitle = `已发现 ${candidates.length} 个桌面候选`;
+            this.connectionDescription = '请选择候选连接；候选地址不代表设备已经认证';
+          }
         }
       }
     });
@@ -483,6 +519,9 @@ export struct HomePage {
     this.transport.close();
     this.transportState = PocLifecycleState.IDLE;
     this.transportStatus = '已主动断开桌面 POC';
+    this.connectionState = ConnectionState.OFFLINE;
+    this.connectionTitle = '已主动断开桌面 POC';
+    this.connectionDescription = 'mDNS 发现仍可继续运行';
   }
 
   private onAppForegroundChanged(): void {
@@ -501,6 +540,9 @@ export struct HomePage {
     this.transportStatus = this.reconnectOnForeground
       ? '应用进入后台，已断开；回到前台后将重新连接'
       : '应用进入后台，已停止发现和连接';
+    this.connectionState = ConnectionState.OFFLINE;
+    this.connectionTitle = '应用已进入后台';
+    this.connectionDescription = '前台同步已停止，回到前台后会重新发现';
   }
 
   private copyLatestReceivedToLocal(): void {

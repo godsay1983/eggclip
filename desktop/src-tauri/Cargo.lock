@@ -920,6 +920,7 @@ dependencies = [
  "arboard",
  "clipboard-win",
  "futures-util",
+ "if-addrs",
  "mdns-sd",
  "serde",
  "serde_json",

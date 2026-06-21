@@ -8,8 +8,9 @@
   import { onMount } from "svelte";
 
   onMount(() => {
-    void shellSnapshot.startPocTransport();
-    void shellSnapshot.startPocEventListeners();
+    void shellSnapshot
+      .startPocEventListeners()
+      .then(() => shellSnapshot.startPocTransport());
     void shellSnapshot.startClipboardMonitor();
   });
 </script>

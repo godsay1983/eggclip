@@ -4,6 +4,9 @@ import {
   getPocTransportStatus,
   onLocalClipboardText,
   onPocClipboardText,
+  onPocDiscoveryError,
+  onPocPeerConnected,
+  onPocPeerDisconnected,
   readSystemClipboardText,
   sendPocClipboardText,
   startPocTransport,
@@ -15,6 +18,7 @@ const snapshot = writable(createInitialShellSnapshot());
 let monitorStarted = false;
 let pocEventsStarted = false;
 let pocTransportStarted = false;
+const pocPeers = new Set<string>();
 
 function setCurrentClipboard(
   current: ClipboardPreview,
@@ -29,6 +33,32 @@ function setCurrentClipboard(
       description,
     },
     current,
+  }));
+}
+
+function updatePocDevices(title: string, description: string) {
+  const peers = Array.from(pocPeers).sort();
+  snapshot.update((state) => ({
+    ...state,
+    connection: {
+      state: peers.length > 0 ? "online" : "connecting",
+      title,
+      description,
+    },
+    devices:
+      peers.length > 0
+        ? peers.map((peer) => ({
+            id: `poc-${peer}`,
+            name: `POC ${peer}`,
+            state: "online" as const,
+          }))
+        : [
+            {
+              id: "placeholder",
+              name: "等待 POC 设备连接",
+              state: "offline" as const,
+            },
+          ],
   }));
 }
 
@@ -67,13 +97,41 @@ export const shellSnapshot = {
     }
     pocEventsStarted = true;
     try {
-      await onPocClipboardText((current, peer) => {
-        setCurrentClipboard(
-          current,
-          "已收到 Harmony POC 文本",
-          `来自 ${peer}；POC 尚未认证，只进入面板预览，请由用户点击复制`,
-        );
-      });
+      await Promise.all([
+        onPocClipboardText((current, peer) => {
+          setCurrentClipboard(
+            current,
+            "已收到 Harmony POC 文本",
+            `来自 ${peer}；POC 尚未认证，只进入面板预览，请由用户点击复制`,
+          );
+        }),
+        onPocPeerConnected((peer) => {
+          pocPeers.add(peer);
+          updatePocDevices(
+            "Harmony POC 已连接",
+            `当前有 ${pocPeers.size} 个未认证 POC 连接，仅允许用户触发收发`,
+          );
+        }),
+        onPocPeerDisconnected((peer) => {
+          pocPeers.delete(peer);
+          updatePocDevices(
+            pocPeers.size > 0 ? "Harmony POC 已连接" : "等待 Harmony POC 连接",
+            pocPeers.size > 0
+              ? `当前还有 ${pocPeers.size} 个未认证 POC 连接`
+              : "WebSocket POC 继续监听，可通过 mDNS 或手动 IP 连接",
+          );
+        }),
+        onPocDiscoveryError((message) => {
+          snapshot.update((state) => ({
+            ...state,
+            connection: {
+              state: "offline",
+              title: "mDNS POC 发布失败",
+              description: `${message}；WebSocket 和手动 IP 仍可使用`,
+            },
+          }));
+        }),
+      ]);
     } catch (error) {
       pocEventsStarted = false;
       snapshot.update((state) => ({

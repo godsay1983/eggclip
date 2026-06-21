@@ -30,6 +30,8 @@ pub struct PocTransportStatus {
     bind_address: String,
     port: u16,
     discovery_published: bool,
+    network_addresses: Vec<crate::discovery::PocNetworkAddress>,
+    connected_peers: usize,
     last_error: Option<String>,
 }
 
@@ -104,6 +106,8 @@ pub async fn start_poc_transport(
         bind_address: local_addr.ip().to_string(),
         port: local_addr.port(),
         discovery_published,
+        network_addresses: crate::discovery::local_ipv4_candidates().unwrap_or_default(),
+        connected_peers: 0,
         last_error: None,
     };
 
@@ -152,6 +156,8 @@ pub fn stop_poc_transport(
         bind_address: "0.0.0.0".to_owned(),
         port: 0,
         discovery_published: false,
+        network_addresses: crate::discovery::local_ipv4_candidates().unwrap_or_default(),
+        connected_peers: 0,
         last_error: None,
     };
     let _ = app.emit("transport://poc-status", status.clone());
@@ -168,6 +174,8 @@ pub fn get_poc_transport_status(
             bind_address: "0.0.0.0".to_owned(),
             port: 0,
             discovery_published: false,
+            network_addresses: crate::discovery::local_ipv4_candidates().unwrap_or_default(),
+            connected_peers: 0,
             last_error: None,
         }),
     )
@@ -210,11 +218,13 @@ fn broadcast_poc_clipboard_item_with_runtime(
 }
 
 fn current_running_status(runtime: &State<'_, PocTransportRuntime>) -> Option<PocTransportStatus> {
-    runtime
+    let mut status = runtime
         .server
         .lock()
         .ok()
-        .and_then(|server| server.as_ref().map(|handle| handle.status.clone()))
+        .and_then(|server| server.as_ref().map(|handle| handle.status.clone()))?;
+    status.connected_peers = runtime.peers.lock().map(|peers| peers.len()).unwrap_or(0);
+    Some(status)
 }
 
 async fn run_poc_server(
@@ -234,6 +244,8 @@ async fn run_poc_server(
                             bind_address: "0.0.0.0".to_owned(),
                             port: 0,
                             discovery_published: false,
+                            network_addresses: Vec::new(),
+                            connected_peers: 0,
                             last_error: Some(format!("WebSocket POC 接收连接失败：{error}")),
                         });
                         break;
@@ -262,6 +274,8 @@ async fn handle_poc_peer(app: AppHandle, peer: String, stream: tokio::net::TcpSt
                     bind_address: "0.0.0.0".to_owned(),
                     port: 0,
                     discovery_published: false,
+                    network_addresses: Vec::new(),
+                    connected_peers: 0,
                     last_error: Some(format!("WebSocket POC 握手失败：{error}")),
                 },
             );
