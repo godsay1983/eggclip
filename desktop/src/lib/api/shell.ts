@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type { ClipboardPreview, ShellSnapshot } from "$lib/types/shell";
 
 interface ClipboardTextItem {
@@ -19,6 +20,10 @@ type ClipboardTextError =
 interface ClipboardReadResult {
   item: ClipboardTextItem | null;
   error: ClipboardTextError | null;
+}
+
+interface ClipboardMonitorEvent {
+  item: ClipboardTextItem;
 }
 
 export function createInitialShellSnapshot(): ShellSnapshot {
@@ -47,7 +52,7 @@ export function createInitialShellSnapshot(): ShellSnapshot {
 export async function readSystemClipboardText(): Promise<ClipboardPreview> {
   const result = await invoke<ClipboardReadResult>("read_clipboard_text");
   if (result.item) {
-    return toClipboardPreview(result.item);
+    return toClipboardPreview(result.item, "本机剪贴板");
   }
   throw new Error(formatClipboardError(result.error));
 }
@@ -56,13 +61,29 @@ export async function writeSystemClipboardText(text: string): Promise<void> {
   await invoke("write_clipboard_text", { text });
 }
 
-function toClipboardPreview(item: ClipboardTextItem): ClipboardPreview {
+export async function onLocalClipboardText(
+  handler: (preview: ClipboardPreview) => void,
+): Promise<() => void> {
+  const unlisten = await listen<ClipboardMonitorEvent>(
+    "clipboard://local-text",
+    (event) => {
+      handler(toClipboardPreview(event.payload.item, "本机剪贴板 · 自动监听"));
+    },
+  );
+
+  return unlisten;
+}
+
+function toClipboardPreview(
+  item: ClipboardTextItem,
+  source: string,
+): ClipboardPreview {
   return {
     id: `local-${item.digest}`,
     title: `${item.byteLen} 字节文本`,
     text: item.text,
     preview: trimPreview(item.text),
-    source: "本机剪贴板",
+    source,
     receivedAt: new Date().toLocaleTimeString("zh-CN", {
       hour: "2-digit",
       minute: "2-digit",

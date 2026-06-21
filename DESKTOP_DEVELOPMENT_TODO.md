@@ -5,7 +5,7 @@
 ## 当前状态
 
 - 工程目录：`D:\Develop\eggclip\desktop`
-- D0 工程基线已建立，桌面 UI 已拆出 TypeScript API / store / component 基线；D1 剪贴板 POC 已开始，当前完成文本边界、手动读写系统剪贴板和回环抑制核心逻辑，尚未接入 Win32 事件监听。
+- D0 工程基线已建立，桌面 UI 已拆出 TypeScript API / store / component 基线；D1 剪贴板 POC 已开始，当前完成文本边界、手动读写系统剪贴板、Win32 剪贴板事件监听和回环抑制核心逻辑，尚未接入手动 WebSocket。
 - 目标平台：Windows 10/11。
 - 目标技术栈：Tauri 2、Svelte 5、SvelteKit、TypeScript、Rust、SQLite。
 - 应用标识建议：`com.eggclip.desktop`。
@@ -89,12 +89,13 @@ desktop/
 
 ### Windows 剪贴板事件
 
-- [ ] 使用 `windows` crate 封装 `AddClipboardFormatListener`。
-- [ ] 在独立窗口消息循环中接收 `WM_CLIPBOARDUPDATE`。
+- [x] 使用 Win32 `AddClipboardFormatListener`（通过 `clipboard-win` 封装）。
+- [x] 在独立窗口消息循环中接收 `WM_CLIPBOARDUPDATE`。
 - [x] 读取 Unicode 纯文本并转换为 UTF-8。
 - [x] 拒绝空文本和超过 256 KiB 的文本。
 - [x] 实现文本写入系统剪贴板。
 - [ ] 使用 digest、系统 sequence 和短时 suppression token 防止远端写入回环。
+- [x] 将本机剪贴板变化通过 Tauri event 推送到前端 POC 面板。
 - [ ] 连续复制相同文本时验证“立即重复”和“稍后再次复制”的差异。
 - [ ] 调研并尽量尊重 Windows 剪贴板历史/监控排除格式。
 

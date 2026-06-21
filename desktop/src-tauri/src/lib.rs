@@ -37,6 +37,7 @@ pub fn run() {
         .setup(|app| {
             let tray_icon = tray::create_tray(app.handle())?;
             app.manage(tray_icon);
+            clipboard::start_clipboard_monitor(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| match event {

@@ -1,14 +1,58 @@
 import { derived, writable } from "svelte/store";
 import {
   createInitialShellSnapshot,
+  onLocalClipboardText,
   readSystemClipboardText,
   writeSystemClipboardText,
 } from "$lib/api/shell";
+import type { ClipboardPreview } from "$lib/types/shell";
 
 const snapshot = writable(createInitialShellSnapshot());
+let monitorStarted = false;
+
+function setCurrentClipboard(
+  current: ClipboardPreview,
+  title: string,
+  description: string,
+) {
+  snapshot.update((state) => ({
+    ...state,
+    connection: {
+      state: "online",
+      title,
+      description,
+    },
+    current,
+  }));
+}
 
 export const shellSnapshot = {
   subscribe: snapshot.subscribe,
+  async startClipboardMonitor() {
+    if (monitorStarted) {
+      return;
+    }
+    monitorStarted = true;
+    try {
+      await onLocalClipboardText((current) => {
+        setCurrentClipboard(
+          current,
+          "已监听到本机剪贴板",
+          "这是 D1 POC：本机文本变化会自动显示在面板中，尚未同步到其他设备",
+        );
+      });
+    } catch (error) {
+      monitorStarted = false;
+      snapshot.update((state) => ({
+        ...state,
+        connection: {
+          state: "authFailed",
+          title: "剪贴板监听启动失败",
+          description: error instanceof Error ? error.message : "无法启动本机剪贴板监听",
+        },
+      }));
+    }
+  },
   async readLocalClipboard() {
     snapshot.update((current) => ({
       ...current,
@@ -20,15 +64,11 @@ export const shellSnapshot = {
     }));
     try {
       const current = await readSystemClipboardText();
-      snapshot.update((state) => ({
-        ...state,
-        connection: {
-          state: "online",
-          title: "已读取本机剪贴板",
-          description: "当前内容只显示在本机面板，尚未同步到其他设备",
-        },
+      setCurrentClipboard(
         current,
-      }));
+        "已读取本机剪贴板",
+        "当前内容只显示在本机面板，尚未同步到其他设备",
+      );
     } catch (error) {
       snapshot.update((state) => ({
         ...state,

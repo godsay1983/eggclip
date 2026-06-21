@@ -5,6 +5,11 @@
   import StatusCard from "$lib/components/common/StatusCard.svelte";
   import StatusDot from "$lib/components/common/StatusDot.svelte";
   import { shellSnapshot } from "$lib/stores/shell";
+  import { onMount } from "svelte";
+
+  onMount(() => {
+    void shellSnapshot.startClipboardMonitor();
+  });
 </script>
 
 <svelte:head>

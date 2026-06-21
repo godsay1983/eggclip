@@ -6,6 +6,7 @@ use std::{
 };
 
 use serde::Serialize;
+use tauri::{AppHandle, Emitter};
 
 pub const MAX_TEXT_BYTES: usize = 256 * 1024;
 const DEFAULT_SUPPRESSION_TTL: Duration = Duration::from_millis(1500);
@@ -83,6 +84,12 @@ impl ClipboardText {
     pub fn digest(&self) -> u64 {
         self.digest
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipboardMonitorEvent {
+    item: ClipboardText,
 }
 
 #[derive(Debug, Clone)]
@@ -205,6 +212,78 @@ pub fn write_clipboard_text(text: String) -> Result<(), String> {
     clipboard
         .set_text(item.as_str().to_owned())
         .map_err(|error| format!("无法写入系统剪贴板：{error}"))
+}
+
+#[cfg(target_os = "windows")]
+pub fn start_clipboard_monitor(app: AppHandle) {
+    let monitor_app = app.clone();
+    let spawn_result = std::thread::Builder::new()
+        .name("eggclip-clipboard-monitor".to_owned())
+        .spawn(move || {
+            let mut monitor = match clipboard_win::monitor::Monitor::new() {
+                Ok(monitor) => monitor,
+                Err(error) => {
+                    let _ = monitor_app.emit(
+                        "clipboard://monitor-error",
+                        format!("无法启动 Windows 剪贴板监听：{error}"),
+                    );
+                    return;
+                }
+            };
+            let mut last_digest: Option<u64> = None;
+
+            loop {
+                match monitor.recv() {
+                    Ok(true) => {
+                        let item = match read_clipboard_text_for_monitor() {
+                            Ok(item) => item,
+                            Err(_) => continue,
+                        };
+
+                        if last_digest == Some(item.digest()) {
+                            continue;
+                        }
+                        last_digest = Some(item.digest());
+
+                        let _ = monitor_app
+                            .emit("clipboard://local-text", ClipboardMonitorEvent { item });
+                    }
+                    Ok(false) => break,
+                    Err(error) => {
+                        let _ = monitor_app.emit(
+                            "clipboard://monitor-error",
+                            format!("Windows 剪贴板监听已停止：{error}"),
+                        );
+                        break;
+                    }
+                }
+            }
+        });
+
+    if let Err(error) = spawn_result {
+        let _ = app.emit(
+            "clipboard://monitor-error",
+            format!("无法创建剪贴板监听线程：{error}"),
+        );
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn start_clipboard_monitor(app: AppHandle) {
+    let _ = app.emit(
+        "clipboard://monitor-error",
+        "当前版本只支持 Windows 剪贴板事件监听",
+    );
+}
+
+#[cfg(target_os = "windows")]
+fn read_clipboard_text_for_monitor() -> Result<ClipboardText, String> {
+    let mut clipboard =
+        arboard::Clipboard::new().map_err(|error| format!("无法访问系统剪贴板：{error}"))?;
+    let text = clipboard
+        .get_text()
+        .map_err(|error| format!("无法读取系统剪贴板文本：{error}"))?;
+    ClipboardText::parse(text).map_err(|error| error.to_string())
 }
 
 #[cfg(test)]

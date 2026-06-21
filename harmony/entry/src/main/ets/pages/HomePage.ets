@@ -11,6 +11,7 @@ import { EggClipTypography } from '../theme/Typography';
 export struct HomePage {
   private readonly state: HomeShellState = createInitialHomeShellState();
   private readonly pocState: PocRuntimeState = createInitialPocRuntimeState();
+  @State private pasteStatus: string = '等待点击 PasteButton 触发一次性授权';
 
   build() {
     Scroll() {
@@ -105,7 +106,7 @@ export struct HomePage {
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
 
-      Text('已声明局域网网络权限；PasteButton 和真机连接仍待接入。')
+      Text('已声明局域网网络权限；PasteButton 安全组件已接入，pasteboard 读取和真机连接待接入。')
         .width('100%')
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
@@ -137,6 +138,30 @@ export struct HomePage {
         .fontSize(EggClipTypography.bodySize)
         .fontColor(EggClipColors.textSecondary)
         .lineHeight(24)
+
+      Column({ space: 6 }) {
+        PasteButton({
+          text: PasteDescription.PASTE,
+          buttonType: ButtonType.Capsule
+        })
+          .width('100%')
+          .height(46)
+          .fontColor(EggClipColors.onPrimary)
+          .backgroundColor(EggClipColors.primary)
+          .borderRadius(23)
+          .onClick((_event: ClickEvent, result: PasteButtonOnClickResult) => {
+            this.pasteStatus = result === PasteButtonOnClickResult.SUCCESS
+              ? 'PasteButton 已授权；下一步接入 pasteboard.getData() 读取纯文本'
+              : 'PasteButton 临时授权失败，未读取系统剪贴板';
+          })
+
+        Text(this.pasteStatus)
+          .width('100%')
+          .fontSize(EggClipTypography.captionSize)
+          .fontColor(EggClipColors.textSecondary)
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
 
       Button('复制到本机')
         .width('100%')
