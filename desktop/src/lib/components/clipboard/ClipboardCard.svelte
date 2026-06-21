@@ -4,6 +4,7 @@
   export let current: ClipboardPreview | null = null;
   export let onRead: () => void = () => {};
   export let onCopy: () => void = () => {};
+  export let onSendPoc: () => void = () => {};
 </script>
 
 <section class="clipboard-card">
@@ -28,6 +29,9 @@
     <button class="secondary-action" type="button" on:click={onRead}>读取本机剪贴板</button>
     <button class="primary-action" type="button" disabled={!current?.canCopy} on:click={onCopy}>
       复制此内容
+    </button>
+    <button class="secondary-action" type="button" disabled={!current} on:click={onSendPoc}>
+      发送到 Harmony POC
     </button>
   </div>
 </section>

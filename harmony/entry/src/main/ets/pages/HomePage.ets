@@ -19,6 +19,8 @@ export struct HomePage {
   @State private manualPort: string = '0';
   @State private pasteStatus: string = '等待点击 PasteButton 触发一次性授权';
   @State private transportStatus: string = '输入桌面端 IP 和端口后手动连接';
+  @State private latestReceivedPreview: string = '';
+  @State private latestReceivedSource: string = '暂无内容';
 
   build() {
     Scroll() {
@@ -196,13 +198,13 @@ export struct HomePage {
           .fontColor(EggClipColors.textPrimary)
           .layoutWeight(1)
 
-        Text(this.state.latest === null ? '暂无内容' : this.state.latest.source)
+        Text(this.latestReceivedPreview.length === 0 ? '暂无内容' : this.latestReceivedSource)
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
       }
       .width('100%')
 
-      Text(this.state.latest === null ? '完成配对后，桌面端的最新文本会显示在这里。历史补同步不会覆盖本机剪贴板。' : this.state.latest.preview)
+      Text(this.latestReceivedPreview.length === 0 ? '完成配对后，桌面端的最新文本会显示在这里。历史补同步不会覆盖本机剪贴板。' : this.latestReceivedPreview)
         .fontSize(EggClipTypography.bodySize)
         .fontColor(EggClipColors.textSecondary)
         .lineHeight(24)
@@ -295,7 +297,13 @@ export struct HomePage {
       onError: (reason: string) => {
         this.transportStatus = `连接失败：${reason}`;
       },
-      onMessage: () => {
+      onMessage: (message: string) => {
+        const text = this.transport.parseClipboardTextMessage(message);
+        if (text !== null) {
+          this.latestReceivedPreview = this.trimPreview(text);
+          this.latestReceivedSource = 'Desktop POC';
+          this.transportStatus = `收到桌面 POC 文本：${text.length} 字符`;
+        }
       }
     })
       .then((result) => {
@@ -321,5 +329,12 @@ export struct HomePage {
       .catch(() => {
         this.pasteStatus = '发送到桌面 POC 失败';
       });
+  }
+
+  private trimPreview(text: string): string {
+    if (text.length <= 180) {
+      return text;
+    }
+    return `${text.slice(0, 90)}\n……\n${text.slice(-60)}`;
   }
 }

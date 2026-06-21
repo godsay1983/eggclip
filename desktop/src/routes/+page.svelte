@@ -41,6 +41,7 @@
     current={$shellSnapshot.current}
     onRead={() => shellSnapshot.readLocalClipboard()}
     onCopy={() => shellSnapshot.copyCurrentToClipboard()}
+    onSendPoc={() => shellSnapshot.sendCurrentToPocPeer()}
   />
 
   <DeviceChips devices={$shellSnapshot.devices} />

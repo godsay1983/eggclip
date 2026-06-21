@@ -8,7 +8,7 @@ export interface PocTransportCallbacks {
   onMessage: (message: string) => void;
 }
 
-interface PocClipboardTextMessage {
+export interface PocClipboardTextMessage {
   kind: string;
   text: string;
 }
@@ -115,6 +115,18 @@ export class WebSocketTransportService {
       this.connected = false;
       return false;
     }
+  }
+
+  parseClipboardTextMessage(message: string): string | null {
+    try {
+      const parsed = JSON.parse(message) as PocClipboardTextMessage;
+      if (parsed.kind === 'clipboardText' && typeof parsed.text === 'string') {
+        return parsed.text;
+      }
+    } catch (_) {
+      return null;
+    }
+    return null;
   }
 
   close(): void {

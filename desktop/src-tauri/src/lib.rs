@@ -59,6 +59,7 @@ pub fn run() {
             clipboard::read_clipboard_text,
             clipboard::write_clipboard_text,
             transport::get_poc_transport_status,
+            transport::send_poc_clipboard_text,
             transport::start_poc_transport,
             transport::stop_poc_transport,
         ])

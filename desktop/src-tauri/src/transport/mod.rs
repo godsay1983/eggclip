@@ -1,10 +1,13 @@
-use std::sync::Mutex;
+use std::{collections::HashMap, sync::Mutex};
 
 use crate::clipboard::ClipboardText;
-use futures_util::StreamExt;
+use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
-use tokio::{net::TcpListener, sync::oneshot};
+use tauri::{AppHandle, Emitter, Manager, State};
+use tokio::{
+    net::TcpListener,
+    sync::{mpsc, oneshot},
+};
 use tokio_tungstenite::tungstenite::Message;
 
 pub const POC_MAX_FRAME_BYTES: usize = 1024 * 1024;
@@ -12,6 +15,7 @@ pub const POC_MAX_FRAME_BYTES: usize = 1024 * 1024;
 #[derive(Default)]
 pub struct PocTransportRuntime {
     server: Mutex<Option<PocServerHandle>>,
+    peers: Mutex<HashMap<String, mpsc::UnboundedSender<Message>>>,
 }
 
 struct PocServerHandle {
@@ -52,6 +56,12 @@ struct PocTextFrameEvent {
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 enum PocClientMessage {
+    ClipboardText { text: String },
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+enum PocServerMessage {
     ClipboardText { text: String },
 }
 
@@ -151,6 +161,29 @@ pub fn get_poc_transport_status(
     )
 }
 
+#[tauri::command]
+pub fn send_poc_clipboard_text(
+    runtime: State<'_, PocTransportRuntime>,
+    text: String,
+) -> Result<usize, String> {
+    let item = ClipboardText::parse(text).map_err(|error| error.to_string())?;
+    let message = serialize_poc_server_message(&PocServerMessage::ClipboardText {
+        text: item.as_str().to_owned(),
+    })?;
+    let peers = runtime
+        .peers
+        .lock()
+        .map_err(|_| "WebSocket POC peer 状态锁已损坏".to_owned())?;
+
+    let mut sent_count = 0;
+    for sender in peers.values() {
+        if sender.send(Message::Text(message.clone().into())).is_ok() {
+            sent_count += 1;
+        }
+    }
+    Ok(sent_count)
+}
+
 fn current_running_status(runtime: &State<'_, PocTransportRuntime>) -> Option<PocTransportStatus> {
     runtime
         .server
@@ -212,7 +245,25 @@ async fn handle_poc_peer(app: AppHandle, peer: String, stream: tokio::net::TcpSt
         "transport://poc-peer-connected",
         PocPeerEvent { peer: peer.clone() },
     );
-    let (_write, mut read) = websocket.split();
+    let (mut write, mut read) = websocket.split();
+    let (outgoing_tx, mut outgoing_rx) = mpsc::unbounded_channel::<Message>();
+    if let Ok(mut peers) = app.state::<PocTransportRuntime>().peers.lock() {
+        peers.insert(peer.clone(), outgoing_tx);
+    }
+
+    let write_peer = peer.clone();
+    let write_app = app.clone();
+    let write_task = tauri::async_runtime::spawn(async move {
+        while let Some(message) = outgoing_rx.recv().await {
+            if write.send(message).await.is_err() {
+                break;
+            }
+        }
+        let _ = write_app.emit(
+            "transport://poc-peer-disconnected",
+            PocPeerEvent { peer: write_peer },
+        );
+    });
 
     while let Some(message_result) = read.next().await {
         let message = match message_result {
@@ -253,7 +304,16 @@ async fn handle_poc_peer(app: AppHandle, peer: String, stream: tokio::net::TcpSt
         }
     }
 
+    if let Ok(mut peers) = app.state::<PocTransportRuntime>().peers.lock() {
+        peers.remove(&peer);
+    }
+    write_task.abort();
     let _ = app.emit("transport://poc-peer-disconnected", PocPeerEvent { peer });
+}
+
+fn serialize_poc_server_message(message: &PocServerMessage) -> Result<String, String> {
+    serde_json::to_string(message)
+        .map_err(|error| format!("无法序列化 WebSocket POC 消息：{error}"))
 }
 
 #[cfg(test)]
@@ -278,5 +338,15 @@ mod tests {
                 text: "from harmony".to_owned(),
             },
         );
+    }
+
+    #[test]
+    fn serializes_poc_clipboard_text_message() {
+        let message = serialize_poc_server_message(&PocServerMessage::ClipboardText {
+            text: "from desktop".to_owned(),
+        })
+        .expect("valid poc server message");
+
+        assert_eq!(message, r#"{"kind":"clipboardText","text":"from desktop"}"#);
     }
 }

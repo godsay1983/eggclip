@@ -5,6 +5,7 @@ import {
   onLocalClipboardText,
   onPocClipboardText,
   readSystemClipboardText,
+  sendPocClipboardText,
   startPocTransport,
   writeSystemClipboardText,
 } from "$lib/api/shell";
@@ -157,6 +158,40 @@ export const shellSnapshot = {
       return;
     }
     await writeSystemClipboardText(text);
+  },
+  async sendCurrentToPocPeer() {
+    let text = "";
+    const unsubscribe = snapshot.subscribe((state) => {
+      text = state.current?.text ?? "";
+    });
+    unsubscribe();
+    if (text.length === 0) {
+      return;
+    }
+
+    try {
+      const sentCount = await sendPocClipboardText(text);
+      snapshot.update((state) => ({
+        ...state,
+        connection: {
+          state: sentCount > 0 ? "online" : "offline",
+          title: sentCount > 0 ? "已发送到 Harmony POC" : "没有已连接的 Harmony POC",
+          description:
+            sentCount > 0
+              ? `已向 ${sentCount} 个 POC 连接发送当前文本`
+              : "请先在 Harmony 端手动连接桌面 POC 服务",
+        },
+      }));
+    } catch (error) {
+      snapshot.update((state) => ({
+        ...state,
+        connection: {
+          state: "authFailed",
+          title: "发送到 Harmony POC 失败",
+          description: error instanceof Error ? error.message : "无法发送当前文本",
+        },
+      }));
+    }
   },
 };
 
