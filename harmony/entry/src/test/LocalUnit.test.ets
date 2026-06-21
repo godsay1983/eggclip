@@ -1,33 +1,53 @@
-import { describe, beforeAll, beforeEach, afterEach, afterAll, it, expect } from '@ohos/hypium';
+import { describe, expect, it } from '@ohos/hypium';
+import { ClipboardBridgeService } from '../main/ets/services/clipboard/ClipboardBridgeService';
+import { WebSocketTransportService } from '../main/ets/services/transport/WebSocketTransportService';
+import {
+  ClipboardValidationError,
+  EGGCLIP_MDNS_DISCOVERY_TYPE,
+  EGGCLIP_MDNS_SERVICE_TYPE,
+  POC_MAX_FRAME_BYTES
+} from '../main/ets/models/PocModels';
+import { MAX_TEXT_BYTES } from '../main/ets/utils/TextLimits';
 
 export default function localUnitTest() {
-  describe('localUnitTest', () => {
-    // Defines a test suite. Two parameters are supported: test suite name and test suite function.
-    beforeAll(() => {
-      // Presets an action, which is performed only once before all test cases of the test suite start.
-      // This API supports only one parameter: preset action function.
+  describe('EggClipH1Boundaries', () => {
+    it('keepsPublishAndDiscoveryMdnsTypesDistinct', 0, () => {
+      expect(EGGCLIP_MDNS_SERVICE_TYPE).assertEqual('_eggclip._tcp.local.');
+      expect(EGGCLIP_MDNS_DISCOVERY_TYPE).assertEqual('_eggclip._tcp');
     });
-    beforeEach(() => {
-      // Presets an action, which is performed before each unit test case starts.
-      // The number of execution times is the same as the number of test cases defined by **it**.
-      // This API supports only one parameter: preset action function.
+
+    it('validatesManualWebSocketEndpoint', 0, () => {
+      const transport = new WebSocketTransportService();
+      const valid = transport.validateEndpoint({ host: ' 192.168.1.20 ', port: 4567 });
+      expect(valid.ok).assertEqual(true);
+      expect(valid.normalizedUrl).assertEqual('ws://192.168.1.20:4567');
+      expect(transport.validateEndpoint({ host: '', port: 4567 }).ok).assertEqual(false);
+      expect(transport.validateEndpoint({ host: '127.0.0.1', port: 0 }).ok).assertEqual(false);
     });
-    afterEach(() => {
-      // Presets a clear action, which is performed after each unit test case ends.
-      // The number of execution times is the same as the number of test cases defined by **it**.
-      // This API supports only one parameter: clear action function.
+
+    it('parsesOnlyBoundedClipboardTextFrames', 0, () => {
+      const transport = new WebSocketTransportService();
+      expect(transport.parseClipboardTextMessage('{"kind":"clipboardText","text":"蛋定"}'))
+        .assertEqual('蛋定');
+      expect(transport.parseClipboardTextMessage('{"kind":"other","text":"ignored"}')).assertEqual(null);
+      expect(transport.parseClipboardTextMessage('not json')).assertEqual(null);
+      expect(transport.parseClipboardTextMessage('a'.repeat(POC_MAX_FRAME_BYTES + 1))).assertEqual(null);
     });
-    afterAll(() => {
-      // Presets a clear action, which is performed after all test cases of the test suite end.
-      // This API supports only one parameter: clear action function.
-    });
-    it('assertContain', 0, () => {
-      // Defines a test case. This API supports three parameters: test case name, filter parameter, and test case function.
-      let a = 'abc';
-      let b = 'b';
-      // Defines a variety of assertion methods, which are used to declare expected boolean conditions.
-      expect(a).assertContain(b);
-      expect(a).assertEqual(a);
+
+    it('enforcesPlainTextUtf8Boundary', 0, () => {
+      const clipboard = new ClipboardBridgeService();
+      const empty = clipboard.inspectPlainText('');
+      expect(empty.ok).assertEqual(false);
+      expect(empty.error).assertEqual(ClipboardValidationError.EMPTY);
+
+      const utf8 = clipboard.inspectPlainText('蛋定🥚');
+      expect(utf8.ok).assertEqual(true);
+      expect(utf8.byteLength).assertEqual(10);
+
+      expect(clipboard.inspectPlainText('a'.repeat(MAX_TEXT_BYTES)).ok).assertEqual(true);
+      const oversized = clipboard.inspectPlainText('a'.repeat(MAX_TEXT_BYTES + 1));
+      expect(oversized.ok).assertEqual(false);
+      expect(oversized.error).assertEqual(ClipboardValidationError.TOO_LARGE);
     });
   });
 }

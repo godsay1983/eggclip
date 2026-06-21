@@ -1,16 +1,19 @@
-use std::{collections::HashMap, sync::Mutex};
+use std::{collections::HashMap, net::Ipv4Addr, str::FromStr, sync::Mutex, time::Duration};
 
 use crate::clipboard::ClipboardText;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::{
+    io::{AsyncRead, AsyncWrite},
     net::TcpListener,
     sync::{mpsc, oneshot},
+    time::timeout,
 };
-use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::{connect_async, tungstenite::Message, WebSocketStream};
 
 pub const POC_MAX_FRAME_BYTES: usize = 1024 * 1024;
+const POC_CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
 
 #[derive(Default)]
 pub struct PocTransportRuntime {
@@ -56,13 +59,13 @@ struct PocTextFrameEvent {
     byte_len: usize,
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 enum PocClientMessage {
     ClipboardText { text: String },
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 enum PocServerMessage {
     ClipboardText { text: String },
@@ -150,6 +153,7 @@ pub fn stop_poc_transport(
         }
     }
     crate::discovery::unpublish_poc_service(&app);
+    let _ = disconnect_all_poc_peers_with_runtime(&runtime);
 
     let status = PocTransportStatus {
         state: PocTransportState::Stopped,
@@ -188,6 +192,67 @@ pub fn send_poc_clipboard_text(
 ) -> Result<usize, String> {
     let item = ClipboardText::parse(text).map_err(|error| error.to_string())?;
     broadcast_poc_clipboard_item_with_runtime(&runtime, &item)
+}
+
+#[tauri::command]
+pub async fn connect_poc_peer(
+    app: AppHandle,
+    runtime: State<'_, PocTransportRuntime>,
+    host: String,
+    port: u16,
+) -> Result<String, String> {
+    let endpoint = validate_poc_endpoint(&host, port)?;
+    let peer = format!("desktop-outbound:{endpoint}");
+    if runtime
+        .peers
+        .lock()
+        .map_err(|_| "WebSocket POC peer 状态锁已损坏".to_owned())?
+        .contains_key(&peer)
+    {
+        return Err("该桌面 POC 已连接".to_owned());
+    }
+
+    let url = format!("ws://{endpoint}");
+    let (websocket, _) = timeout(POC_CONNECT_TIMEOUT, connect_async(&url))
+        .await
+        .map_err(|_| "连接桌面 POC 超时".to_owned())?
+        .map_err(|error| format!("无法连接桌面 POC：{error}"))?;
+
+    let connected_endpoint = endpoint.clone();
+    tauri::async_runtime::spawn(async move {
+        handle_poc_websocket(app, peer, websocket).await;
+    });
+    Ok(connected_endpoint)
+}
+
+#[tauri::command]
+pub fn disconnect_all_poc_peers(runtime: State<'_, PocTransportRuntime>) -> Result<usize, String> {
+    disconnect_all_poc_peers_with_runtime(&runtime)
+}
+
+fn disconnect_all_poc_peers_with_runtime(runtime: &PocTransportRuntime) -> Result<usize, String> {
+    let mut peers = runtime
+        .peers
+        .lock()
+        .map_err(|_| "WebSocket POC peer 状态锁已损坏".to_owned())?;
+    let count = peers.len();
+    for sender in peers.values() {
+        let _ = sender.send(Message::Close(None));
+    }
+    peers.clear();
+    Ok(count)
+}
+
+fn validate_poc_endpoint(host: &str, port: u16) -> Result<String, String> {
+    let address = Ipv4Addr::from_str(host.trim())
+        .map_err(|_| "请输入有效的 IPv4 地址，例如 192.168.1.10".to_owned())?;
+    if address.is_unspecified() || address.is_multicast() || address.is_broadcast() {
+        return Err("该 IPv4 地址不能作为桌面 POC 目标".to_owned());
+    }
+    if port == 0 {
+        return Err("请输入 1 到 65535 之间的端口".to_owned());
+    }
+    Ok(format!("{address}:{port}"))
 }
 
 fn broadcast_poc_clipboard_item_with_runtime(
@@ -283,6 +348,13 @@ async fn handle_poc_peer(app: AppHandle, peer: String, stream: tokio::net::TcpSt
         }
     };
 
+    handle_poc_websocket(app, peer, websocket).await;
+}
+
+async fn handle_poc_websocket<S>(app: AppHandle, peer: String, websocket: WebSocketStream<S>)
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
     let _ = app.emit(
         "transport://poc-peer-connected",
         PocPeerEvent { peer: peer.clone() },
@@ -390,5 +462,16 @@ mod tests {
         .expect("valid poc server message");
 
         assert_eq!(message, r#"{"kind":"clipboardText","text":"from desktop"}"#);
+    }
+
+    #[test]
+    fn validates_manual_ipv4_endpoint() {
+        assert_eq!(
+            validate_poc_endpoint(" 192.168.1.20 ", 4567).expect("valid endpoint"),
+            "192.168.1.20:4567"
+        );
+        assert!(validate_poc_endpoint("example.com", 4567).is_err());
+        assert!(validate_poc_endpoint("224.0.0.1", 4567).is_err());
+        assert!(validate_poc_endpoint("127.0.0.1", 0).is_err());
     }
 }

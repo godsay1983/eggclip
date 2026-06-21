@@ -12,7 +12,7 @@
 - 模型：Stage Model
 - 入口 Ability：`EntryAbility`
 - 当前首页：`entry/src/main/ets/pages/Index.ets`
-- 当前状态：H0 工程基线、主题、目标模块目录和空壳首页已建立；HarmonyOS 图标已与桌面端同源，H1 已声明网络 POC 所需最小权限，首页已接入真实 PasteButton、pasteboard 纯文本读取、手动 IP WebSocket、Desktop ↔ Harmony 临时文本收发、用户触发复制到本机、前台 mDNS 搜索、动态连接状态和前后台连接清理。
+- 当前状态：H0 工程基线、主题、目标模块目录和空壳首页已建立；HarmonyOS 图标已与桌面端同源，H1 已声明网络 POC 所需最小权限，首页已接入真实 PasteButton、pasteboard 纯文本读取、手动 IP WebSocket、Desktop ↔ Harmony 临时文本收发、用户触发复制到本机、前台 mDNS 搜索、动态连接状态和前后台连接清理，并补充了 mDNS 类型、端点、消息帧及 UTF-8 文本边界单测。
 - 参考项目：`D:\Develop\EggDoneHarmony\EggDone`
 - 架构基线：`docs/EggClip最佳实现方案.md`
 

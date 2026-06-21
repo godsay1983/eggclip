@@ -30,5 +30,5 @@ clipboard-win = { version = "5.4.1", features = ["monitor"] }
 futures-util = "0.3"
 if-addrs = "0.15"
 mdns-sd = { version = "0.20", default-features = false }
-tokio = { version = "1", features = ["macros", "net", "sync"] }
+tokio = { version = "1", features = ["io-util", "macros", "net", "sync", "time"] }
 tokio-tungstenite = "0.26"

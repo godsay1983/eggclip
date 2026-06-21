@@ -62,6 +62,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             clipboard::read_clipboard_text,
             clipboard::write_clipboard_text,
+            transport::connect_poc_peer,
+            transport::disconnect_all_poc_peers,
             transport::get_poc_transport_status,
             transport::send_poc_clipboard_text,
             transport::start_poc_transport,

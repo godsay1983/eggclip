@@ -90,6 +90,14 @@ export async function sendPocClipboardText(text: string): Promise<number> {
   return invoke<number>("send_poc_clipboard_text", { text });
 }
 
+export async function connectPocPeer(host: string, port: number): Promise<string> {
+  return invoke<string>("connect_poc_peer", { host, port });
+}
+
+export async function disconnectAllPocPeers(): Promise<number> {
+  return invoke<number>("disconnect_all_poc_peers");
+}
+
 export async function startPocTransport(): Promise<string> {
   const status = await invoke<PocTransportStatus>("start_poc_transport", {
     port: null,
@@ -122,7 +130,7 @@ export async function onPocClipboardText(
     "transport://poc-clipboard-text",
     (event) => {
       handler(
-        toClipboardPreview(event.payload.item, `Harmony POC · ${event.payload.peer}`),
+        toClipboardPreview(event.payload.item, `远端 POC · ${event.payload.peer}`),
         event.payload.peer,
       );
     },

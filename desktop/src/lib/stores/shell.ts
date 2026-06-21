@@ -1,6 +1,8 @@
 import { derived, writable } from "svelte/store";
 import {
+  connectPocPeer,
   createInitialShellSnapshot,
+  disconnectAllPocPeers,
   getPocTransportStatus,
   onLocalClipboardText,
   onPocClipboardText,
@@ -101,21 +103,21 @@ export const shellSnapshot = {
         onPocClipboardText((current, peer) => {
           setCurrentClipboard(
             current,
-            "已收到 Harmony POC 文本",
+            "已收到远端 POC 文本",
             `来自 ${peer}；POC 尚未认证，只进入面板预览，请由用户点击复制`,
           );
         }),
         onPocPeerConnected((peer) => {
           pocPeers.add(peer);
           updatePocDevices(
-            "Harmony POC 已连接",
+            "远端 POC 已连接",
             `当前有 ${pocPeers.size} 个未认证 POC 连接，仅允许用户触发收发`,
           );
         }),
         onPocPeerDisconnected((peer) => {
           pocPeers.delete(peer);
           updatePocDevices(
-            pocPeers.size > 0 ? "Harmony POC 已连接" : "等待 Harmony POC 连接",
+            pocPeers.size > 0 ? "远端 POC 已连接" : "等待 POC 连接",
             pocPeers.size > 0
               ? `当前还有 ${pocPeers.size} 个未认证 POC 连接`
               : "WebSocket POC 继续监听，可通过 mDNS 或手动 IP 连接",
@@ -153,6 +155,45 @@ export const shellSnapshot = {
         description,
       },
     }));
+  },
+  async connectPocPeer(host: string, port: number) {
+    snapshot.update((state) => ({
+      ...state,
+      connection: {
+        state: "connecting",
+        title: "正在连接桌面 POC",
+        description: `${host.trim()}:${port}`,
+      },
+    }));
+    try {
+      const endpoint = await connectPocPeer(host, port);
+      snapshot.update((state) => ({
+        ...state,
+        connection: {
+          state: "connecting",
+          title: "桌面 POC 握手已完成",
+          description: `已连接 ${endpoint}；等待连接事件确认`,
+        },
+      }));
+    } catch (error) {
+      snapshot.update((state) => ({
+        ...state,
+        connection: {
+          state: "authFailed",
+          title: "连接桌面 POC 失败",
+          description: error instanceof Error ? error.message : "无法连接目标桌面 POC",
+        },
+      }));
+      throw error;
+    }
+  },
+  async disconnectAllPocPeers() {
+    const disconnected = await disconnectAllPocPeers();
+    pocPeers.clear();
+    updatePocDevices(
+      "已断开 POC 连接",
+      disconnected > 0 ? `已断开 ${disconnected} 个临时连接` : "当前没有已连接的 POC",
+    );
   },
   async startClipboardMonitor() {
     if (monitorStarted) {
@@ -233,11 +274,11 @@ export const shellSnapshot = {
         ...state,
         connection: {
           state: sentCount > 0 ? "online" : "offline",
-          title: sentCount > 0 ? "已发送到 Harmony POC" : "没有已连接的 Harmony POC",
+          title: sentCount > 0 ? "已发送到远端 POC" : "没有已连接的 POC",
           description:
             sentCount > 0
               ? `已向 ${sentCount} 个 POC 连接发送当前文本`
-              : "请先在 Harmony 端手动连接桌面 POC 服务",
+              : "请先在 Harmony 端或另一桌面实例建立 POC 连接",
         },
       }));
     } catch (error) {

@@ -2,6 +2,7 @@
   import ClipboardCard from "$lib/components/clipboard/ClipboardCard.svelte";
   import HistoryList from "$lib/components/clipboard/HistoryList.svelte";
   import DeviceChips from "$lib/components/devices/DeviceChips.svelte";
+  import PocConnectCard from "$lib/components/devices/PocConnectCard.svelte";
   import StatusCard from "$lib/components/common/StatusCard.svelte";
   import StatusDot from "$lib/components/common/StatusDot.svelte";
   import { shellSnapshot } from "$lib/stores/shell";
@@ -37,6 +38,8 @@
     title={$shellSnapshot.connection.title}
     description={$shellSnapshot.connection.description}
   />
+
+  <PocConnectCard />
 
   <ClipboardCard
     current={$shellSnapshot.current}
