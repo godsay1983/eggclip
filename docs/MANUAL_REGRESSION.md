@@ -29,6 +29,13 @@
 - [x] 验证空文本、256 KiB、超过 256 KiB、中文、Emoji 和多行文本。
 - [x] 连续双向复制 100 次，无无限回环、重复风暴或明显卡顿。
 
+## Windows 剪贴板隐私标记
+
+- [ ] 使用测试工具写入 `ExcludeClipboardContentFromMonitorProcessing` 后，EggClip 不产生本机同步候选。
+- [ ] 使用测试工具写入 `CanUploadToCloudClipboard=0` 后，EggClip 不产生本机同步候选。
+- [ ] 通过 EggClip 复制文本后，确认 `CanUploadToCloudClipboard` 为 0，文本仍可在本机剪贴板使用。
+- [ ] 上述排除路径不输出正文或标记原始数据到普通日志。
+
 ## HarmonyOS 生命周期与发现
 
 - [x] App 在前台时可开始/停止 `_eggclip._tcp.local.` 搜索。

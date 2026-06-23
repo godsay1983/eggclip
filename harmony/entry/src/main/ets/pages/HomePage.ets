@@ -430,18 +430,18 @@ export struct HomePage {
         this.connectionDescription = `${reason}；可尝试其他候选或手动 IP`;
       },
       onMessage: (message: string) => {
-        const text = this.transport.parseClipboardTextMessage(message);
-        if (text !== null) {
-          this.latestReceivedText = text;
-          this.latestReceivedPreview = this.trimPreview(text);
+        const decoded = this.transport.decodeClipboardTextMessage(message);
+        if (decoded.ok) {
+          this.latestReceivedText = decoded.text;
+          this.latestReceivedPreview = this.trimPreview(decoded.text);
           this.latestReceivedSource = 'Desktop POC';
           this.copyStatus = '已收到桌面 POC 文本，可点击复制到本机';
-          this.transportStatus = `收到桌面 POC 文本：${text.length} 字符`;
+          this.transportStatus = `收到桌面 POC 文本：${decoded.text.length} 字符`;
           this.connectionState = ConnectionState.ONLINE;
           this.connectionTitle = '已收到桌面 POC 文本';
           this.connectionDescription = '内容只进入预览，点击后才会复制到本机';
         } else {
-          this.transportStatus = '收到无法识别或超限的 POC 消息，已忽略';
+          this.transportStatus = `${decoded.reason}，已忽略`;
         }
       }
     })

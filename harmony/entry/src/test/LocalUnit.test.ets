@@ -38,12 +38,18 @@ export default function localUnitTest() {
       expect(transport.parseClipboardTextMessage('{"kind":"other","text":"ignored"}')).assertEqual(null);
       expect(transport.parseClipboardTextMessage('not json')).assertEqual(null);
       expect(transport.parseClipboardTextMessage('{"kind":"clipboardText","text":""}')).assertEqual(null);
+      expect(transport.decodeClipboardTextMessage('not json').reason).assertEqual('POC 消息不是有效 JSON');
+      expect(transport.decodeClipboardTextMessage('{"kind":"clipboardText","text":""}').reason)
+        .assertEqual('POC 文本为空');
       const exactText = 'a'.repeat(MAX_TEXT_BYTES);
       const exactMessage = transport.encodeClipboardTextMessage(exactText);
       expect(exactMessage === null).assertEqual(false);
       expect(transport.parseClipboardTextMessage(exactMessage ?? '')).assertEqual(exactText);
       expect(transport.encodeClipboardTextMessage('')).assertEqual(null);
       expect(transport.encodeClipboardTextMessage('a'.repeat(MAX_TEXT_BYTES + 1))).assertEqual(null);
+      const oversizedTextMessage = `{"kind":"clipboardText","text":"${'a'.repeat(MAX_TEXT_BYTES + 1)}"}`;
+      expect(transport.decodeClipboardTextMessage(oversizedTextMessage).reason)
+        .assertEqual('POC 文本超过 256 KiB 上限');
       expect(transport.parseClipboardTextMessage('a'.repeat(POC_MAX_FRAME_BYTES + 1))).assertEqual(null);
     });
 

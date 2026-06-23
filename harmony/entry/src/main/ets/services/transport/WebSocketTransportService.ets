@@ -16,6 +16,12 @@ export interface PocClipboardTextMessage {
   text: string;
 }
 
+export interface PocClipboardTextDecodeResult {
+  ok: boolean;
+  text: string;
+  reason: string;
+}
+
 export class WebSocketTransportService {
   private state: PocLifecycleState = PocLifecycleState.IDLE;
   private socket: webSocket.WebSocket | null = null;
@@ -136,23 +142,34 @@ export class WebSocketTransportService {
   }
 
   parseClipboardTextMessage(message: string): string | null {
+    const result = this.decodeClipboardTextMessage(message);
+    return result.ok ? result.text : null;
+  }
+
+  decodeClipboardTextMessage(message: string): PocClipboardTextDecodeResult {
     if (estimateUtf8Bytes(message) > POC_MAX_FRAME_BYTES) {
-      return null;
+      return this.rejectedMessage('POC 消息超过 1 MiB 帧上限');
     }
     try {
       const parsed = JSON.parse(message) as PocClipboardTextMessage;
-      if (
-        parsed.kind === 'clipboardText' &&
-        typeof parsed.text === 'string' &&
-        estimateUtf8Bytes(parsed.text) > 0 &&
-        estimateUtf8Bytes(parsed.text) <= MAX_TEXT_BYTES
-      ) {
-        return parsed.text;
+      if (parsed.kind !== 'clipboardText' || typeof parsed.text !== 'string') {
+        return this.rejectedMessage('POC 消息类型或字段无效');
       }
+      const byteLength = estimateUtf8Bytes(parsed.text);
+      if (byteLength === 0) {
+        return this.rejectedMessage('POC 文本为空');
+      }
+      if (byteLength > MAX_TEXT_BYTES) {
+        return this.rejectedMessage('POC 文本超过 256 KiB 上限');
+      }
+      return {
+        ok: true,
+        text: parsed.text,
+        reason: ''
+      };
     } catch (_) {
-      return null;
+      return this.rejectedMessage('POC 消息不是有效 JSON');
     }
-    return null;
   }
 
   encodeClipboardTextMessage(text: string): string | null {
@@ -212,5 +229,13 @@ export class WebSocketTransportService {
       return null;
     }
     return octets.join('.');
+  }
+
+  private rejectedMessage(reason: string): PocClipboardTextDecodeResult {
+    return {
+      ok: false,
+      text: '',
+      reason
+    };
   }
 }

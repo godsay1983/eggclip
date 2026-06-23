@@ -9,6 +9,9 @@ use std::{
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
+#[cfg(target_os = "windows")]
+use arboard::SetExtWindows;
+
 pub const MAX_TEXT_BYTES: usize = 256 * 1024;
 const DEFAULT_SUPPRESSION_TTL: Duration = Duration::from_millis(1500);
 
@@ -215,9 +218,7 @@ pub fn write_clipboard_text(text: String) -> Result<(), String> {
     let item = ClipboardText::parse(text).map_err(|error| error.to_string())?;
     let mut clipboard =
         arboard::Clipboard::new().map_err(|error| format!("无法访问系统剪贴板：{error}"))?;
-    clipboard
-        .set_text(item.as_str().to_owned())
-        .map_err(|error| format!("无法写入系统剪贴板：{error}"))
+    set_eggclip_clipboard_text(&mut clipboard, &item)
 }
 
 pub fn write_remote_clipboard_text(app: &AppHandle, item: &ClipboardText) -> Result<(), String> {
@@ -228,11 +229,33 @@ pub fn write_remote_clipboard_text(app: &AppHandle, item: &ClipboardText) -> Res
         .map_err(|_| "剪贴板回环抑制状态锁已损坏".to_owned())?;
     let mut clipboard =
         arboard::Clipboard::new().map_err(|error| format!("无法访问系统剪贴板：{error}"))?;
-    clipboard
-        .set_text(item.as_str().to_owned())
-        .map_err(|error| format!("无法写入系统剪贴板：{error}"))?;
+    set_eggclip_clipboard_text(&mut clipboard, item)?;
     suppression.remember_remote_write(item, clipboard_sequence());
     Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn set_eggclip_clipboard_text(
+    clipboard: &mut arboard::Clipboard,
+    item: &ClipboardText,
+) -> Result<(), String> {
+    // EggClip is LAN-only. Keep the item in local Windows clipboard history, but
+    // explicitly prevent Windows Cloud Clipboard from uploading this app write.
+    clipboard
+        .set()
+        .exclude_from_cloud()
+        .text(item.as_str().to_owned())
+        .map_err(|error| format!("无法写入系统剪贴板：{error}"))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn set_eggclip_clipboard_text(
+    clipboard: &mut arboard::Clipboard,
+    item: &ClipboardText,
+) -> Result<(), String> {
+    clipboard
+        .set_text(item.as_str().to_owned())
+        .map_err(|error| format!("无法写入系统剪贴板：{error}"))
 }
 
 #[cfg(target_os = "windows")]
@@ -254,12 +277,13 @@ pub fn start_clipboard_monitor(app: AppHandle) {
             loop {
                 match monitor.recv() {
                     Ok(true) => {
-                        let item = match read_clipboard_text_for_monitor() {
-                            Ok(item) => item,
+                        let monitored = match read_clipboard_text_for_monitor() {
+                            Ok(monitored) => monitored,
                             Err(_) => continue,
                         };
 
-                        let source = match classify_monitored_update(&monitor_app, &item) {
+                        let source = match classify_monitored_update(&monitor_app, &monitored.item)
+                        {
                             Ok(source) => source,
                             Err(error) => {
                                 let _ = monitor_app.emit("clipboard://monitor-error", error);
@@ -269,10 +293,15 @@ pub fn start_clipboard_monitor(app: AppHandle) {
                         if source == ClipboardEventSource::RemoteWriteEcho {
                             continue;
                         }
+                        if !monitored.sync_allowed {
+                            continue;
+                        }
 
                         let _ = monitor_app.emit(
                             "clipboard://local-text",
-                            ClipboardMonitorEvent { item: item.clone() },
+                            ClipboardMonitorEvent {
+                                item: monitored.item,
+                            },
                         );
                     }
                     Ok(false) => break,
@@ -327,13 +356,57 @@ pub fn start_clipboard_monitor(app: AppHandle) {
 }
 
 #[cfg(target_os = "windows")]
-fn read_clipboard_text_for_monitor() -> Result<ClipboardText, String> {
-    let mut clipboard =
-        arboard::Clipboard::new().map_err(|error| format!("无法访问系统剪贴板：{error}"))?;
-    let text = clipboard
-        .get_text()
+struct MonitoredClipboardText {
+    item: ClipboardText,
+    sync_allowed: bool,
+}
+
+#[cfg(target_os = "windows")]
+fn read_clipboard_text_for_monitor() -> Result<MonitoredClipboardText, String> {
+    let _clipboard = clipboard_win::Clipboard::new_attempts(10)
+        .map_err(|error| format!("无法访问系统剪贴板：{error}"))?;
+    let exclude_from_monitoring =
+        has_registered_clipboard_format("ExcludeClipboardContentFromMonitorProcessing");
+    let can_upload_to_cloud = read_registered_clipboard_permission("CanUploadToCloudClipboard");
+    let text: String = clipboard_win::get(clipboard_win::formats::Unicode)
         .map_err(|error| format!("无法读取系统剪贴板文本：{error}"))?;
-    ClipboardText::parse(text).map_err(|error| error.to_string())
+    let item = ClipboardText::parse(text).map_err(|error| error.to_string())?;
+
+    Ok(MonitoredClipboardText {
+        item,
+        sync_allowed: clipboard_markers_allow_sync(exclude_from_monitoring, can_upload_to_cloud),
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn has_registered_clipboard_format(name: &str) -> bool {
+    clipboard_win::register_format(name)
+        .is_some_and(|format| clipboard_win::is_format_avail(format.get()))
+}
+
+#[cfg(target_os = "windows")]
+fn read_registered_clipboard_permission(name: &str) -> Option<bool> {
+    let format = clipboard_win::register_format(name)?;
+    if !clipboard_win::is_format_avail(format.get()) {
+        return None;
+    }
+    let value = clipboard_win::get::<Vec<u8>, _>(clipboard_win::formats::RawData(format.get()))
+        .ok()
+        .and_then(|bytes| decode_clipboard_dword(&bytes));
+    // A present but malformed permission marker is treated conservatively.
+    Some(value == Some(1))
+}
+
+fn decode_clipboard_dword(bytes: &[u8]) -> Option<u32> {
+    let value: [u8; 4] = bytes.get(..4)?.try_into().ok()?;
+    Some(u32::from_ne_bytes(value))
+}
+
+fn clipboard_markers_allow_sync(
+    exclude_from_monitoring: bool,
+    can_upload_to_cloud: Option<bool>,
+) -> bool {
+    !exclude_from_monitoring && can_upload_to_cloud != Some(false)
 }
 
 #[cfg(test)]
@@ -424,5 +497,21 @@ mod tests {
             tracker.classify_update(&item, Some(7)),
             ClipboardEventSource::RemoteWriteEcho
         );
+    }
+
+    #[test]
+    fn honors_windows_clipboard_sync_exclusion_markers() {
+        assert!(clipboard_markers_allow_sync(false, None));
+        assert!(clipboard_markers_allow_sync(false, Some(true)));
+        assert!(!clipboard_markers_allow_sync(true, None));
+        assert!(!clipboard_markers_allow_sync(false, Some(false)));
+        assert!(!clipboard_markers_allow_sync(true, Some(true)));
+    }
+
+    #[test]
+    fn decodes_serialized_windows_clipboard_dword() {
+        assert_eq!(decode_clipboard_dword(&0u32.to_ne_bytes()), Some(0));
+        assert_eq!(decode_clipboard_dword(&1u32.to_ne_bytes()), Some(1));
+        assert_eq!(decode_clipboard_dword(&[0, 1, 2]), None);
     }
 }

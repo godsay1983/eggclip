@@ -12,7 +12,7 @@
 - 模型：Stage Model
 - 入口 Ability：`EntryAbility`
 - 当前首页：`entry/src/main/ets/pages/Index.ets`
-- 当前状态：H0 工程基线、主题、目标模块目录和空壳首页已建立；HarmonyOS 图标已与桌面端同源，H1 已声明网络 POC 所需最小权限，首页已接入真实 PasteButton、pasteboard 纯文本读取、严格 IPv4 手动连接、Desktop ↔ Harmony 临时文本收发、用户触发复制到本机、前台 mDNS 搜索、动态连接状态和前后台连接清理；发送与接收统一执行 256 KiB 正文和 1 MiB 外层帧边界，并补充了对应单测。
+- 当前状态：H0 工程基线、主题、目标模块目录和空壳首页已建立；HarmonyOS 图标已与桌面端同源，H1 已声明网络 POC 所需最小权限，首页已接入真实 PasteButton、pasteboard 纯文本读取、严格 IPv4 手动连接、Desktop ↔ Harmony 临时文本收发、用户触发复制到本机、前台 mDNS 搜索、动态连接状态和前后台连接清理；发送与接收统一执行 256 KiB 正文和 1 MiB 外层帧边界，无效 JSON、消息类型、空文本和超限正文会显示不同拒绝原因。
 - 参考项目：`D:\Develop\EggDoneHarmony\EggDone`
 - 架构基线：`docs/EggClip最佳实现方案.md`
 
