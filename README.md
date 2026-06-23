@@ -2,7 +2,7 @@
 
 EggClip 是纯局域网剪贴板同步工具。Windows 桌面端负责自动监听和同步，HarmonyOS 端在前台连接，并通过系统授权操作发送或复制文本。
 
-当前处于 D1/H1 技术 POC 阶段：Windows 剪贴板监听、双向 WebSocket 文本传输、桌面端手动 IP/端口出站连接、最小 mDNS 服务发布、局域网候选地址诊断和 POC peer 状态已接通；HarmonyOS 已接入真实 PasteButton、严格 IPv4 手动连接、前台 mDNS 搜索和动态连接状态。两端统一限制正文最大 256 KiB，外层 POC 帧最大 1 MiB。桌面端尊重 Windows 剪贴板的监控/跨设备同步排除标记，EggClip 写入不会被 Windows 云剪贴板上传。当前 POC 尚未认证，因此远端文本只进入预览，必须由用户点击复制；配对、端到端加密、历史存储和正式协议尚未实现。
+当前处于 D1/H1 技术 POC 阶段：Windows 剪贴板监听、双向 WebSocket 文本传输、桌面端手动 IP/端口出站连接、最小 mDNS 服务发布、局域网候选地址诊断和 POC peer 状态已接通；HarmonyOS 已接入真实 PasteButton、严格 IPv4 手动连接、前台 mDNS 搜索和动态连接状态。两端统一限制正文最大 256 KiB，外层 POC 帧最大 1 MiB，并显示不含正文的接收/接受/拒绝诊断计数。桌面端尊重 Windows 剪贴板的监控/跨设备同步排除标记，EggClip 写入不会被 Windows 云剪贴板上传。当前 POC 尚未认证，因此远端文本只进入预览，必须由用户点击复制；配对、端到端加密、历史存储和正式协议尚未实现。
 
 最后核对：2026-06-21。
 

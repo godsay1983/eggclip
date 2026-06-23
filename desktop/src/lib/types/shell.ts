@@ -26,6 +26,20 @@ export interface HistorySummary {
   limit: number;
 }
 
+export type PocRejectionReason =
+  | "frameTooLarge"
+  | "invalidMessage"
+  | "emptyText"
+  | "textTooLarge"
+  | "binaryUnsupported";
+
+export interface PocDiagnostics {
+  receivedFrames: number;
+  acceptedItems: number;
+  rejectedFrames: number;
+  lastRejection: PocRejectionReason | null;
+}
+
 export interface ShellSnapshot {
   connection: {
     state: ConnectionState;
@@ -35,5 +49,6 @@ export interface ShellSnapshot {
   current: ClipboardPreview | null;
   devices: DeviceSummary[];
   history: HistorySummary;
+  pocDiagnostics: PocDiagnostics;
   syncEnabled: boolean;
 }

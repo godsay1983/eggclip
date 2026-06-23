@@ -198,6 +198,11 @@ footer {
   font-size: 11px;
 }
 
+.poc-connect-card .poc-diagnostics {
+  margin-top: -4px;
+  color: var(--primary-deep);
+}
+
 .endpoint-row,
 .poc-action-row {
   display: grid;

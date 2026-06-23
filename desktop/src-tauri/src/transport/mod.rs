@@ -1,6 +1,6 @@
 use std::{collections::HashMap, net::Ipv4Addr, str::FromStr, sync::Mutex, time::Duration};
 
-use crate::clipboard::ClipboardText;
+use crate::clipboard::{ClipboardText, ClipboardTextError};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -19,6 +19,7 @@ const POC_CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
 pub struct PocTransportRuntime {
     server: Mutex<Option<PocServerHandle>>,
     peers: Mutex<HashMap<String, mpsc::UnboundedSender<Message>>>,
+    diagnostics: Mutex<PocTransportDiagnostics>,
 }
 
 struct PocServerHandle {
@@ -35,7 +36,27 @@ pub struct PocTransportStatus {
     discovery_published: bool,
     network_addresses: Vec<crate::discovery::PocNetworkAddress>,
     connected_peers: usize,
+    diagnostics: PocTransportDiagnostics,
     last_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PocTransportDiagnostics {
+    received_frames: u64,
+    accepted_items: u64,
+    rejected_frames: u64,
+    last_rejection: Option<PocRejectionReason>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PocRejectionReason {
+    FrameTooLarge,
+    InvalidMessage,
+    EmptyText,
+    TextTooLarge,
+    BinaryUnsupported,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -97,6 +118,7 @@ pub async fn start_poc_transport(
         .map_err(|error| format!("无法读取 WebSocket POC 监听地址：{error}"))?;
 
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    reset_poc_diagnostics(&runtime)?;
     let discovery_published = match crate::discovery::publish_poc_service(&app, local_addr.port()) {
         Ok(()) => true,
         Err(error) => {
@@ -111,6 +133,7 @@ pub async fn start_poc_transport(
         discovery_published,
         network_addresses: crate::discovery::local_ipv4_candidates().unwrap_or_default(),
         connected_peers: 0,
+        diagnostics: PocTransportDiagnostics::default(),
         last_error: None,
     };
 
@@ -162,6 +185,7 @@ pub fn stop_poc_transport(
         discovery_published: false,
         network_addresses: crate::discovery::local_ipv4_candidates().unwrap_or_default(),
         connected_peers: 0,
+        diagnostics: diagnostics_snapshot(&runtime),
         last_error: None,
     };
     let _ = app.emit("transport://poc-status", status.clone());
@@ -180,6 +204,7 @@ pub fn get_poc_transport_status(
             discovery_published: false,
             network_addresses: crate::discovery::local_ipv4_candidates().unwrap_or_default(),
             connected_peers: 0,
+            diagnostics: diagnostics_snapshot(&runtime),
             last_error: None,
         }),
     )
@@ -289,7 +314,45 @@ fn current_running_status(runtime: &State<'_, PocTransportRuntime>) -> Option<Po
         .ok()
         .and_then(|server| server.as_ref().map(|handle| handle.status.clone()))?;
     status.connected_peers = runtime.peers.lock().map(|peers| peers.len()).unwrap_or(0);
+    status.diagnostics = diagnostics_snapshot(runtime);
     Some(status)
+}
+
+fn reset_poc_diagnostics(runtime: &PocTransportRuntime) -> Result<(), String> {
+    let mut diagnostics = runtime
+        .diagnostics
+        .lock()
+        .map_err(|_| "WebSocket POC 诊断状态锁已损坏".to_owned())?;
+    *diagnostics = PocTransportDiagnostics::default();
+    Ok(())
+}
+
+fn diagnostics_snapshot(runtime: &PocTransportRuntime) -> PocTransportDiagnostics {
+    runtime
+        .diagnostics
+        .lock()
+        .map(|diagnostics| diagnostics.clone())
+        .unwrap_or_default()
+}
+
+fn record_poc_frame_result(app: &AppHandle, result: Result<(), PocRejectionReason>) {
+    let runtime = app.state::<PocTransportRuntime>();
+    let snapshot = runtime.diagnostics.lock().ok().map(|mut diagnostics| {
+        diagnostics.received_frames = diagnostics.received_frames.saturating_add(1);
+        match result {
+            Ok(()) => {
+                diagnostics.accepted_items = diagnostics.accepted_items.saturating_add(1);
+            }
+            Err(reason) => {
+                diagnostics.rejected_frames = diagnostics.rejected_frames.saturating_add(1);
+                diagnostics.last_rejection = Some(reason);
+            }
+        }
+        diagnostics.clone()
+    });
+    if let Some(snapshot) = snapshot {
+        let _ = app.emit("transport://poc-diagnostics", snapshot);
+    }
 }
 
 async fn run_poc_server(
@@ -311,6 +374,7 @@ async fn run_poc_server(
                             discovery_published: false,
                             network_addresses: Vec::new(),
                             connected_peers: 0,
+                            diagnostics: PocTransportDiagnostics::default(),
                             last_error: Some(format!("WebSocket POC 接收连接失败：{error}")),
                         });
                         break;
@@ -341,6 +405,7 @@ async fn handle_poc_peer(app: AppHandle, peer: String, stream: tokio::net::TcpSt
                     discovery_published: false,
                     network_addresses: Vec::new(),
                     connected_peers: 0,
+                    diagnostics: PocTransportDiagnostics::default(),
                     last_error: Some(format!("WebSocket POC 握手失败：{error}")),
                 },
             );
@@ -389,6 +454,7 @@ where
             Message::Text(text) => {
                 let byte_len = text.len();
                 if byte_len > POC_MAX_FRAME_BYTES {
+                    record_poc_frame_result(&app, Err(PocRejectionReason::FrameTooLarge));
                     break;
                 }
                 let _ = app.emit(
@@ -398,17 +464,29 @@ where
                         byte_len,
                     },
                 );
-                if let Some(item) = parse_poc_clipboard_text_message(&text) {
-                    let _ = app.emit(
-                        "transport://poc-clipboard-text",
-                        PocClipboardTextEvent {
-                            peer: peer.clone(),
-                            item,
-                        },
-                    );
+                match parse_poc_clipboard_text_message(&text) {
+                    Ok(item) => {
+                        record_poc_frame_result(&app, Ok(()));
+                        let _ = app.emit(
+                            "transport://poc-clipboard-text",
+                            PocClipboardTextEvent {
+                                peer: peer.clone(),
+                                item,
+                            },
+                        );
+                    }
+                    Err(reason) => record_poc_frame_result(&app, Err(reason)),
                 }
             }
-            Message::Binary(bytes) if bytes.len() > POC_MAX_FRAME_BYTES => break,
+            Message::Binary(bytes) => {
+                let reason = if bytes.len() > POC_MAX_FRAME_BYTES {
+                    PocRejectionReason::FrameTooLarge
+                } else {
+                    PocRejectionReason::BinaryUnsupported
+                };
+                record_poc_frame_result(&app, Err(reason));
+                break;
+            }
             Message::Close(_) => break,
             _ => {}
         }
@@ -426,13 +504,17 @@ fn serialize_poc_server_message(message: &PocServerMessage) -> Result<String, St
         .map_err(|error| format!("无法序列化 WebSocket POC 消息：{error}"))
 }
 
-fn parse_poc_clipboard_text_message(message: &str) -> Option<ClipboardText> {
+fn parse_poc_clipboard_text_message(message: &str) -> Result<ClipboardText, PocRejectionReason> {
     if message.len() > POC_MAX_FRAME_BYTES {
-        return None;
+        return Err(PocRejectionReason::FrameTooLarge);
     }
     let PocClientMessage::ClipboardText { text } =
-        serde_json::from_str::<PocClientMessage>(message).ok()?;
-    ClipboardText::parse(text).ok()
+        serde_json::from_str::<PocClientMessage>(message)
+            .map_err(|_| PocRejectionReason::InvalidMessage)?;
+    ClipboardText::parse(text).map_err(|error| match error {
+        ClipboardTextError::Empty => PocRejectionReason::EmptyText,
+        ClipboardTextError::TooLarge { .. } => PocRejectionReason::TextTooLarge,
+    })
 }
 
 #[cfg(test)]
@@ -455,23 +537,33 @@ mod tests {
 
     #[test]
     fn rejects_invalid_or_out_of_bounds_poc_text() {
-        assert!(parse_poc_clipboard_text_message("not json").is_none());
-        assert!(
-            parse_poc_clipboard_text_message(r#"{"kind":"clipboardText","text":""}"#).is_none()
+        assert_eq!(
+            parse_poc_clipboard_text_message("not json").unwrap_err(),
+            PocRejectionReason::InvalidMessage
+        );
+        assert_eq!(
+            parse_poc_clipboard_text_message(r#"{"kind":"clipboardText","text":""}"#).unwrap_err(),
+            PocRejectionReason::EmptyText
         );
 
         let exact = serialize_poc_server_message(&PocServerMessage::ClipboardText {
             text: "a".repeat(crate::clipboard::MAX_TEXT_BYTES),
         })
         .expect("valid boundary frame");
-        assert!(parse_poc_clipboard_text_message(&exact).is_some());
+        assert!(parse_poc_clipboard_text_message(&exact).is_ok());
 
         let oversized = serialize_poc_server_message(&PocServerMessage::ClipboardText {
             text: "a".repeat(crate::clipboard::MAX_TEXT_BYTES + 1),
         })
         .expect("serializable oversized frame");
-        assert!(parse_poc_clipboard_text_message(&oversized).is_none());
-        assert!(parse_poc_clipboard_text_message(&"a".repeat(POC_MAX_FRAME_BYTES + 1)).is_none());
+        assert_eq!(
+            parse_poc_clipboard_text_message(&oversized).unwrap_err(),
+            PocRejectionReason::TextTooLarge
+        );
+        assert_eq!(
+            parse_poc_clipboard_text_message(&"a".repeat(POC_MAX_FRAME_BYTES + 1)).unwrap_err(),
+            PocRejectionReason::FrameTooLarge
+        );
     }
 
     #[test]

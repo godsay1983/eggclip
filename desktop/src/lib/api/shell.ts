@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { ClipboardPreview, ShellSnapshot } from "$lib/types/shell";
+import type { ClipboardPreview, PocDiagnostics, ShellSnapshot } from "$lib/types/shell";
 
 interface ClipboardTextItem {
   text: string;
@@ -38,6 +38,7 @@ interface PocTransportStatus {
   discoveryPublished: boolean;
   networkAddresses: PocNetworkAddress[];
   connectedPeers: number;
+  diagnostics: PocDiagnostics;
   lastError: string | null;
 }
 
@@ -69,6 +70,12 @@ export function createInitialShellSnapshot(): ShellSnapshot {
     history: {
       used: 0,
       limit: 50,
+    },
+    pocDiagnostics: {
+      receivedFrames: 0,
+      acceptedItems: 0,
+      rejectedFrames: 0,
+      lastRejection: null,
     },
     syncEnabled: true,
   };
@@ -159,6 +166,14 @@ export async function onPocDiscoveryError(
   handler: (message: string) => void,
 ): Promise<() => void> {
   return listen<string>("discovery://poc-error", (event) => {
+    handler(event.payload);
+  });
+}
+
+export async function onPocDiagnostics(
+  handler: (diagnostics: PocDiagnostics) => void,
+): Promise<() => void> {
+  return listen<PocDiagnostics>("transport://poc-diagnostics", (event) => {
     handler(event.payload);
   });
 }

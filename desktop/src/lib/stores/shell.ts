@@ -6,6 +6,7 @@ import {
   getPocTransportStatus,
   onLocalClipboardText,
   onPocClipboardText,
+  onPocDiagnostics,
   onPocDiscoveryError,
   onPocPeerConnected,
   onPocPeerDisconnected,
@@ -106,6 +107,12 @@ export const shellSnapshot = {
             "已收到远端 POC 文本",
             `来自 ${peer}；POC 尚未认证，只进入面板预览，请由用户点击复制`,
           );
+        }),
+        onPocDiagnostics((pocDiagnostics) => {
+          snapshot.update((state) => ({
+            ...state,
+            pocDiagnostics,
+          }));
         }),
         onPocPeerConnected((peer) => {
           pocPeers.add(peer);

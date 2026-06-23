@@ -36,6 +36,7 @@ export struct HomePage {
   @State private connectionDescription: string = '正在等待 mDNS 候选，也可以使用手动 IP';
   @State private pasteStatus: string = '等待点击 PasteButton 触发一次性授权';
   @State private transportStatus: string = '输入桌面端 IP 和端口后手动连接';
+  @State private transportDiagnostics: string = '帧诊断：接收 0 · 接受 0 · 拒绝 0';
   @State private copyStatus: string = '收到桌面文本后可手动复制到本机';
   @State private latestReceivedText: string = '';
   @State private latestReceivedPreview: string = '';
@@ -159,6 +160,11 @@ export struct HomePage {
         .width('100%')
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
+
+      Text(this.transportDiagnostics)
+        .width('100%')
+        .fontSize(EggClipTypography.captionSize)
+        .fontColor(EggClipColors.primary)
 
       Row({ space: 8 }) {
         Button('开始发现')
@@ -414,6 +420,7 @@ export struct HomePage {
         this.connectionState = ConnectionState.ONLINE;
         this.connectionTitle = '已连接桌面 POC';
         this.connectionDescription = `${endpoint.host}:${endpoint.port} · 当前连接尚未认证`;
+        this.refreshTransportDiagnostics();
       },
       onClose: (reason: string) => {
         this.transportState = PocLifecycleState.IDLE;
@@ -428,9 +435,11 @@ export struct HomePage {
         this.connectionState = ConnectionState.OFFLINE;
         this.connectionTitle = '连接桌面 POC 失败';
         this.connectionDescription = `${reason}；可尝试其他候选或手动 IP`;
+        this.refreshTransportDiagnostics();
       },
       onMessage: (message: string) => {
         const decoded = this.transport.decodeClipboardTextMessage(message);
+        this.refreshTransportDiagnostics();
         if (decoded.ok) {
           this.latestReceivedText = decoded.text;
           this.latestReceivedPreview = this.trimPreview(decoded.text);
@@ -566,5 +575,13 @@ export struct HomePage {
       return text;
     }
     return `${text.slice(0, 90)}\n……\n${text.slice(-60)}`;
+  }
+
+  private refreshTransportDiagnostics(): void {
+    const diagnostics = this.transport.currentDiagnostics();
+    const rejection = diagnostics.lastRejection.length > 0
+      ? ` · 上次拒绝：${diagnostics.lastRejection}`
+      : '';
+    this.transportDiagnostics = `帧诊断：接收 ${diagnostics.receivedFrames} · 接受 ${diagnostics.acceptedItems} · 拒绝 ${diagnostics.rejectedFrames}${rejection}`;
   }
 }

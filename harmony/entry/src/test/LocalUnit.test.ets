@@ -68,5 +68,19 @@ export default function localUnitTest() {
       expect(oversized.ok).assertEqual(false);
       expect(oversized.error).assertEqual(ClipboardValidationError.TOO_LARGE);
     });
+
+    it('tracksSafePocFrameDiagnostics', 0, () => {
+      const transport = new WebSocketTransportService();
+      transport.decodeClipboardTextMessage('{"kind":"clipboardText","text":"ok"}');
+      transport.decodeClipboardTextMessage('not json');
+      const diagnostics = transport.currentDiagnostics();
+      expect(diagnostics.receivedFrames).assertEqual(2);
+      expect(diagnostics.acceptedItems).assertEqual(1);
+      expect(diagnostics.rejectedFrames).assertEqual(1);
+      expect(diagnostics.lastRejection).assertEqual('POC 消息不是有效 JSON');
+
+      transport.resetDiagnostics();
+      expect(transport.currentDiagnostics().receivedFrames).assertEqual(0);
+    });
   });
 }

@@ -22,11 +22,24 @@ export interface PocClipboardTextDecodeResult {
   reason: string;
 }
 
+export interface PocTransportDiagnostics {
+  receivedFrames: number;
+  acceptedItems: number;
+  rejectedFrames: number;
+  lastRejection: string;
+}
+
 export class WebSocketTransportService {
   private state: PocLifecycleState = PocLifecycleState.IDLE;
   private socket: webSocket.WebSocket | null = null;
   private connected: boolean = false;
   private connectTimeoutId: number = -1;
+  private diagnostics: PocTransportDiagnostics = {
+    receivedFrames: 0,
+    acceptedItems: 0,
+    rejectedFrames: 0,
+    lastRejection: ''
+  };
 
   currentState(): PocLifecycleState {
     return this.state;
@@ -34,6 +47,24 @@ export class WebSocketTransportService {
 
   isConnected(): boolean {
     return this.connected;
+  }
+
+  currentDiagnostics(): PocTransportDiagnostics {
+    return {
+      receivedFrames: this.diagnostics.receivedFrames,
+      acceptedItems: this.diagnostics.acceptedItems,
+      rejectedFrames: this.diagnostics.rejectedFrames,
+      lastRejection: this.diagnostics.lastRejection
+    };
+  }
+
+  resetDiagnostics(): void {
+    this.diagnostics = {
+      receivedFrames: 0,
+      acceptedItems: 0,
+      rejectedFrames: 0,
+      lastRejection: ''
+    };
   }
 
   validateEndpoint(endpoint: ManualEndpoint): EndpointValidationResult {
@@ -66,6 +97,7 @@ export class WebSocketTransportService {
     }
 
     this.close();
+    this.resetDiagnostics();
     this.state = PocLifecycleState.STARTING;
     this.connected = false;
     const socket = webSocket.createWebSocket();
@@ -89,6 +121,7 @@ export class WebSocketTransportService {
       if (typeof data === 'string') {
         callbacks.onMessage(data);
       } else {
+        this.recordBinaryRejection();
         callbacks.onError('POC 不支持二进制消息');
       }
     });
@@ -147,6 +180,7 @@ export class WebSocketTransportService {
   }
 
   decodeClipboardTextMessage(message: string): PocClipboardTextDecodeResult {
+    this.diagnostics.receivedFrames += 1;
     if (estimateUtf8Bytes(message) > POC_MAX_FRAME_BYTES) {
       return this.rejectedMessage('POC 消息超过 1 MiB 帧上限');
     }
@@ -162,6 +196,7 @@ export class WebSocketTransportService {
       if (byteLength > MAX_TEXT_BYTES) {
         return this.rejectedMessage('POC 文本超过 256 KiB 上限');
       }
+      this.diagnostics.acceptedItems += 1;
       return {
         ok: true,
         text: parsed.text,
@@ -232,10 +267,18 @@ export class WebSocketTransportService {
   }
 
   private rejectedMessage(reason: string): PocClipboardTextDecodeResult {
+    this.diagnostics.rejectedFrames += 1;
+    this.diagnostics.lastRejection = reason;
     return {
       ok: false,
       text: '',
       reason
     };
+  }
+
+  private recordBinaryRejection(): void {
+    this.diagnostics.receivedFrames += 1;
+    this.diagnostics.rejectedFrames += 1;
+    this.diagnostics.lastRejection = 'POC 不支持二进制消息';
   }
 }
