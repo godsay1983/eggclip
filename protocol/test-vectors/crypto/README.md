@@ -1,6 +1,6 @@
 # Crypto Test Vectors
 
-Add deterministic byte-for-byte vectors here before implementing encrypted sessions:
+Deterministic byte-for-byte vectors in this directory cover:
 
 - Ed25519 signing and verification
 - X25519 shared secret derivation
@@ -8,4 +8,6 @@ Add deterministic byte-for-byte vectors here before implementing encrypted sessi
 - AES-256-GCM encryption and tamper rejection
 - Replay and counter rejection fixtures
 
-Use fixed test-only keys. Never add production keys, pairing secrets, or real clipboard text.
+All current key material comes from public standards test vectors or synthetic
+counter examples. Never add production keys, pairing secrets, or real clipboard
+text.

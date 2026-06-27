@@ -1,0 +1,11 @@
+{
+  "algorithm": "AES-256-GCM",
+  "source": "Synthetic AES-256-GCM zero key/nonce/plaintext test-only vector",
+  "key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "nonce": "AAAAAAAAAAAAAAAA",
+  "aad": "",
+  "plaintext": "AAAAAAAAAAAAAAAAAAAAAA",
+  "ciphertext": "zqdAPU1ga24HTsXTuvOdGA",
+  "tag": "0NHIp5mZa_AmW5i11Iq5GQ",
+  "tamperedTag": "0NHIp5mZa_AmW5i11Iq5GA"
+}

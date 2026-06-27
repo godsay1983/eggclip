@@ -27,9 +27,15 @@ tauri-plugin-autostart = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 arboard = "3"
+aes-gcm = "0.10"
+base64 = "0.22"
 clipboard-win = { version = "5.4.1", features = ["monitor"] }
+ed25519-dalek = "2.1"
 futures-util = "0.3"
+hkdf = "0.12"
 if-addrs = "0.15"
 mdns-sd = { version = "0.20", default-features = false }
+sha2 = "0.10"
 tokio = { version = "1", features = ["io-util", "macros", "net", "sync", "time"] }
 tokio-tungstenite = "0.26"
+x25519-dalek = { version = "2", features = ["static_secrets"] }

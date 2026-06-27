@@ -204,4 +204,7 @@ test-vectors/
 └─ errors/
 ```
 
-Current fixtures are schema and parsing fixtures only. Cryptographic byte-for-byte vectors must be added before implementing encrypted sessions.
+Current fixtures include schema/parsing JSON and deterministic byte-for-byte
+crypto vectors for Ed25519, X25519, HKDF-SHA-256, AES-256-GCM and replay
+counter rejection. These are public or synthetic test-only vectors; they are not
+production keys, invitations or clipboard content.

@@ -1,0 +1,10 @@
+{
+  "algorithm": "HKDF-SHA-256",
+  "source": "RFC 5869 test case 1",
+  "ikm": "CwsLCwsLCwsLCwsLCwsLCwsLCwsLCw",
+  "salt": "AAECAwQFBgcICQoLDA",
+  "info": "8PHy8_T19vf4-Q",
+  "length": 42,
+  "prk": "B3cJNiwuMt8N3D8NxHu6Y5C2xzu1D5wxIuyEStfCs-U",
+  "okm": "PLJfJfqs1XqQQ09k0DYvKi0tCpDPGlpMXbAtVuzExb80AHII1biHGFhl"
+}

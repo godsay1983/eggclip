@@ -7,7 +7,8 @@ Current status:
 - `handshake/`: schema fixtures for plaintext pre-auth envelopes.
 - `sync/`: plaintext canonical payload fixtures for sync records.
 - `errors/`: frames that must be rejected by schema or protocol checks.
-- `crypto/`: placeholder for future byte-for-byte cryptographic vectors.
+- `crypto/`: byte-for-byte cryptographic vectors for Ed25519, X25519,
+  HKDF-SHA-256, AES-256-GCM and replay counter rejection.
 
 Do not put real clipboard content, pairing secrets, private keys, or production space keys in this directory.
 

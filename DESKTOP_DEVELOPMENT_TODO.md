@@ -165,14 +165,14 @@ desktop/
 - [x] 固定 envelope、握手、错误和同步消息字段。
 - [x] 定义状态机：disconnected、connecting、handshaking、authenticated、syncing、ready、failed。
 - [x] 定义最大帧、最大 batch、超时和未知版本处理规则。
-- [ ] 创建 Rust/ArkTS 共用 JSON 和二进制测试向量；当前仅有 schema/解析用 JSON 初始样例，密码学二进制向量待实现 crypto 时补齐。
+- [ ] 创建 Rust/ArkTS 共用 JSON 和二进制测试向量；已补充 Ed25519、X25519、HKDF-SHA-256、AES-256-GCM 和 replay counter 的共享 crypto 向量，Rust 已做真算法校验，ArkTS 已镜像校验向量形状和字节长度但尚未接平台加密 API。
 - [x] 桌面 Rust 实现 v1 envelope、message type、ciphertext、hello、clipboard item 和 sync heads 类型。
 - [x] 桌面 Rust 消费 `protocol/test-vectors/`，覆盖合法握手、加密 envelope、clipboard item、未知版本和认证后明文拒绝。
 - [x] HarmonyOS ArkTS 实现同等协议类型和测试向量消费。
 
 ### 设备身份与本地密钥
 
-- [ ] 生成 Ed25519 长期身份密钥。
+- [ ] 生成 Ed25519 长期身份密钥；Rust 已完成基于测试 seed 的 Ed25519 签名/验签基元，生产随机生成与持久化未接入。
 - [ ] 使用系统凭据库保存私钥和 `spaceKey`。
 - [ ] SQLite 只保存公钥、密钥版本和加密引用。
 - [ ] 实现密钥加载失败、凭据缺失和凭据删除处理。
@@ -189,12 +189,12 @@ desktop/
 
 ### 会话加密
 
-- [ ] X25519 协商临时共享秘密。
+- [ ] X25519 协商临时共享秘密；Rust 已完成基于共享向量的 X25519 基元，正式握手状态机未接入。
 - [ ] Ed25519 签名绑定身份、空间和握手 transcript。
-- [ ] HKDF-SHA-256 派生双向独立会话密钥。
-- [ ] AES-256-GCM 加密认证后全部业务消息。
+- [ ] HKDF-SHA-256 派生双向独立会话密钥；Rust 基元已通过共享向量，正式 transcript/context 规则未接入。
+- [ ] AES-256-GCM 加密认证后全部业务消息；Rust 基元已通过共享向量和 tag 篡改拒绝，正式业务帧未接入。
 - [ ] 使用方向独立的单调计数器构造 nonce。
-- [ ] 拒绝旧计数器、重复消息、AEAD 失败和认证失败帧。
+- [ ] 拒绝旧计数器、重复消息、AEAD 失败和认证失败帧；Rust 已有单向 session counter guard 与 AEAD 失败测试，正式 session 未接入。
 - [ ] 会话结束后清理临时密钥材料。
 
 验收标准：

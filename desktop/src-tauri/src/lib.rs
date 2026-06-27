@@ -2,6 +2,7 @@ mod panel_position;
 mod tray;
 
 pub mod clipboard;
+pub mod crypto;
 pub mod discovery;
 pub mod protocol;
 pub mod sync;

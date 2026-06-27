@@ -65,6 +65,10 @@ function readJson(file) {
 }
 
 function assertAccepts(file, value) {
+  if (isCryptoFixture(file)) {
+    validateCryptoVector(value);
+    return;
+  }
   if (file.startsWith(vectors) && file.includes(`${sep()}sync${sep()}clipboard-item`)) {
     validateClipboardItem(value);
     return;
@@ -73,12 +77,70 @@ function assertAccepts(file, value) {
 }
 
 function assertRejects(file, value) {
+  if (isCryptoFixture(file)) {
+    validateCryptoVector(value);
+    return;
+  }
   try {
     validateEnvelope(value);
   } catch {
     return;
   }
   throw new Error("reject fixture was accepted");
+}
+
+function validateCryptoVector(value) {
+  requireObject(value, "crypto vector");
+  if (typeof value.algorithm !== "string" || value.algorithm.length === 0) {
+    throw new Error("algorithm must be a non-empty string");
+  }
+  switch (value.algorithm) {
+    case "Ed25519":
+      requireBase64Url(value.privateSeed, "privateSeed");
+      requireBase64Url(value.publicKey, "publicKey");
+      requireBase64Url(value.signature, "signature");
+      if (typeof value.message !== "string") {
+        throw new Error("message must be a string");
+      }
+      return;
+    case "X25519":
+      for (const field of [
+        "alicePrivateKey",
+        "alicePublicKey",
+        "bobPrivateKey",
+        "bobPublicKey",
+        "sharedSecret",
+      ]) {
+        requireBase64Url(value[field], field);
+      }
+      return;
+    case "HKDF-SHA-256":
+      for (const field of ["ikm", "salt", "info", "prk", "okm"]) {
+        requireBase64Url(value[field], field);
+      }
+      requireUint(value.length, "length");
+      return;
+    case "AES-256-GCM":
+      for (const field of ["key", "nonce", "aad", "plaintext", "ciphertext", "tag", "tamperedTag"]) {
+        requireBase64Url(value[field], field);
+      }
+      return;
+    case "EggClip-Session-Counter-v1":
+      if (!Array.isArray(value.accepted) || !Array.isArray(value.rejected)) {
+        throw new Error("counter vector must include accepted and rejected arrays");
+      }
+      value.accepted.forEach((counter, index) => requireUint(counter, `accepted[${index}]`));
+      value.rejected.forEach((entry, index) => {
+        requireObject(entry, `rejected[${index}]`);
+        requireUint(entry.counter, `rejected[${index}].counter`);
+        if (!["duplicate", "old"].includes(entry.reason)) {
+          throw new Error(`rejected[${index}].reason must be duplicate or old`);
+        }
+      });
+      return;
+    default:
+      throw new Error(`unknown crypto vector algorithm: ${value.algorithm}`);
+  }
 }
 
 function validateEnvelope(value) {
@@ -160,6 +222,16 @@ function requireUuid(value, field) {
   ) {
     throw new Error(`${field} must be a lowercase UUID`);
   }
+}
+
+function requireBase64Url(value, field) {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_-]*$/u.test(value)) {
+    throw new Error(`${field} must be base64url without padding`);
+  }
+}
+
+function isCryptoFixture(file) {
+  return file.startsWith(join(vectors, "crypto"));
 }
 
 function sep() {

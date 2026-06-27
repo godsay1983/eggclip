@@ -176,10 +176,10 @@ harmony/entry/src/main/ets/
 
 ### 跨语言测试向量
 
-- [ ] 读取 `protocol/test-vectors/`。
-- [ ] ArkTS 实现通过 Ed25519 签名/验签向量。
-- [ ] ArkTS 实现通过 X25519/HKDF 派生向量。
-- [ ] ArkTS 实现通过 AES-GCM 加解密和篡改拒绝向量。
+- [ ] 读取 `protocol/test-vectors/`；共享 crypto 向量已补充，Harmony 当前仍是 mirrored protocol JSON fixture，尚未读取 crypto 文件。
+- [ ] ArkTS 实现通过 Ed25519 签名/验签向量；本地 SDK 类型已确认存在 CryptoFramework/HUKS Ed25519 相关入口，具体调用封装待实现。
+- [ ] ArkTS 实现通过 X25519/HKDF 派生向量；本地 SDK 类型已确认存在 X25519 与 HKDF 相关入口，具体调用封装待实现。
+- [ ] ArkTS 实现通过 AES-GCM 加解密和篡改拒绝向量；本地 SDK 类型已确认存在 AES-GCM 参数入口，具体调用封装待实现。
 - [ ] 明确字节序、字符串编码、Base64 变体和 transcript 规范化规则。
 
 验收标准：

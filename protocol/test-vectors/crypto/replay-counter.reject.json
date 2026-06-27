@@ -1,0 +1,14 @@
+{
+  "algorithm": "EggClip-Session-Counter-v1",
+  "accepted": [1, 2, 5],
+  "rejected": [
+    {
+      "counter": 2,
+      "reason": "duplicate"
+    },
+    {
+      "counter": 4,
+      "reason": "old"
+    }
+  ]
+}
