@@ -5,7 +5,7 @@
 ## 当前状态
 
 - 工程目录：`D:\Develop\eggclip\desktop`
-- D0 工程基线已建立，桌面 UI 已拆出 TypeScript API / store / component 基线；D1 剪贴板 POC 已开始，当前完成文本边界、Win32 剪贴板事件监听、Windows 剪贴板同步排除标记、WebSocket POC server/手动客户端、最小 mDNS POC 发布、网卡/IPv4 诊断、POC peer/安全帧诊断状态、Desktop ↔ Desktop/Harmony 临时文本消息、100 条消息编解码回归和 sequence/digest/TTL 回环抑制基础。未认证 POC 只允许用户触发发送和复制。
+- D0 工程基线已建立，桌面 UI 已拆出 TypeScript API / store / component 基线；D1 剪贴板 POC 已开始，当前完成文本边界、Win32 剪贴板事件监听、Windows 剪贴板同步排除标记、WebSocket POC server/手动客户端、最小 mDNS POC 发布、网卡/IPv4 诊断、POC peer/安全帧诊断状态、Desktop ↔ Desktop/Harmony 临时文本消息、100 条消息编解码回归和 sequence/digest/TTL 回环抑制基础。未认证 POC 只允许用户触发发送和复制。因当前没有人工真机测试条件，D1 剩余手动验收已记录到 `docs/MANUAL_REGRESSION.md` 延期执行，不视为通过；按用户确认先进入共享协议开发。
 - 目标平台：Windows 10/11。
 - 目标技术栈：Tauri 2、Svelte 5、SvelteKit、TypeScript、Rust、SQLite。
 - 应用标识建议：`com.eggclip.desktop`。
@@ -161,11 +161,11 @@ desktop/
 
 ### 共享协议
 
-- [ ] 创建 `protocol/README.md` 和 `protocol/v1.schema.json`。
-- [ ] 固定 envelope、握手、错误和同步消息字段。
-- [ ] 定义状态机：disconnected、connecting、handshaking、authenticated、syncing、ready、failed。
-- [ ] 定义最大帧、最大 batch、超时和未知版本处理规则。
-- [ ] 创建 Rust/ArkTS 共用 JSON 和二进制测试向量。
+- [x] 创建 `protocol/README.md` 和 `protocol/v1.schema.json`。
+- [x] 固定 envelope、握手、错误和同步消息字段。
+- [x] 定义状态机：disconnected、connecting、handshaking、authenticated、syncing、ready、failed。
+- [x] 定义最大帧、最大 batch、超时和未知版本处理规则。
+- [ ] 创建 Rust/ArkTS 共用 JSON 和二进制测试向量；当前仅有 schema/解析用 JSON 初始样例，密码学二进制向量待实现 crypto 时补齐。
 
 ### 设备身份与本地密钥
 

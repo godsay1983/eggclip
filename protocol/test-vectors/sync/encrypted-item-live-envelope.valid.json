@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "type": "ITEM_LIVE",
+  "messageId": "018ff6f3-0d8c-7d1e-a38a-f308c64de79f",
+  "sessionCounter": 12,
+  "ciphertext": {
+    "algorithm": "AES-256-GCM",
+    "keyId": "session-v1-client-to-server",
+    "nonce": "DDDDDDDDDDDDDDDD",
+    "aad": "EEEEEEEEEEEEEEEE",
+    "body": "FFFFFFFFFFFFFFFF",
+    "tag": "GGGGGGGGGGGGGGGGGGGGGG"
+  }
+}

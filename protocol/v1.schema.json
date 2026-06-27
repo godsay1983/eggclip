@@ -1,0 +1,287 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eggclip.local/protocol/v1.schema.json",
+  "title": "EggClip Protocol v1 Envelope",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/preAuthEnvelope"
+    },
+    {
+      "$ref": "#/$defs/encryptedEnvelope"
+    }
+  ],
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "base64url": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "uint64": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 18446744073709551615
+    },
+    "unixMillis": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "preAuthType": {
+      "type": "string",
+      "enum": [
+        "CLIENT_HELLO",
+        "SERVER_HELLO",
+        "AUTH_PROOF",
+        "AUTH_OK",
+        "AUTH_ERROR",
+        "ERROR"
+      ]
+    },
+    "encryptedType": {
+      "type": "string",
+      "enum": [
+        "SYNC_HEADS",
+        "REQUEST_RANGE",
+        "ITEM_BATCH",
+        "ITEM_LIVE",
+        "ITEM_ACK",
+        "DEVICE_REVOKED",
+        "SPACE_KEY_ROTATED",
+        "PING",
+        "PONG",
+        "ERROR"
+      ]
+    },
+    "preAuthEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "type",
+        "messageId",
+        "sessionCounter",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "type": {
+          "$ref": "#/$defs/preAuthType"
+        },
+        "messageId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "sessionCounter": {
+          "$ref": "#/$defs/uint64"
+        },
+        "payload": {
+          "type": "object"
+        }
+      }
+    },
+    "encryptedEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "type",
+        "messageId",
+        "sessionCounter",
+        "ciphertext"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "type": {
+          "$ref": "#/$defs/encryptedType"
+        },
+        "messageId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "sessionCounter": {
+          "$ref": "#/$defs/uint64"
+        },
+        "ciphertext": {
+          "$ref": "#/$defs/ciphertext"
+        }
+      }
+    },
+    "ciphertext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "keyId",
+        "nonce",
+        "aad",
+        "body",
+        "tag"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "AES-256-GCM"
+        },
+        "keyId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "nonce": {
+          "$ref": "#/$defs/base64url"
+        },
+        "aad": {
+          "$ref": "#/$defs/base64url"
+        },
+        "body": {
+          "$ref": "#/$defs/base64url"
+        },
+        "tag": {
+          "$ref": "#/$defs/base64url"
+        }
+      }
+    },
+    "clientHelloPayload": {
+      "$ref": "#/$defs/helloPayload"
+    },
+    "serverHelloPayload": {
+      "$ref": "#/$defs/helloPayload"
+    },
+    "helloPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "spaceId",
+        "deviceId",
+        "identityPublicKey",
+        "ephemeralPublicKey",
+        "capabilities"
+      ],
+      "properties": {
+        "spaceId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "deviceId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "identityPublicKey": {
+          "$ref": "#/$defs/base64url"
+        },
+        "ephemeralPublicKey": {
+          "$ref": "#/$defs/base64url"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "textPlain",
+              "syncHeads",
+              "itemBatch",
+              "itemLive"
+            ]
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "clipboardItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "itemId",
+        "spaceId",
+        "originDeviceId",
+        "originSeq",
+        "hlc",
+        "contentType",
+        "contentLength",
+        "contentDigest",
+        "createdAt",
+        "content"
+      ],
+      "properties": {
+        "itemId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "spaceId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "originDeviceId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "originSeq": {
+          "$ref": "#/$defs/uint64"
+        },
+        "hlc": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "contentType": {
+          "const": "text/plain"
+        },
+        "contentLength": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 262144
+        },
+        "contentDigest": {
+          "$ref": "#/$defs/base64url"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/unixMillis"
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "syncHeadsPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "heads",
+        "minimumAvailable"
+      ],
+      "properties": {
+        "heads": {
+          "$ref": "#/$defs/deviceSeqMap"
+        },
+        "minimumAvailable": {
+          "$ref": "#/$defs/deviceSeqMap"
+        }
+      }
+    },
+    "itemBatchPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/clipboardItem"
+          }
+        }
+      }
+    },
+    "deviceSeqMap": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/uuid"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/uint64"
+      }
+    }
+  }
+}
