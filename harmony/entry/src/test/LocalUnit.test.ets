@@ -40,6 +40,10 @@ import {
 import {
   ClipboardRepository,
   DeviceRepository,
+  INITIAL_ORIGIN_SEQ,
+  LOCAL_DEVICE_ID_KEY,
+  LocalIdentityRepository,
+  NEXT_ORIGIN_SEQ_KEY,
   SettingsRepository,
   SpaceRepository,
   SyncHeadRepository
@@ -374,6 +378,39 @@ export default function localUnitTest() {
         retentionDays: 7
       }, 1700604800000);
       expect(invalid).assertEqual(null);
+    });
+
+    it('buildsLocalIdentityRepositoryCommandsForDeviceIdAndOriginSeq', 0, () => {
+      const identity = new LocalIdentityRepository();
+      const deviceId = '550e8400-e29b-41d4-a716-446655440000';
+
+      const loadDeviceId = identity.loadLocalDeviceId();
+      expect(loadDeviceId.sql.indexOf('SELECT value FROM app_metadata') >= 0).assertEqual(true);
+      expect(loadDeviceId.args[0]).assertEqual(LOCAL_DEVICE_ID_KEY);
+
+      const insertDeviceId = identity.insertLocalDeviceId(deviceId, 1700000000000);
+      expect(insertDeviceId.sql.indexOf('INSERT OR IGNORE INTO app_metadata') >= 0).assertEqual(true);
+      expect(insertDeviceId.args[0]).assertEqual(LOCAL_DEVICE_ID_KEY);
+      expect(insertDeviceId.args[1]).assertEqual(deviceId);
+
+      const initializeSeq = identity.initializeOriginSeq(1700000000001);
+      expect(initializeSeq.args[0]).assertEqual(NEXT_ORIGIN_SEQ_KEY);
+      expect(initializeSeq.args[1]).assertEqual(INITIAL_ORIGIN_SEQ.toString());
+
+      const loadSeq = identity.loadNextOriginSeq();
+      expect(loadSeq.args[0]).assertEqual(NEXT_ORIGIN_SEQ_KEY);
+
+      const advanceSeq = identity.advanceOriginSeq(7, 1700000000002);
+      expect(advanceSeq === null).assertEqual(false);
+      if (advanceSeq === null) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      expect(advanceSeq.sql.indexOf('WHERE key = ? AND value = ?') >= 0).assertEqual(true);
+      expect(advanceSeq.args[0]).assertEqual('8');
+      expect(advanceSeq.args[2]).assertEqual(NEXT_ORIGIN_SEQ_KEY);
+      expect(advanceSeq.args[3]).assertEqual('7');
+      expect(identity.advanceOriginSeq(Number.MAX_SAFE_INTEGER, 1700000000003)).assertEqual(null);
     });
 
     it('parsesProtocolClientHelloFixture', 0, () => {

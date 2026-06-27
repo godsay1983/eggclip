@@ -9,6 +9,9 @@ import {
 } from '../../models/DomainModels';
 
 export type SqlValue = string | number | Uint8Array | null;
+export const LOCAL_DEVICE_ID_KEY: string = 'localDeviceId';
+export const NEXT_ORIGIN_SEQ_KEY: string = 'nextOriginSeq';
+export const INITIAL_ORIGIN_SEQ: number = 1;
 
 export interface RepositoryCommand {
   sql: string;
@@ -241,6 +244,47 @@ export class SettingsRepository {
     return {
       sql: 'SELECT value FROM app_metadata WHERE key = ?',
       args: ['appSettings']
+    };
+  }
+}
+
+export class LocalIdentityRepository {
+  loadLocalDeviceId(): RepositoryCommand {
+    return {
+      sql: 'SELECT value FROM app_metadata WHERE key = ?',
+      args: [LOCAL_DEVICE_ID_KEY]
+    };
+  }
+
+  insertLocalDeviceId(deviceId: string, updatedAt: number): RepositoryCommand {
+    return {
+      sql: 'INSERT OR IGNORE INTO app_metadata(key, value, updated_at) VALUES (?, ?, ?)',
+      args: [LOCAL_DEVICE_ID_KEY, deviceId, updatedAt]
+    };
+  }
+
+  loadNextOriginSeq(): RepositoryCommand {
+    return {
+      sql: 'SELECT value FROM app_metadata WHERE key = ?',
+      args: [NEXT_ORIGIN_SEQ_KEY]
+    };
+  }
+
+  initializeOriginSeq(updatedAt: number): RepositoryCommand {
+    return {
+      sql: 'INSERT OR IGNORE INTO app_metadata(key, value, updated_at) VALUES (?, ?, ?)',
+      args: [NEXT_ORIGIN_SEQ_KEY, INITIAL_ORIGIN_SEQ.toString(), updatedAt]
+    };
+  }
+
+  advanceOriginSeq(currentSeq: number, updatedAt: number): RepositoryCommand | null {
+    if (!Number.isSafeInteger(currentSeq) || currentSeq < 0 || !Number.isSafeInteger(currentSeq + 1)) {
+      return null;
+    }
+    return {
+      sql: `UPDATE app_metadata SET value = ?, updated_at = ?
+        WHERE key = ? AND value = ?`,
+      args: [(currentSeq + 1).toString(), updatedAt, NEXT_ORIGIN_SEQ_KEY, currentSeq.toString()]
     };
   }
 }

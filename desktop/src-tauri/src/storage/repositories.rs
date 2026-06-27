@@ -3,8 +3,12 @@ use uuid::Uuid;
 
 use crate::sync::{
     AppSettings, ClipboardItem, ContentType, Device, DeviceConnectionState, DeviceTrustState,
-    HlcTimestamp, Space, SpaceState, SyncHead,
+    HlcTimestamp, Space, SpaceState, SyncHead, SyncModelError,
 };
+
+pub const LOCAL_DEVICE_ID_KEY: &str = "localDeviceId";
+pub const NEXT_ORIGIN_SEQ_KEY: &str = "nextOriginSeq";
+pub const INITIAL_ORIGIN_SEQ: u64 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpaceRecord {
@@ -393,6 +397,89 @@ impl<'a> SettingsRepository<'a> {
     }
 }
 
+pub struct LocalIdentityRepository<'a> {
+    connection: &'a mut Connection,
+}
+
+impl<'a> LocalIdentityRepository<'a> {
+    pub fn new(connection: &'a mut Connection) -> Self {
+        Self { connection }
+    }
+
+    pub fn get_or_create_device_id(&mut self, updated_at: u64) -> rusqlite::Result<Uuid> {
+        let transaction = self.connection.transaction()?;
+        let existing: Option<String> = transaction
+            .query_row(
+                "SELECT value FROM app_metadata WHERE key = ?1",
+                params![LOCAL_DEVICE_ID_KEY],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(value) = existing {
+            transaction.commit()?;
+            return parse_uuid(value, 0);
+        }
+
+        let device_id = Uuid::new_v4();
+        transaction.execute(
+            "INSERT INTO app_metadata(key, value, updated_at) VALUES (?1, ?2, ?3)",
+            params![
+                LOCAL_DEVICE_ID_KEY,
+                device_id.to_string(),
+                u64_to_i64(updated_at)?,
+            ],
+        )?;
+        transaction.commit()?;
+        Ok(device_id)
+    }
+
+    pub fn peek_next_origin_seq(&self) -> rusqlite::Result<u64> {
+        let value = self
+            .connection
+            .query_row(
+                "SELECT value FROM app_metadata WHERE key = ?1",
+                params![NEXT_ORIGIN_SEQ_KEY],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        match value {
+            Some(value) => parse_u64_metadata(&value, 0),
+            None => Ok(INITIAL_ORIGIN_SEQ),
+        }
+    }
+
+    pub fn allocate_origin_seq(&mut self, updated_at: u64) -> rusqlite::Result<u64> {
+        let transaction = self.connection.transaction()?;
+        transaction.execute(
+            "INSERT OR IGNORE INTO app_metadata(key, value, updated_at) VALUES (?1, ?2, ?3)",
+            params![
+                NEXT_ORIGIN_SEQ_KEY,
+                INITIAL_ORIGIN_SEQ.to_string(),
+                u64_to_i64(updated_at)?,
+            ],
+        )?;
+        let current_value: String = transaction.query_row(
+            "SELECT value FROM app_metadata WHERE key = ?1",
+            params![NEXT_ORIGIN_SEQ_KEY],
+            |row| row.get(0),
+        )?;
+        let current = parse_u64_metadata(&current_value, 0)?;
+        let next = current.checked_add(1).ok_or_else(|| {
+            rusqlite::Error::ToSqlConversionFailure(Box::new(SyncModelError::SequenceOverflow))
+        })?;
+        transaction.execute(
+            "UPDATE app_metadata SET value = ?2, updated_at = ?3 WHERE key = ?1",
+            params![
+                NEXT_ORIGIN_SEQ_KEY,
+                next.to_string(),
+                u64_to_i64(updated_at)?
+            ],
+        )?;
+        transaction.commit()?;
+        Ok(current)
+    }
+}
+
 fn row_to_space_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<SpaceRecord> {
     Ok(SpaceRecord {
         space: Space {
@@ -524,6 +611,12 @@ fn parse_uuid(value: String, column: usize) -> rusqlite::Result<Uuid> {
 
 fn parse_hlc(value: String, column: usize) -> rusqlite::Result<HlcTimestamp> {
     HlcTimestamp::from_wire(&value).ok_or_else(|| text_error(column, "invalid HLC timestamp"))
+}
+
+fn parse_u64_metadata(value: &str, column: usize) -> rusqlite::Result<u64> {
+    value.parse::<u64>().map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(column, Type::Text, Box::new(error))
+    })
 }
 
 fn u64_to_i64(value: u64) -> rusqlite::Result<i64> {
@@ -868,5 +961,33 @@ mod tests {
             .save_app_settings(&settings, 1_700_000_000_000)
             .expect("settings should save");
         assert_eq!(settings_repo.load_app_settings().unwrap(), Some(settings));
+    }
+
+    #[test]
+    fn local_identity_repository_persists_device_id_and_origin_sequence() {
+        let mut connection = open_in_memory_database().expect("database should initialize");
+        let first_device_id = {
+            let mut identity = LocalIdentityRepository::new(&mut connection);
+            let first_device_id = identity
+                .get_or_create_device_id(1_700_000_000_000)
+                .expect("device id should be created");
+            assert_eq!(first_device_id.get_version_num(), 4);
+            assert_eq!(identity.peek_next_origin_seq(), Ok(INITIAL_ORIGIN_SEQ));
+            assert_eq!(
+                identity.allocate_origin_seq(1_700_000_000_001),
+                Ok(INITIAL_ORIGIN_SEQ)
+            );
+            assert_eq!(identity.allocate_origin_seq(1_700_000_000_002), Ok(2));
+            assert_eq!(identity.peek_next_origin_seq(), Ok(3));
+            first_device_id
+        };
+
+        let mut identity = LocalIdentityRepository::new(&mut connection);
+        let second_device_id = identity
+            .get_or_create_device_id(1_700_000_000_003)
+            .expect("device id should be reused");
+        assert_eq!(second_device_id, first_device_id);
+        assert_eq!(identity.allocate_origin_seq(1_700_000_000_004), Ok(3));
+        assert_eq!(identity.peek_next_origin_seq(), Ok(4));
     }
 }

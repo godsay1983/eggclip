@@ -144,6 +144,7 @@ harmony/entry/src/main/ets/
 - [ ] 实现 ClipboardRepository、DeviceRepository、SpaceRepository 和 SettingsRepository。
   - [x] 建立 repository SQL command 层，覆盖 Clipboard、Device、Space、SyncHead 和 Settings，真实 `relationalStore` runner 待接入。
 - [ ] 生成并持久化随机 `deviceId` 和本机 `originSeq`。
+  - [x] 建立本机 `deviceId` 与 `nextOriginSeq` 的 repository SQL command 层；随机生成与真实 `relationalStore` 持久化待接入。
 - [ ] 实现最近 50 条、最长 7 天 retention。
   - [x] 建立 retention SQL command 层，覆盖过期清理、数量超限和清空历史；真实 `relationalStore` runner 待接入。
 - [ ] 支持历史数量 0、20、50、100。
