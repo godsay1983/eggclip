@@ -142,6 +142,7 @@ harmony/entry/src/main/ets/
 - [x] 创建 `clipboard_items`、`devices`、`spaces`、`sync_heads` 和 `app_metadata`。
 - [ ] 实现 transaction 和顺序 migration runner。
 - [ ] 实现 ClipboardRepository、DeviceRepository、SpaceRepository 和 SettingsRepository。
+  - [x] 建立 repository SQL command 层，覆盖 Clipboard、Device、Space、SyncHead 和 Settings，真实 `relationalStore` runner 待接入。
 - [ ] 生成并持久化随机 `deviceId` 和本机 `originSeq`。
 - [ ] 实现最近 50 条、最长 7 天 retention。
 - [ ] 支持历史数量 0、20、50、100。

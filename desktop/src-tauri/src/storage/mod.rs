@@ -2,6 +2,8 @@ use std::{path::Path, time::Duration};
 
 use rusqlite::{params, Connection, OptionalExtension};
 
+pub mod repositories;
+
 pub const CURRENT_SCHEMA_VERSION: i64 = 1;
 pub const BUSY_TIMEOUT_MS: u64 = 5_000;
 

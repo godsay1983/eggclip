@@ -38,6 +38,18 @@ import {
   validateSchemaPlan
 } from '../main/ets/data/migrations/SchemaMigrations';
 import {
+  ClipboardRepository,
+  DeviceRepository,
+  SettingsRepository,
+  SpaceRepository,
+  SyncHeadRepository
+} from '../main/ets/data/repositories/RepositoryCommands';
+import {
+  DeviceConnectionState as DomainDeviceConnectionState,
+  DeviceTrustState as DomainDeviceTrustState,
+  SpaceState as DomainSpaceState
+} from '../main/ets/models/DomainModels';
+import {
   AeadAlgorithm,
   AuthRole,
   ContentType,
@@ -219,6 +231,103 @@ export default function localUnitTest() {
       expect(sql.indexOf('encrypted_content') >= 0).assertEqual(true);
       expect(sql.indexOf('unique(origin_device_id, origin_seq)') >= 0).assertEqual(true);
       expect(sql.indexOf('idx_clipboard_items_retention') >= 0).assertEqual(true);
+    });
+
+    it('buildsRepositoryCommandsWithoutPersistingPlaintext', 0, () => {
+      const spaceId = '018ff6ef-c394-7d08-8b99-4b7d10f2767a';
+      const localDeviceId = '018ff6f0-0a3b-7815-a4db-3eb6e23d9338';
+      const peerDeviceId = '018ff6f0-4adf-7d31-a987-3ef2b25d0212';
+      const spaces = new SpaceRepository();
+      const devices = new DeviceRepository();
+      const clipboard = new ClipboardRepository();
+      const heads = new SyncHeadRepository();
+      const settings = new SettingsRepository();
+
+      const space = spaces.upsert({
+        space: {
+          spaceId,
+          displayName: '默认空间',
+          keyVersion: 1,
+          state: DomainSpaceState.ACTIVE,
+          createdAt: 1700000000000
+        },
+        encryptedSpaceKeyRef: 'huks://space-key',
+        updatedAt: 1700000000000
+      });
+      expect(space.sql.indexOf('INSERT INTO spaces') >= 0).assertEqual(true);
+      expect(space.args[2]).assertEqual('huks://space-key');
+
+      const device = devices.upsert({
+        device: {
+          deviceId: localDeviceId,
+          spaceId,
+          displayName: 'HarmonyOS',
+          identityPublicKeyRef: 'huks://identity-public-key',
+          trustState: DomainDeviceTrustState.TRUSTED,
+          connectionState: DomainDeviceConnectionState.OFFLINE
+        },
+        pairedAt: 1700000000000
+      });
+      expect(device.sql.indexOf('INSERT INTO devices') >= 0).assertEqual(true);
+      expect(devices.listBySpace(spaceId).args[0]).assertEqual(spaceId);
+
+      const item = buildLocalClipboardItemDraft({
+        itemId: '018ff6f1-c394-7d08-8b99-4b7d10f2767a',
+        spaceId,
+        originDeviceId: localDeviceId,
+        originSeq: 1,
+        hlc: new HlcTimestamp(1700000000100, 0),
+        createdAt: 1700000000100,
+        contentDigest: 'VCKcnWkMQkRIXGbdZ29X9i2PfEJai3L2lV1hCUApXkw'
+      }, '不要入库的明文');
+      expect(item.ok).assertEqual(true);
+      if (item.item === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      const builtItem = item.item;
+      const insertItem = clipboard.insert({
+        item: builtItem,
+        encryptedContent: new Uint8Array([1, 2, 3]),
+        receivedAt: 1700000000100,
+        expiresAt: 1700604800100
+      });
+      expect(insertItem === null).assertEqual(false);
+      if (insertItem === null) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      expect(insertItem.sql.indexOf('plaintext')).assertEqual(-1);
+      expect(insertItem.sql.indexOf('encrypted_content') >= 0).assertEqual(true);
+      expect(insertItem.args[8] instanceof Uint8Array).assertEqual(true);
+      expect(clipboard.listRecent(spaceId, 50).args[1]).assertEqual(50);
+      expect(clipboard.markDeleted(builtItem.itemId, 1700000000200).args[0]).assertEqual(1700000000200);
+
+      const syncHead = heads.upsert({
+        peerDeviceId,
+        head: {
+          spaceId,
+          originDeviceId: localDeviceId,
+          latestOriginSeq: 1,
+          minimumAvailable: 1,
+          updatedAt: 1700000000300
+        }
+      });
+      expect(syncHead.sql.indexOf('ON CONFLICT(space_id, peer_device_id, origin_device_id)') >= 0)
+        .assertEqual(true);
+
+      const saveSettings = settings.saveAppSettings(defaultAppSettings(), 1700000000400);
+      expect(saveSettings === null).assertEqual(false);
+      expect(saveSettings?.args[0]).assertEqual('appSettings');
+      expect(settings.saveAppSettings({
+        syncEnabled: true,
+        autoReceiveEnabled: true,
+        autoWriteEnabled: false,
+        historyEnabled: true,
+        historyLimit: 10,
+        retentionDays: 7
+      }, 1700000000400)).assertEqual(null);
+      expect(settings.loadAppSettings().args[0]).assertEqual('appSettings');
     });
 
     it('parsesProtocolClientHelloFixture', 0, () => {
