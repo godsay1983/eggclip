@@ -237,6 +237,17 @@ struct RawEnvelope {
     ciphertext: Option<CiphertextFrame>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OutboundEncryptedEnvelope<'a> {
+    version: u16,
+    #[serde(rename = "type")]
+    message_type: MessageType,
+    message_id: &'a str,
+    session_counter: u64,
+    ciphertext: &'a CiphertextFrame,
+}
+
 pub fn parse_envelope(input: &str) -> Result<ProtocolEnvelope, ProtocolError> {
     if input.len() > MAX_FRAME_BYTES {
         return Err(ProtocolError::TextTooLarge {
@@ -293,6 +304,23 @@ pub fn parse_envelope(input: &str) -> Result<ProtocolEnvelope, ProtocolError> {
             }
         }
     }
+}
+
+pub fn serialize_encrypted_envelope(envelope: &EncryptedEnvelope) -> Result<String, ProtocolError> {
+    validate_uuid(&envelope.message_id, "messageId")?;
+    validate_ciphertext(&envelope.ciphertext)?;
+    if !envelope.message_type.is_encrypted_allowed() {
+        return Err(ProtocolError::CiphertextBeforeAuth(envelope.message_type));
+    }
+
+    serde_json::to_string(&OutboundEncryptedEnvelope {
+        version: PROTOCOL_VERSION,
+        message_type: envelope.message_type,
+        message_id: &envelope.message_id,
+        session_counter: envelope.session_counter,
+        ciphertext: &envelope.ciphertext,
+    })
+    .map_err(|error| ProtocolError::InvalidJson(error.to_string()))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -576,6 +604,12 @@ impl Default for ProtocolSessionGate {
 }
 
 impl ProtocolSessionGate {
+    pub fn authenticated() -> Self {
+        Self {
+            state: ProtocolSessionState::Authenticated,
+        }
+    }
+
     pub fn state(&self) -> ProtocolSessionState {
         self.state
     }
@@ -738,6 +772,13 @@ pub struct ProtocolInboundSession {
 }
 
 impl ProtocolInboundSession {
+    pub fn authenticated() -> Self {
+        Self {
+            gate: ProtocolSessionGate::authenticated(),
+            replay_guard: ProtocolReplayGuard::default(),
+        }
+    }
+
     pub fn state(&self) -> ProtocolSessionState {
         self.gate.state()
     }

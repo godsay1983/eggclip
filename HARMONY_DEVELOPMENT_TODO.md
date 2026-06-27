@@ -244,10 +244,12 @@ harmony/entry/src/main/ets/
 - [ ] AES-256-GCM 解密认证后业务帧。
 - [ ] 维护接收计数器和 replay window。
   - [x] ArkTS 协议入站 replay guard 拒绝重复 messageId 与非递增 sessionCounter。
-  - [ ] 正式 transport/session 接入 replay guard。
+  - [x] ArkTS `ProtocolTransportSession` 已在已认证 transport 帧入口接入 replay guard。
+  - [ ] WebSocket service 正式收包路径接入 `ProtocolTransportSession`。
 - [ ] 未认证连接不能访问同步 service 和 RDB 正文。
   - [x] ArkTS 协议 session gate 已拒绝认证前业务帧。
-  - [ ] transport/sync/RDB 接入认证状态。
+  - [x] ArkTS `ProtocolTransportSession` 已拒绝 POC 明文 JSON 进入正式协议入口。
+  - [ ] WebSocket service、sync service 和 RDB 接入认证状态。
 
 ### 前台连接
 

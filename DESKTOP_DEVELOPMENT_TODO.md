@@ -211,15 +211,18 @@ desktop/
   - [x] Rust AES-GCM 基元通过共享向量和 tag 篡改拒绝测试。
   - [x] 协议状态机认证门控已阻止认证前业务帧。
   - [x] Rust 协议层已实现 encrypted business frame 构造、canonical AAD、方向 nonce 校验、解密和篡改拒绝测试。
-  - [ ] encrypted business frame 接入正式 transport。
+  - [x] Rust transport 已新增 authenticated session frame processor，串起正式帧序列化、parse、状态门控、replay guard 和解密边界。
+  - [ ] authenticated session frame processor 接入真实 WebSocket 连接生命周期。
 - [ ] 使用方向独立的单调计数器构造 nonce。
   - [x] Rust 实现 `directionPrefix || u64be(counter)` 并通过共享向量。
   - [x] Rust 协议层解密时校验 nonce 与方向和 `sessionCounter` 一致。
-  - [ ] 正式 session 发送计数器接入 nonce 构造。
+  - [x] Rust authenticated transport session 已维护出站 `sessionCounter` 并递增加密业务帧。
+  - [ ] 正式 WebSocket session 生命周期接管发送计数器持久/重置策略。
 - [ ] 拒绝旧计数器、重复消息、AEAD 失败和认证失败帧。
   - [x] Rust 已有 AEAD 失败测试。
   - [x] 协议入站 replay guard 拒绝重复 messageId 与非递增 sessionCounter。
-  - [ ] replay guard 接入正式 transport/session。
+  - [x] replay guard 已接入 authenticated transport session frame processor。
+  - [ ] replay guard 接入真实 WebSocket 收包路径。
   - [ ] 认证失败帧关闭正式 session。
 - [ ] 会话结束后清理临时密钥材料。
 

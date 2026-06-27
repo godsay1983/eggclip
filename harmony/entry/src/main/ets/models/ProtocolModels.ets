@@ -393,7 +393,11 @@ export interface ReplayGuardResult {
 }
 
 export class ProtocolSessionGate {
-  private currentState: ProtocolSessionState = ProtocolSessionState.DISCONNECTED;
+  private currentState: ProtocolSessionState;
+
+  constructor(initialState: ProtocolSessionState = ProtocolSessionState.DISCONNECTED) {
+    this.currentState = initialState;
+  }
 
   state(): ProtocolSessionState {
     return this.currentState;
@@ -530,8 +534,12 @@ export class ProtocolReplayGuard {
 }
 
 export class ProtocolInboundSession {
-  private readonly gate: ProtocolSessionGate = new ProtocolSessionGate();
+  private readonly gate: ProtocolSessionGate;
   private readonly replayGuard: ProtocolReplayGuard = new ProtocolReplayGuard();
+
+  constructor(initialState: ProtocolSessionState = ProtocolSessionState.DISCONNECTED) {
+    this.gate = new ProtocolSessionGate(initialState);
+  }
 
   state(): ProtocolSessionState {
     return this.gate.state();

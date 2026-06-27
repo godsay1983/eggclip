@@ -1,5 +1,9 @@
 import { describe, expect, it } from '@ohos/hypium';
 import { ClipboardBridgeService } from '../main/ets/services/clipboard/ClipboardBridgeService';
+import {
+  ProtocolTransportFrameError,
+  ProtocolTransportSession
+} from '../main/ets/services/transport/ProtocolTransportSession';
 import { WebSocketTransportService } from '../main/ets/services/transport/WebSocketTransportService';
 import {
   CryptoVectorErrorCode,
@@ -239,6 +243,30 @@ export default function localUnitTest() {
       expect(session.acceptEnvelope(clientHello.envelope!).state).assertEqual(ProtocolSessionState.HANDSHAKING);
       expect(session.acceptEnvelope(clientHello.envelope!).error)
         .assertEqual(ProtocolErrorCode.DUPLICATE_MESSAGE_ID);
+    });
+
+    it('acceptsProtocolTransportEncryptedFrameAfterAuth', 0, () => {
+      const session = new ProtocolTransportSession();
+      const result = session.acceptTextFrame(ENCRYPTED_ITEM_LIVE_FIXTURE);
+
+      expect(result.ok).assertEqual(true);
+      expect(result.envelope?.kind).assertEqual(ProtocolEnvelopeKind.ENCRYPTED);
+      expect(result.envelope?.messageType).assertEqual(MessageType.ITEM_LIVE);
+      expect(session.state()).assertEqual(ProtocolSessionState.READY);
+    });
+
+    it('rejectsProtocolTransportDuplicateAndPocPlaintextFrames', 0, () => {
+      const session = new ProtocolTransportSession();
+
+      expect(session.acceptTextFrame(ENCRYPTED_ITEM_LIVE_FIXTURE).ok).assertEqual(true);
+      const duplicate = session.acceptTextFrame(ENCRYPTED_ITEM_LIVE_FIXTURE);
+      expect(duplicate.ok).assertEqual(false);
+      expect(duplicate.error).assertEqual(ProtocolTransportFrameError.PROTOCOL_REJECTED);
+      expect(duplicate.protocolError).assertEqual(ProtocolErrorCode.DUPLICATE_MESSAGE_ID);
+
+      const poc = new ProtocolTransportSession().acceptTextFrame('{"kind":"clipboardText","text":"not formal"}');
+      expect(poc.ok).assertEqual(false);
+      expect(poc.error).assertEqual(ProtocolTransportFrameError.PROTOCOL_REJECTED);
     });
 
     it('parsesProtocolEncryptedItemLiveFixture', 0, () => {
