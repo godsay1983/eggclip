@@ -183,6 +183,25 @@ Nonce rules:
   unsigned 64-bit big-endian integer.
 - A receiver rejects old counters, repeated counters, repeated `messageId`, and AEAD failures.
 
+AAD rules:
+
+- `aad` is the Base64URL encoding of the canonical UTF-8 AAD text.
+- The canonical AAD has fixed LF line endings and fixed field order:
+
+```text
+EggClip v1 ciphertext aad
+version=1
+type=<message type>
+messageId=<uuid>
+sessionCounter=<u64>
+algorithm=AES-256-GCM
+keyId=<session key id>
+```
+
+- The receiver reconstructs the canonical AAD from the envelope fields and
+  rejects mismatched `aad`, mismatched direction/key id, mismatched nonce, and
+  AEAD authentication failures before exposing plaintext to sync or storage code.
+
 ## Clipboard Item
 
 Clipboard records are immutable events:

@@ -570,6 +570,25 @@ export function canonicalAuthTranscript(input: AuthTranscriptInput): string | nu
     `pairingContext=${input.pairingContext}\n`;
 }
 
+export function canonicalEncryptedAad(
+  messageType: MessageType,
+  messageId: string,
+  sessionCounter: number,
+  keyId: string
+): string | null {
+  if (!isEncryptedAllowed(messageType) || !isUuid(messageId) ||
+    !isNonNegativeSafeInteger(sessionCounter) || !isCiphertextKeyId(keyId)) {
+    return null;
+  }
+  return 'EggClip v1 ciphertext aad\n' +
+    `version=${PROTOCOL_VERSION}\n` +
+    `type=${messageType}\n` +
+    `messageId=${messageId}\n` +
+    `sessionCounter=${sessionCounter}\n` +
+    'algorithm=AES-256-GCM\n' +
+    `keyId=${keyId}\n`;
+}
+
 function parseCiphertext(value: JsonValue | undefined): CiphertextFrame | null {
   if (value === undefined || !isJsonObject(value)) {
     return null;
@@ -586,7 +605,7 @@ function parseCiphertext(value: JsonValue | undefined): CiphertextFrame | null {
     body: getString(ciphertextObject, 'body'),
     tag: getString(ciphertextObject, 'tag')
   };
-  if (ciphertext.keyId.length === 0 || ciphertext.keyId.length > 128) {
+  if (!isCiphertextKeyId(ciphertext.keyId)) {
     return null;
   }
   if (!isBase64Url(ciphertext.nonce) || !isBase64Url(ciphertext.aad) ||
@@ -701,6 +720,11 @@ function validateAuthTranscriptInput(input: AuthTranscriptInput): boolean {
 
 function isTranscriptField(value: string): boolean {
   return value.length > 0 && value.indexOf('\n') < 0 && value.indexOf('\r') < 0;
+}
+
+function isCiphertextKeyId(value: string): boolean {
+  return value.length > 0 && value.length <= 128 &&
+    value.indexOf('\n') < 0 && value.indexOf('\r') < 0;
 }
 
 function isPreAuthAllowed(messageType: MessageType): boolean {

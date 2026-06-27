@@ -1,5 +1,9 @@
 use std::{collections::HashSet, fmt};
 
+use crate::crypto::{
+    aes256_gcm_decrypt, aes256_gcm_encrypt, decode_base64url, encode_base64url, fixed_bytes,
+    session_nonce, SessionDirection, AES_256_KEY_BYTES, AES_GCM_NONCE_BYTES, AES_GCM_TAG_BYTES,
+};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -13,6 +17,8 @@ pub const MAX_BATCH_PLAINTEXT_BYTES: usize = 512 * 1024;
 pub const HANDSHAKE_TIMEOUT_SECONDS: u64 = 8;
 pub const HEARTBEAT_INTERVAL_SECONDS: u64 = 20;
 pub const IDLE_DISCONNECT_SECONDS: u64 = 60;
+pub const SESSION_KEY_ID_CLIENT_TO_SERVER: &str = "session-v1-client-to-server";
+pub const SESSION_KEY_ID_SERVER_TO_CLIENT: &str = "session-v1-server-to-client";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProtocolError {
@@ -33,6 +39,7 @@ pub enum ProtocolError {
         message_type: MessageType,
     },
     InvalidField(&'static str),
+    CryptoFailed,
     TextTooLarge {
         actual_bytes: usize,
         max_bytes: usize,
@@ -85,6 +92,7 @@ impl fmt::Display for ProtocolError {
                 )
             }
             ProtocolError::InvalidField(field) => write!(formatter, "invalid field {field}"),
+            ProtocolError::CryptoFailed => formatter.write_str("cryptographic operation failed"),
             ProtocolError::TextTooLarge {
                 actual_bytes,
                 max_bytes,
@@ -409,6 +417,132 @@ pub fn auth_transcript_hash_base64url(
     Ok(URL_SAFE_NO_PAD.encode(Sha256::digest(transcript.as_bytes())))
 }
 
+pub fn session_key_id(direction: SessionDirection) -> &'static str {
+    match direction {
+        SessionDirection::ClientToServer => SESSION_KEY_ID_CLIENT_TO_SERVER,
+        SessionDirection::ServerToClient => SESSION_KEY_ID_SERVER_TO_CLIENT,
+    }
+}
+
+pub fn canonical_encrypted_aad(
+    message_type: MessageType,
+    message_id: &str,
+    session_counter: u64,
+    key_id: &str,
+) -> Result<String, ProtocolError> {
+    if !message_type.is_encrypted_allowed() {
+        return Err(ProtocolError::CiphertextBeforeAuth(message_type));
+    }
+    validate_uuid(message_id, "messageId")?;
+    validate_ciphertext_key_id(key_id)?;
+    Ok(format!(
+        "EggClip v1 ciphertext aad\n\
+         version={}\n\
+         type={}\n\
+         messageId={}\n\
+         sessionCounter={}\n\
+         algorithm=AES-256-GCM\n\
+         keyId={}\n",
+        PROTOCOL_VERSION, message_type, message_id, session_counter, key_id
+    ))
+}
+
+pub fn build_encrypted_envelope(
+    message_type: MessageType,
+    message_id: String,
+    session_counter: u64,
+    direction: SessionDirection,
+    key: [u8; AES_256_KEY_BYTES],
+    payload: &Value,
+) -> Result<EncryptedEnvelope, ProtocolError> {
+    if !payload.is_object() {
+        return Err(ProtocolError::InvalidField("payload"));
+    }
+
+    let key_id = session_key_id(direction);
+    let aad = canonical_encrypted_aad(message_type, &message_id, session_counter, key_id)?;
+    let plaintext =
+        serde_json::to_vec(payload).map_err(|_| ProtocolError::InvalidField("payload"))?;
+    if plaintext.len() > MAX_BATCH_PLAINTEXT_BYTES {
+        return Err(ProtocolError::TextTooLarge {
+            actual_bytes: plaintext.len(),
+            max_bytes: MAX_BATCH_PLAINTEXT_BYTES,
+        });
+    }
+
+    let nonce = session_nonce(direction, session_counter);
+    let (body, tag) = aes256_gcm_encrypt(key, nonce, aad.as_bytes(), &plaintext)
+        .map_err(|_| ProtocolError::CryptoFailed)?;
+
+    Ok(EncryptedEnvelope {
+        message_type,
+        message_id,
+        session_counter,
+        ciphertext: CiphertextFrame {
+            algorithm: AeadAlgorithm::Aes256Gcm,
+            key_id: key_id.to_owned(),
+            nonce: encode_base64url(&nonce),
+            aad: encode_base64url(aad.as_bytes()),
+            body: encode_base64url(&body),
+            tag: encode_base64url(&tag),
+        },
+    })
+}
+
+pub fn decrypt_encrypted_payload(
+    envelope: &EncryptedEnvelope,
+    direction: SessionDirection,
+    key: [u8; AES_256_KEY_BYTES],
+) -> Result<Value, ProtocolError> {
+    validate_ciphertext(&envelope.ciphertext)?;
+
+    let expected_key_id = session_key_id(direction);
+    if envelope.ciphertext.key_id != expected_key_id {
+        return Err(ProtocolError::CryptoFailed);
+    }
+
+    let expected_nonce = session_nonce(direction, envelope.session_counter);
+    let nonce = fixed_bytes::<AES_GCM_NONCE_BYTES>(
+        &decode_base64url(&envelope.ciphertext.nonce)
+            .map_err(|_| ProtocolError::InvalidField("ciphertext.nonce"))?,
+        "ciphertext.nonce",
+    )
+    .map_err(|_| ProtocolError::InvalidField("ciphertext.nonce"))?;
+    if nonce != expected_nonce {
+        return Err(ProtocolError::CryptoFailed);
+    }
+
+    let expected_aad = canonical_encrypted_aad(
+        envelope.message_type,
+        &envelope.message_id,
+        envelope.session_counter,
+        &envelope.ciphertext.key_id,
+    )?;
+    let aad = decode_base64url(&envelope.ciphertext.aad)
+        .map_err(|_| ProtocolError::InvalidField("ciphertext.aad"))?;
+    if aad != expected_aad.as_bytes() {
+        return Err(ProtocolError::CryptoFailed);
+    }
+
+    let body = decode_base64url(&envelope.ciphertext.body)
+        .map_err(|_| ProtocolError::InvalidField("ciphertext.body"))?;
+    let tag = fixed_bytes::<AES_GCM_TAG_BYTES>(
+        &decode_base64url(&envelope.ciphertext.tag)
+            .map_err(|_| ProtocolError::InvalidField("ciphertext.tag"))?,
+        "ciphertext.tag",
+    )
+    .map_err(|_| ProtocolError::InvalidField("ciphertext.tag"))?;
+
+    let plaintext = aes256_gcm_decrypt(key, nonce, expected_aad.as_bytes(), &body, tag)
+        .map_err(|_| ProtocolError::CryptoFailed)?;
+    let payload: Value =
+        serde_json::from_slice(&plaintext).map_err(|_| ProtocolError::CryptoFailed)?;
+    if !payload.is_object() {
+        return Err(ProtocolError::CryptoFailed);
+    }
+    Ok(payload)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ProtocolSessionState {
@@ -710,13 +844,18 @@ fn parse_message_type(value: Value) -> Result<MessageType, ProtocolError> {
 }
 
 fn validate_ciphertext(ciphertext: &CiphertextFrame) -> Result<(), ProtocolError> {
-    if ciphertext.key_id.is_empty() || ciphertext.key_id.len() > 128 {
-        return Err(ProtocolError::InvalidField("ciphertext.keyId"));
-    }
+    validate_ciphertext_key_id(&ciphertext.key_id)?;
     validate_base64url(&ciphertext.nonce, "ciphertext.nonce")?;
     validate_base64url(&ciphertext.aad, "ciphertext.aad")?;
     validate_base64url(&ciphertext.body, "ciphertext.body")?;
     validate_base64url(&ciphertext.tag, "ciphertext.tag")
+}
+
+fn validate_ciphertext_key_id(key_id: &str) -> Result<(), ProtocolError> {
+    if key_id.is_empty() || key_id.len() > 128 || key_id.contains('\n') || key_id.contains('\r') {
+        return Err(ProtocolError::InvalidField("ciphertext.keyId"));
+    }
+    Ok(())
 }
 
 fn validate_device_seq_map(
@@ -770,7 +909,7 @@ fn validate_transcript_field(value: &str, field: &'static str) -> Result<(), Pro
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crypto::{decode_base64url, fixed_bytes, verify_ed25519_signature};
+    use crate::crypto::verify_ed25519_signature;
     use serde::Deserialize;
     use std::{fs, path::PathBuf};
 
@@ -791,6 +930,16 @@ mod tests {
         signature: String,
     }
 
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct SessionKeysVector {
+        client_to_server_key: String,
+        server_to_client_key: String,
+        counter: u64,
+        client_to_server_nonce: String,
+        server_to_client_nonce: String,
+    }
+
     fn vector_path(parts: &[&str]) -> PathBuf {
         let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         path.push("..");
@@ -808,6 +957,14 @@ mod tests {
 
     fn read_json_vector<T: for<'de> Deserialize<'de>>(parts: &[&str]) -> T {
         serde_json::from_str(&read_vector(parts)).expect("test vector should deserialize")
+    }
+
+    fn decoded_fixed<const N: usize>(value: &str, field: &'static str) -> [u8; N] {
+        fixed_bytes(
+            &decode_base64url(value).expect("base64url should decode"),
+            field,
+        )
+        .expect("fixed value should have expected length")
     }
 
     #[test]
@@ -1074,6 +1231,80 @@ mod tests {
         assert_eq!(envelope.message_type, MessageType::ItemLive);
         assert_eq!(envelope.session_counter, 12);
         assert_eq!(envelope.ciphertext.algorithm, AeadAlgorithm::Aes256Gcm);
+    }
+
+    #[test]
+    fn builds_and_decrypts_encrypted_business_payload() {
+        let vector: SessionKeysVector =
+            read_json_vector(&["test-vectors", "crypto", "session-keys.valid.json"]);
+        let key = decoded_fixed::<32>(&vector.client_to_server_key, "clientToServerKey");
+        let message_id = "018ff6f3-0d8c-7d1e-a38a-f308c64de79f".to_owned();
+        let payload = serde_json::json!({
+            "content": "EggClip encrypted payload",
+            "contentType": "text/plain"
+        });
+
+        let envelope = build_encrypted_envelope(
+            MessageType::ItemLive,
+            message_id.clone(),
+            vector.counter,
+            SessionDirection::ClientToServer,
+            key,
+            &payload,
+        )
+        .expect("encrypted envelope should build");
+
+        assert_eq!(envelope.message_type, MessageType::ItemLive);
+        assert_eq!(envelope.ciphertext.key_id, SESSION_KEY_ID_CLIENT_TO_SERVER);
+        assert_eq!(envelope.ciphertext.nonce, vector.client_to_server_nonce);
+        assert_ne!(envelope.ciphertext.nonce, vector.server_to_client_nonce);
+        let expected_aad = canonical_encrypted_aad(
+            MessageType::ItemLive,
+            &message_id,
+            vector.counter,
+            SESSION_KEY_ID_CLIENT_TO_SERVER,
+        )
+        .expect("aad should build");
+        assert_eq!(
+            decode_base64url(&envelope.ciphertext.aad).expect("aad should decode"),
+            expected_aad.as_bytes()
+        );
+
+        let decrypted = decrypt_encrypted_payload(&envelope, SessionDirection::ClientToServer, key)
+            .expect("payload should decrypt");
+        assert_eq!(decrypted, payload);
+    }
+
+    #[test]
+    fn encrypted_payload_rejects_wrong_direction_and_tampered_tag() {
+        let vector: SessionKeysVector =
+            read_json_vector(&["test-vectors", "crypto", "session-keys.valid.json"]);
+        let client_key = decoded_fixed::<32>(&vector.client_to_server_key, "clientToServerKey");
+        let server_key = decoded_fixed::<32>(&vector.server_to_client_key, "serverToClientKey");
+        let payload = serde_json::json!({"content": "EggClip encrypted payload"});
+        let envelope = build_encrypted_envelope(
+            MessageType::ItemLive,
+            "018ff6f3-0d8c-7d1e-a38a-f308c64de79f".to_owned(),
+            vector.counter,
+            SessionDirection::ClientToServer,
+            client_key,
+            &payload,
+        )
+        .expect("encrypted envelope should build");
+
+        assert_eq!(
+            decrypt_encrypted_payload(&envelope, SessionDirection::ServerToClient, server_key)
+                .unwrap_err(),
+            ProtocolError::CryptoFailed
+        );
+
+        let mut tampered = envelope.clone();
+        tampered.ciphertext.tag = encode_base64url(&[0u8; AES_GCM_TAG_BYTES]);
+        assert_eq!(
+            decrypt_encrypted_payload(&tampered, SessionDirection::ClientToServer, client_key)
+                .unwrap_err(),
+            ProtocolError::CryptoFailed
+        );
     }
 
     #[test]

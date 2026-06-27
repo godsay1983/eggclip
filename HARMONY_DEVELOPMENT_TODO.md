@@ -176,11 +176,24 @@ harmony/entry/src/main/ets/
 
 ### 跨语言测试向量
 
-- [ ] 读取 `protocol/test-vectors/`；共享 crypto 向量已补充，Harmony 当前仍是 mirrored protocol JSON fixture，尚未读取 crypto 文件。
-- [ ] ArkTS 实现通过 Ed25519 签名/验签向量；本地 SDK 类型已确认存在 CryptoFramework/HUKS Ed25519 相关入口，具体调用封装待实现。
-- [ ] ArkTS 实现通过 X25519/HKDF 派生向量；本地 SDK 类型已确认存在 X25519 与 HKDF 相关入口，具体调用封装待实现。
-- [ ] ArkTS 实现通过 AES-GCM 加解密和篡改拒绝向量；本地 SDK 类型已确认存在 AES-GCM 参数入口，具体调用封装待实现。
-- [ ] 明确字节序、字符串编码、Base64 变体和 transcript 规范化规则。
+- [ ] 读取 `protocol/test-vectors/`。
+  - [x] ArkTS 已镜像消费协议 JSON fixture。
+  - [x] ArkTS 已镜像校验 crypto 向量形状、字节长度、transcript 和 nonce 规则。
+  - [ ] ArkTS 测试直接从 `protocol/test-vectors/` 读取 crypto 文件。
+- [ ] ArkTS 实现通过 Ed25519 签名/验签向量。
+  - [x] 本地 SDK 类型已确认存在 CryptoFramework/HUKS Ed25519 相关入口。
+  - [x] AUTH_PROOF canonical transcript 构造已与 Rust/fixture 对齐。
+  - [ ] 接入 CryptoFramework/HUKS Ed25519 真验签。
+- [ ] ArkTS 实现通过 X25519/HKDF 派生向量。
+  - [x] 本地 SDK 类型已确认存在 X25519 与 HKDF 相关入口。
+  - [x] session key 与 nonce 向量规则已固定。
+  - [ ] 接入 CryptoFramework/HUKS X25519/HKDF 真派生。
+- [ ] ArkTS 实现通过 AES-GCM 加解密和篡改拒绝向量。
+  - [x] 本地 SDK 类型已确认存在 AES-GCM 参数入口。
+  - [x] AES-GCM frame 字段、nonce 和 AAD 规则已有 ArkTS 校验基础。
+  - [x] canonical encrypted AAD 构造已与 Rust 规则对齐。
+  - [ ] 接入 CryptoFramework/HUKS AES-GCM 真加解密。
+- [x] 明确字节序、字符串编码、Base64 变体和 transcript 规范化规则。
 
 验收标准：
 
@@ -218,13 +231,23 @@ harmony/entry/src/main/ets/
 
 ### 会话状态机
 
-- [ ] 实现 disconnected、discovering、connecting、handshaking、authenticated、syncing、ready、failed；ArkTS 已新增协议 session gate 覆盖 connecting/handshaking/authenticated/syncing/ready/failed，discovering 与前台连接管理未接入。
+- [ ] 实现 disconnected、discovering、connecting、handshaking、authenticated、syncing、ready、failed。
+  - [x] ArkTS 协议 session gate 覆盖 connecting、handshaking、authenticated、syncing、ready、failed。
+  - [ ] discovering 与前台连接管理接入。
 - [ ] X25519 建立临时共享秘密。
-- [ ] Ed25519 验证设备身份和空间绑定；已固定 canonical AUTH_PROOF transcript 并在 ArkTS 校验构造结果，真实 Ed25519 验签待接 CryptoFramework/HUKS。
-- [ ] HKDF 派生双向会话密钥；已固定共享 session key 向量并在 ArkTS 校验字段、长度和 nonce 规则，真实 CryptoFramework HKDF 未接入。
+- [ ] Ed25519 验证设备身份和空间绑定。
+  - [x] 固定 canonical AUTH_PROOF transcript 并在 ArkTS 校验构造结果。
+  - [ ] 真实 Ed25519 验签待接 CryptoFramework/HUKS。
+- [ ] HKDF 派生双向会话密钥。
+  - [x] 固定共享 session key 向量并在 ArkTS 校验字段、长度和 nonce 规则。
+  - [ ] 真实 CryptoFramework HKDF 未接入。
 - [ ] AES-256-GCM 解密认证后业务帧。
-- [ ] 维护接收计数器和 replay window；ArkTS 已有协议入站 replay guard 拒绝重复 messageId 与非递增 sessionCounter，正式 transport/session 未接入。
-- [ ] 未认证连接不能访问同步 service 和 RDB 正文；ArkTS 协议 session gate 已拒绝认证前业务帧，尚未接入 transport/sync/RDB。
+- [ ] 维护接收计数器和 replay window。
+  - [x] ArkTS 协议入站 replay guard 拒绝重复 messageId 与非递增 sessionCounter。
+  - [ ] 正式 transport/session 接入 replay guard。
+- [ ] 未认证连接不能访问同步 service 和 RDB 正文。
+  - [x] ArkTS 协议 session gate 已拒绝认证前业务帧。
+  - [ ] transport/sync/RDB 接入认证状态。
 
 ### 前台连接
 

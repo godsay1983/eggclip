@@ -35,7 +35,8 @@ import {
   PROTOCOL_MAX_FRAME_BYTES,
   PROTOCOL_MAX_TEXT_BYTES,
   PROTOCOL_VERSION,
-  canonicalAuthTranscript
+  canonicalAuthTranscript,
+  canonicalEncryptedAad
 } from '../main/ets/models/ProtocolModels';
 import { MAX_TEXT_BYTES } from '../main/ets/utils/TextLimits';
 
@@ -249,6 +250,41 @@ export default function localUnitTest() {
       expect(result.envelope?.messageType).assertEqual(MessageType.ITEM_LIVE);
       expect(result.envelope?.sessionCounter).assertEqual(12);
       expect(result.envelope?.ciphertext?.algorithm).assertEqual(AeadAlgorithm.AES_256_GCM);
+    });
+
+    it('buildsCanonicalEncryptedAadForBusinessFrames', 0, () => {
+      const aad = canonicalEncryptedAad(
+        MessageType.ITEM_LIVE,
+        '018ff6f3-0d8c-7d1e-a38a-f308c64de79f',
+        12,
+        'session-v1-client-to-server'
+      );
+
+      expect(aad).assertEqual('EggClip v1 ciphertext aad\n' +
+        'version=1\n' +
+        'type=ITEM_LIVE\n' +
+        'messageId=018ff6f3-0d8c-7d1e-a38a-f308c64de79f\n' +
+        'sessionCounter=12\n' +
+        'algorithm=AES-256-GCM\n' +
+        'keyId=session-v1-client-to-server\n');
+      expect(canonicalEncryptedAad(
+        MessageType.CLIENT_HELLO,
+        '018ff6f3-0d8c-7d1e-a38a-f308c64de79f',
+        12,
+        'session-v1-client-to-server'
+      )).assertEqual(null);
+      expect(canonicalEncryptedAad(
+        MessageType.ITEM_LIVE,
+        'not-a-uuid',
+        12,
+        'session-v1-client-to-server'
+      )).assertEqual(null);
+      expect(canonicalEncryptedAad(
+        MessageType.ITEM_LIVE,
+        '018ff6f3-0d8c-7d1e-a38a-f308c64de79f',
+        12,
+        'bad\nkey'
+      )).assertEqual(null);
     });
 
     it('parsesProtocolClipboardItemFixture', 0, () => {

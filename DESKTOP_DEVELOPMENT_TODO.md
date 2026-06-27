@@ -165,14 +165,22 @@ desktop/
 - [x] 固定 envelope、握手、错误和同步消息字段。
 - [x] 定义状态机：disconnected、connecting、handshaking、authenticated、syncing、ready、failed。
 - [x] 定义最大帧、最大 batch、超时和未知版本处理规则。
-- [ ] 创建 Rust/ArkTS 共用 JSON 和二进制测试向量；已补充 Ed25519、X25519、HKDF-SHA-256、AES-256-GCM 和 replay counter 的共享 crypto 向量，Rust 已做真算法校验，ArkTS 已镜像校验向量形状和字节长度但尚未接平台加密 API。
+- [ ] 创建 Rust/ArkTS 共用 JSON 和二进制测试向量。
+  - [x] 创建 schema/解析用 JSON 初始样例。
+  - [x] 补充 Ed25519、X25519、HKDF-SHA-256、AES-256-GCM、session key、AUTH_PROOF 和 replay counter 共享 crypto 向量。
+  - [x] Rust 消费共享向量并执行真实算法校验。
+  - [x] ArkTS 镜像校验向量形状、字节长度、transcript 和 nonce 规则。
+  - [ ] ArkTS 接入平台 CryptoFramework/HUKS 后消费同一批 crypto 向量做真实算法校验。
 - [x] 桌面 Rust 实现 v1 envelope、message type、ciphertext、hello、clipboard item 和 sync heads 类型。
 - [x] 桌面 Rust 消费 `protocol/test-vectors/`，覆盖合法握手、加密 envelope、clipboard item、未知版本和认证后明文拒绝。
 - [x] HarmonyOS ArkTS 实现同等协议类型和测试向量消费。
 
 ### 设备身份与本地密钥
 
-- [ ] 生成 Ed25519 长期身份密钥；Rust 已完成基于测试 seed 的 Ed25519 签名/验签基元，生产随机生成与持久化未接入。
+- [ ] 生成 Ed25519 长期身份密钥。
+  - [x] Rust 完成基于测试 seed 的 Ed25519 签名/验签基元。
+  - [ ] 生产随机生成长期身份密钥。
+  - [ ] 身份密钥接入系统凭据库存取。
 - [ ] 使用系统凭据库保存私钥和 `spaceKey`。
 - [ ] SQLite 只保存公钥、密钥版本和加密引用。
 - [ ] 实现密钥加载失败、凭据缺失和凭据删除处理。
@@ -189,12 +197,30 @@ desktop/
 
 ### 会话加密
 
-- [ ] X25519 协商临时共享秘密；Rust 已完成基于共享向量的 X25519 基元，正式握手状态机未接入。
-- [ ] Ed25519 签名绑定身份、空间和握手 transcript；已固定 canonical AUTH_PROOF transcript、hash 和 Ed25519 验签向量，正式握手状态机未接入。
-- [ ] HKDF-SHA-256 派生双向独立会话密钥；Rust 已实现方向隔离 session key 派生并通过共享向量，正式握手 transcript 输入未接入。
-- [ ] AES-256-GCM 加密认证后全部业务消息；Rust 基元已通过共享向量和 tag 篡改拒绝，已新增协议状态机认证门控，正式业务帧未接入。
-- [ ] 使用方向独立的单调计数器构造 nonce；Rust 已实现 `directionPrefix || u64be(counter)` 并通过共享向量，正式 session 未接入。
-- [ ] 拒绝旧计数器、重复消息、AEAD 失败和认证失败帧；Rust 已有 AEAD 失败测试，并新增协议入站 replay guard 拒绝重复 messageId 与非递增 sessionCounter，正式 transport/session 未接入。
+- [ ] X25519 协商临时共享秘密。
+  - [x] Rust 完成基于共享向量的 X25519 基元。
+  - [ ] 正式握手状态机生成并交换临时公钥。
+- [ ] Ed25519 签名绑定身份、空间和握手 transcript。
+  - [x] 固定 canonical AUTH_PROOF transcript。
+  - [x] 固定 transcript hash 和 Ed25519 验签向量。
+  - [ ] 正式握手状态机验证远端 AUTH_PROOF。
+- [ ] HKDF-SHA-256 派生双向独立会话密钥。
+  - [x] Rust 实现方向隔离 session key 派生并通过共享向量。
+  - [ ] 正式握手 transcript 输入接入 session key 派生。
+- [ ] AES-256-GCM 加密认证后全部业务消息。
+  - [x] Rust AES-GCM 基元通过共享向量和 tag 篡改拒绝测试。
+  - [x] 协议状态机认证门控已阻止认证前业务帧。
+  - [x] Rust 协议层已实现 encrypted business frame 构造、canonical AAD、方向 nonce 校验、解密和篡改拒绝测试。
+  - [ ] encrypted business frame 接入正式 transport。
+- [ ] 使用方向独立的单调计数器构造 nonce。
+  - [x] Rust 实现 `directionPrefix || u64be(counter)` 并通过共享向量。
+  - [x] Rust 协议层解密时校验 nonce 与方向和 `sessionCounter` 一致。
+  - [ ] 正式 session 发送计数器接入 nonce 构造。
+- [ ] 拒绝旧计数器、重复消息、AEAD 失败和认证失败帧。
+  - [x] Rust 已有 AEAD 失败测试。
+  - [x] 协议入站 replay guard 拒绝重复 messageId 与非递增 sessionCounter。
+  - [ ] replay guard 接入正式 transport/session。
+  - [ ] 认证失败帧关闭正式 session。
 - [ ] 会话结束后清理临时密钥材料。
 
 验收标准：
