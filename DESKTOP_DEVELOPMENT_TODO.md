@@ -137,9 +137,9 @@ desktop/
 - [x] 实现可重复、事务化 migration。
 - [x] 为新库初始化和重复 migration 建立测试夹具；旧版本升级夹具待 v2 migration 出现后补齐。
 - [x] 实现 `SpaceRepository`、`DeviceRepository`、`ClipboardRepository`、`SyncHeadRepository` 和 `SettingsRepository` 基础 CRUD，正文只保存为 `encrypted_content`。
-- [ ] 实现最近 50 条、最长 7 天的 retention 清理。
-- [ ] 支持历史数量 0、20、50、100。
-- [ ] 明确“清空历史”只保证逻辑删除和数据库清理，不承诺物理不可恢复擦除。
+- [x] 实现最近 50 条、最长 7 天的 retention 清理。
+- [x] 支持历史数量 0、20、50、100。
+- [x] 明确“清空历史”只保证逻辑删除和数据库清理，不承诺物理不可恢复擦除。
 
 ### Sync Engine
 

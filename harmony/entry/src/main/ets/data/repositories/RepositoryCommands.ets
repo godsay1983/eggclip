@@ -96,6 +96,48 @@ export class ClipboardRepository {
       args: [deletedAt, itemId]
     };
   }
+
+  clearHistory(spaceId: string, deletedAt: number): RepositoryCommand {
+    return {
+      sql: `UPDATE clipboard_items SET deleted_at = ?
+        WHERE space_id = ? AND deleted_at IS NULL`,
+      args: [deletedAt, spaceId]
+    };
+  }
+
+  markExpired(spaceId: string, nowMs: number): RepositoryCommand {
+    return {
+      sql: `UPDATE clipboard_items SET deleted_at = ?
+        WHERE space_id = ? AND deleted_at IS NULL AND expires_at <= ?`,
+      args: [nowMs, spaceId, nowMs]
+    };
+  }
+
+  markOverflow(spaceId: string, historyLimit: number, deletedAt: number): RepositoryCommand {
+    return {
+      sql: `UPDATE clipboard_items SET deleted_at = ?
+        WHERE space_id = ? AND deleted_at IS NULL AND item_id IN (
+          SELECT item_id FROM clipboard_items
+          WHERE space_id = ? AND deleted_at IS NULL
+          ORDER BY hlc DESC, item_id DESC
+          LIMIT -1 OFFSET ?
+        )`,
+      args: [deletedAt, spaceId, spaceId, historyLimit]
+    };
+  }
+
+  retentionCommands(spaceId: string, settings: AppSettings, nowMs: number): RepositoryCommand[] | null {
+    if (!validateAppSettings(settings).ok) {
+      return null;
+    }
+    if (!settings.historyEnabled || settings.historyLimit === 0) {
+      return [this.clearHistory(spaceId, nowMs)];
+    }
+    return [
+      this.markExpired(spaceId, nowMs),
+      this.markOverflow(spaceId, settings.historyLimit, nowMs)
+    ];
+  }
 }
 
 export class SpaceRepository {

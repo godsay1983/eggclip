@@ -145,7 +145,9 @@ harmony/entry/src/main/ets/
   - [x] 建立 repository SQL command 层，覆盖 Clipboard、Device、Space、SyncHead 和 Settings，真实 `relationalStore` runner 待接入。
 - [ ] 生成并持久化随机 `deviceId` 和本机 `originSeq`。
 - [ ] 实现最近 50 条、最长 7 天 retention。
+  - [x] 建立 retention SQL command 层，覆盖过期清理、数量超限和清空历史；真实 `relationalStore` runner 待接入。
 - [ ] 支持历史数量 0、20、50、100。
+  - [x] command 层已按 `AppSettings` 校验 0、20、50、100，非法历史数量拒绝生成清理命令。
 - [ ] 为新库、重复 migration 和旧版本升级添加测试。
 
 ### 页面和主题

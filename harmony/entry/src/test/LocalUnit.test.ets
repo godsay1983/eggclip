@@ -330,6 +330,52 @@ export default function localUnitTest() {
       expect(settings.loadAppSettings().args[0]).assertEqual('appSettings');
     });
 
+    it('buildsRetentionRepositoryCommandsForHistoryPolicy', 0, () => {
+      const spaceId = '018ff6ef-c394-7d08-8b99-4b7d10f2767a';
+      const clipboard = new ClipboardRepository();
+      const settings = defaultAppSettings();
+      const retention = clipboard.retentionCommands(spaceId, settings, 1700604800000);
+
+      expect(retention === null).assertEqual(false);
+      if (retention === null) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      expect(retention.length).assertEqual(2);
+      expect(retention[0].sql.indexOf('expires_at <= ?') >= 0).assertEqual(true);
+      expect(retention[0].args[0]).assertEqual(1700604800000);
+      expect(retention[0].args[1]).assertEqual(spaceId);
+      expect(retention[1].sql.indexOf('LIMIT -1 OFFSET ?') >= 0).assertEqual(true);
+      expect(retention[1].args[3]).assertEqual(50);
+
+      const zeroHistory = clipboard.retentionCommands(spaceId, {
+        syncEnabled: true,
+        autoReceiveEnabled: true,
+        autoWriteEnabled: false,
+        historyEnabled: true,
+        historyLimit: 0,
+        retentionDays: 7
+      }, 1700604800000);
+      expect(zeroHistory === null).assertEqual(false);
+      if (zeroHistory === null) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      expect(zeroHistory.length).assertEqual(1);
+      expect(zeroHistory[0].sql.indexOf('WHERE space_id = ? AND deleted_at IS NULL') >= 0)
+        .assertEqual(true);
+
+      const invalid = clipboard.retentionCommands(spaceId, {
+        syncEnabled: true,
+        autoReceiveEnabled: true,
+        autoWriteEnabled: false,
+        historyEnabled: true,
+        historyLimit: 10,
+        retentionDays: 7
+      }, 1700604800000);
+      expect(invalid).assertEqual(null);
+    });
+
     it('parsesProtocolClientHelloFixture', 0, () => {
       const parser = new ProtocolParser();
       const result = parser.parseEnvelope(CLIENT_HELLO_FIXTURE);

@@ -35,6 +35,18 @@ pub struct SyncHeadRecord {
     pub peer_device_id: Uuid,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RetentionCleanupResult {
+    pub expired_items: usize,
+    pub overflow_items: usize,
+}
+
+impl RetentionCleanupResult {
+    pub fn total(self) -> usize {
+        self.expired_items + self.overflow_items
+    }
+}
+
 pub struct SpaceRepository<'a> {
     connection: &'a Connection,
 }
@@ -217,6 +229,66 @@ impl<'a> ClipboardRepository<'a> {
             params![item_id.to_string(), u64_to_i64(deleted_at)?],
         )?;
         Ok(affected == 1)
+    }
+
+    pub fn clear_history(&self, space_id: Uuid, deleted_at: u64) -> rusqlite::Result<usize> {
+        self.connection.execute(
+            "UPDATE clipboard_items SET deleted_at = ?2
+             WHERE space_id = ?1 AND deleted_at IS NULL",
+            params![space_id.to_string(), u64_to_i64(deleted_at)?],
+        )
+    }
+
+    pub fn apply_retention(
+        &self,
+        space_id: Uuid,
+        settings: &AppSettings,
+        now_ms: u64,
+    ) -> rusqlite::Result<RetentionCleanupResult> {
+        settings
+            .validate()
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        if !settings.history_enabled || settings.history_limit == 0 {
+            let cleared = self.clear_history(space_id, now_ms)?;
+            return Ok(RetentionCleanupResult {
+                expired_items: 0,
+                overflow_items: cleared,
+            });
+        }
+
+        let expired_items = self.connection.execute(
+            "UPDATE clipboard_items SET deleted_at = ?2
+             WHERE space_id = ?1 AND deleted_at IS NULL AND expires_at <= ?2",
+            params![space_id.to_string(), u64_to_i64(now_ms)?],
+        )?;
+        let overflow_items = self.connection.execute(
+            "UPDATE clipboard_items SET deleted_at = ?3
+             WHERE space_id = ?1 AND deleted_at IS NULL AND item_id IN (
+               SELECT item_id FROM clipboard_items
+               WHERE space_id = ?1 AND deleted_at IS NULL
+               ORDER BY hlc DESC, item_id DESC
+               LIMIT -1 OFFSET ?2
+             )",
+            params![
+                space_id.to_string(),
+                i64::from(settings.history_limit),
+                u64_to_i64(now_ms)?,
+            ],
+        )?;
+        Ok(RetentionCleanupResult {
+            expired_items,
+            overflow_items,
+        })
+    }
+
+    pub fn active_count(&self, space_id: Uuid) -> rusqlite::Result<usize> {
+        let count: i64 = self.connection.query_row(
+            "SELECT COUNT(*) FROM clipboard_items
+             WHERE space_id = ?1 AND deleted_at IS NULL",
+            params![space_id.to_string()],
+            |row| row.get(0),
+        )?;
+        i64_to_usize(count, 0)
     }
 }
 
@@ -657,6 +729,124 @@ mod tests {
             .expect("item query should succeed")
             .expect("item should still exist logically");
         assert_eq!(stored.deleted_at, Some(1_700_000_001_000));
+    }
+
+    #[test]
+    fn clipboard_repository_applies_count_and_age_retention_idempotently() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let (space_id, local_device_id, _) =
+            seed_space_and_devices(&connection).expect("seed should succeed");
+        let clipboard = ClipboardRepository::new(&connection);
+        let now_ms = 1_700_604_800_000;
+
+        for seq in 1..=22 {
+            let created_at = now_ms - ((23 - seq) * 1_000);
+            let expires_at = if seq == 1 {
+                now_ms - 1
+            } else {
+                now_ms + 60_000
+            };
+            let item = build_local_clipboard_item(
+                LocalClipboardItemInput {
+                    item_id: Uuid::now_v7(),
+                    space_id,
+                    origin_device_id: local_device_id,
+                    origin_seq: seq,
+                    hlc: HlcTimestamp::new(created_at, 0),
+                    created_at,
+                    hmac_key: b"space-key-for-tests",
+                },
+                format!("item {seq}"),
+            )
+            .expect("item should build");
+            clipboard
+                .insert(&ClipboardItemRecord {
+                    item,
+                    encrypted_content: vec![seq as u8],
+                    received_at: created_at,
+                    expires_at,
+                    deleted_at: None,
+                })
+                .expect("insert should succeed");
+        }
+
+        let settings = AppSettings {
+            history_limit: 20,
+            ..AppSettings::default()
+        };
+        let result = clipboard
+            .apply_retention(space_id, &settings, now_ms)
+            .expect("retention should succeed");
+        assert_eq!(
+            result,
+            RetentionCleanupResult {
+                expired_items: 1,
+                overflow_items: 1,
+            }
+        );
+        assert_eq!(clipboard.active_count(space_id), Ok(20));
+        let recent = clipboard.list_recent(space_id, 10).unwrap();
+        assert_eq!(
+            recent.first().map(|record| record.item.origin_seq),
+            Some(22)
+        );
+        assert_eq!(recent.last().map(|record| record.item.origin_seq), Some(13));
+
+        let second = clipboard
+            .apply_retention(space_id, &settings, now_ms)
+            .expect("retention should be idempotent");
+        assert_eq!(second.total(), 0);
+        assert_eq!(clipboard.active_count(space_id), Ok(20));
+    }
+
+    #[test]
+    fn clipboard_repository_supports_zero_history_and_clear_history() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let (space_id, local_device_id, _) =
+            seed_space_and_devices(&connection).expect("seed should succeed");
+        let clipboard = ClipboardRepository::new(&connection);
+
+        for seq in 1..=2 {
+            let item = build_local_clipboard_item(
+                LocalClipboardItemInput {
+                    item_id: Uuid::now_v7(),
+                    space_id,
+                    origin_device_id: local_device_id,
+                    origin_seq: seq,
+                    hlc: HlcTimestamp::new(1_700_000_000_000 + seq, 0),
+                    created_at: 1_700_000_000_000 + seq,
+                    hmac_key: b"space-key-for-tests",
+                },
+                format!("item {seq}"),
+            )
+            .expect("item should build");
+            clipboard
+                .insert(&ClipboardItemRecord {
+                    item,
+                    encrypted_content: vec![seq as u8],
+                    received_at: 1_700_000_000_000 + seq,
+                    expires_at: 1_700_604_800_000,
+                    deleted_at: None,
+                })
+                .expect("insert should succeed");
+        }
+
+        let zero_history = AppSettings {
+            history_limit: 0,
+            ..AppSettings::default()
+        };
+        let result = clipboard
+            .apply_retention(space_id, &zero_history, 1_700_000_001_000)
+            .expect("zero-history retention should succeed");
+        assert_eq!(result.overflow_items, 2);
+        assert_eq!(clipboard.active_count(space_id), Ok(0));
+
+        assert_eq!(
+            clipboard
+                .clear_history(space_id, 1_700_000_002_000)
+                .expect("clear should be idempotent"),
+            0
+        );
     }
 
     #[test]
