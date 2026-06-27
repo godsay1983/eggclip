@@ -31,6 +31,13 @@ import {
   validateAppSettings
 } from '../main/ets/models/DomainModels';
 import {
+  CURRENT_SCHEMA_VERSION,
+  INITIAL_SCHEMA_TABLES,
+  allSchemaSql,
+  pendingMigrations,
+  validateSchemaPlan
+} from '../main/ets/data/migrations/SchemaMigrations';
+import {
   AeadAlgorithm,
   AuthRole,
   ContentType,
@@ -197,6 +204,21 @@ export default function localUnitTest() {
         historyLimit: 10,
         retentionDays: 7
       }).error).assertEqual(DomainValidationError.INVALID_HISTORY_LIMIT);
+    });
+
+    it('definesRdbSchemaMigrationPlanForLocalSyncTables', 0, () => {
+      const pending = pendingMigrations(0);
+      const sql = allSchemaSql().join('\n').toLowerCase();
+
+      expect(CURRENT_SCHEMA_VERSION).assertEqual(1);
+      expect(pending.length).assertEqual(1);
+      expect(pendingMigrations(CURRENT_SCHEMA_VERSION).length).assertEqual(0);
+      expect(validateSchemaPlan()).assertEqual(true);
+      expect(INITIAL_SCHEMA_TABLES.length).assertEqual(6);
+      expect(sql.indexOf('create table if not exists clipboard_items') >= 0).assertEqual(true);
+      expect(sql.indexOf('encrypted_content') >= 0).assertEqual(true);
+      expect(sql.indexOf('unique(origin_device_id, origin_seq)') >= 0).assertEqual(true);
+      expect(sql.indexOf('idx_clipboard_items_retention') >= 0).assertEqual(true);
     });
 
     it('parsesProtocolClientHelloFixture', 0, () => {

@@ -131,11 +131,11 @@ desktop/
 
 ### SQLite
 
-- [ ] 创建 `schema_migrations`。
-- [ ] 创建 `clipboard_items`、`devices`、`spaces`、`sync_heads` 和 `app_metadata`。
-- [ ] 开启 WAL、foreign keys 和 busy timeout。
-- [ ] 实现可重复、事务化 migration。
-- [ ] 为新库初始化和旧库升级建立测试夹具。
+- [x] 创建 `schema_migrations`。
+- [x] 创建 `clipboard_items`、`devices`、`spaces`、`sync_heads` 和 `app_metadata`。
+- [x] 开启 WAL、foreign keys 和 busy timeout。
+- [x] 实现可重复、事务化 migration。
+- [x] 为新库初始化和重复 migration 建立测试夹具；旧版本升级夹具待 v2 migration 出现后补齐。
 - [ ] 实现最近 50 条、最长 7 天的 retention 清理。
 - [ ] 支持历史数量 0、20、50、100。
 - [ ] 明确“清空历史”只保证逻辑删除和数据库清理，不承诺物理不可恢复擦除。

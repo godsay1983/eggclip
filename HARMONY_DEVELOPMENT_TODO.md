@@ -138,8 +138,8 @@ harmony/entry/src/main/ets/
 
 ### ArkData RDB
 
-- [ ] 创建 `schema_migrations`。
-- [ ] 创建 `clipboard_items`、`devices`、`spaces`、`sync_heads` 和 `app_metadata`。
+- [x] 创建 `schema_migrations`。
+- [x] 创建 `clipboard_items`、`devices`、`spaces`、`sync_heads` 和 `app_metadata`。
 - [ ] 实现 transaction 和顺序 migration runner。
 - [ ] 实现 ClipboardRepository、DeviceRepository、SpaceRepository 和 SettingsRepository。
 - [ ] 生成并持久化随机 `deviceId` 和本机 `originSeq`。
