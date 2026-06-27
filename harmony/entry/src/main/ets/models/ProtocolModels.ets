@@ -553,6 +553,10 @@ export class ProtocolInboundSession {
     return this.gate.startHandshake();
   }
 
+  fail(): ProtocolSessionState {
+    return this.gate.fail();
+  }
+
   acceptEnvelope(envelope: ParsedEnvelope): SessionGateResult {
     const replay = this.replayGuard.acceptEnvelope(envelope);
     if (!replay.ok) {

@@ -131,6 +131,7 @@ export class WebSocketTransportService {
         callbacks.onFrame(this.decodeProtocolFrameMessage(message, session));
       },
       onBinaryMessage: () => {
+        session.close();
         this.recordBinaryRejection('正式协议不支持二进制 WebSocket 消息');
         callbacks.onFrame({
           ok: false,

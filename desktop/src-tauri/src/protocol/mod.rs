@@ -791,6 +791,10 @@ impl ProtocolInboundSession {
         self.gate.start_handshake()
     }
 
+    pub fn fail(&mut self) -> ProtocolSessionState {
+        self.gate.fail()
+    }
+
     pub fn accept_envelope(
         &mut self,
         envelope: &ProtocolEnvelope,

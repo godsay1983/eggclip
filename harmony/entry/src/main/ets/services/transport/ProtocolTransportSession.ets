@@ -13,7 +13,8 @@ export enum ProtocolTransportFrameError {
   FRAME_TOO_LARGE = 'frameTooLarge',
   BINARY_UNSUPPORTED = 'binaryUnsupported',
   PROTOCOL_REJECTED = 'protocolRejected',
-  UNEXPECTED_PLAINTEXT = 'unexpectedPlaintext'
+  UNEXPECTED_PLAINTEXT = 'unexpectedPlaintext',
+  SESSION_CLOSED = 'sessionClosed'
 }
 
 export interface ProtocolTransportFrameResult {
@@ -26,6 +27,7 @@ export interface ProtocolTransportFrameResult {
 export class ProtocolTransportSession {
   private readonly parser: ProtocolParser = new ProtocolParser();
   private readonly inbound: ProtocolInboundSession;
+  private closed: boolean = false;
 
   constructor(initialState: ProtocolSessionState = ProtocolSessionState.AUTHENTICATED) {
     this.inbound = new ProtocolInboundSession(initialState);
@@ -35,36 +37,57 @@ export class ProtocolTransportSession {
     return this.inbound.state();
   }
 
+  isClosed(): boolean {
+    return this.closed;
+  }
+
+  close(): void {
+    this.fail();
+  }
+
   acceptTextFrame(frame: string): ProtocolTransportFrameResult {
+    if (this.closed) {
+      return { ok: false, error: ProtocolTransportFrameError.SESSION_CLOSED };
+    }
     if (estimateUtf8Bytes(frame) > PROTOCOL_MAX_FRAME_BYTES) {
-      return { ok: false, error: ProtocolTransportFrameError.FRAME_TOO_LARGE };
+      return this.failWith({ ok: false, error: ProtocolTransportFrameError.FRAME_TOO_LARGE });
     }
 
     const parsed = this.parser.parseEnvelope(frame);
     if (!parsed.ok || parsed.envelope === undefined) {
-      return {
+      return this.failWith({
         ok: false,
         error: ProtocolTransportFrameError.PROTOCOL_REJECTED,
         protocolError: parsed.error
-      };
+      });
     }
 
     const gate = this.inbound.acceptEnvelope(parsed.envelope);
     if (!gate.ok) {
-      return {
+      return this.failWith({
         ok: false,
         error: ProtocolTransportFrameError.PROTOCOL_REJECTED,
         protocolError: gate.error
-      };
+      });
     }
 
     if (parsed.envelope.kind !== ProtocolEnvelopeKind.ENCRYPTED) {
-      return { ok: false, error: ProtocolTransportFrameError.UNEXPECTED_PLAINTEXT };
+      return this.failWith({ ok: false, error: ProtocolTransportFrameError.UNEXPECTED_PLAINTEXT });
     }
 
     return {
       ok: true,
       envelope: parsed.envelope
     };
+  }
+
+  private failWith(result: ProtocolTransportFrameResult): ProtocolTransportFrameResult {
+    this.fail();
+    return result;
+  }
+
+  private fail(): void {
+    this.closed = true;
+    this.inbound.fail();
   }
 }

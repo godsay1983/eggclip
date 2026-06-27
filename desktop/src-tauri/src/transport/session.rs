@@ -19,6 +19,7 @@ pub enum TransportFrameError {
     },
     BinaryUnsupported,
     UnexpectedPlaintext,
+    SessionClosed,
     ProtocolRejected(ProtocolError),
 }
 
@@ -37,6 +38,9 @@ impl fmt::Display for TransportFrameError {
             }
             TransportFrameError::UnexpectedPlaintext => {
                 formatter.write_str("authenticated transport requires encrypted frames")
+            }
+            TransportFrameError::SessionClosed => {
+                formatter.write_str("authenticated transport session is closed")
             }
             TransportFrameError::ProtocolRejected(error) => write!(formatter, "{error}"),
         }
@@ -59,6 +63,7 @@ pub struct AuthenticatedTransportSession {
     outbound_direction: SessionDirection,
     outbound_key: [u8; AES_256_KEY_BYTES],
     next_outbound_counter: u64,
+    closed: bool,
 }
 
 impl AuthenticatedTransportSession {
@@ -76,6 +81,7 @@ impl AuthenticatedTransportSession {
             outbound_direction,
             outbound_key,
             next_outbound_counter,
+            closed: false,
         }
     }
 
@@ -87,12 +93,23 @@ impl AuthenticatedTransportSession {
         self.next_outbound_counter
     }
 
+    pub fn is_closed(&self) -> bool {
+        self.closed
+    }
+
+    pub fn close(&mut self) {
+        self.fail_and_scrub_keys();
+    }
+
     pub fn encode_business_frame(
         &mut self,
         message_type: MessageType,
         message_id: String,
         payload: &Value,
     ) -> Result<String, TransportFrameError> {
+        if self.closed {
+            return Err(TransportFrameError::SessionClosed);
+        }
         let envelope = build_encrypted_envelope(
             message_type,
             message_id,
@@ -122,31 +139,54 @@ impl AuthenticatedTransportSession {
         &mut self,
         message: Message,
     ) -> Result<Option<Value>, TransportFrameError> {
+        if self.closed {
+            return Err(TransportFrameError::SessionClosed);
+        }
         match message {
             Message::Text(text) => self.accept_text_frame(&text).map(Some),
             Message::Binary(bytes) => {
                 if bytes.len() > MAX_FRAME_BYTES {
-                    Err(TransportFrameError::FrameTooLarge {
+                    self.fail_with(TransportFrameError::FrameTooLarge {
                         actual_bytes: bytes.len(),
                         max_bytes: MAX_FRAME_BYTES,
                     })
                 } else {
-                    Err(TransportFrameError::BinaryUnsupported)
+                    self.fail_with(TransportFrameError::BinaryUnsupported)
                 }
             }
-            Message::Close(_) => Ok(None),
+            Message::Close(_) => {
+                self.close();
+                Ok(None)
+            }
             Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => Ok(None),
         }
     }
 
     pub fn accept_text_frame(&mut self, text: &str) -> Result<Value, TransportFrameError> {
+        if self.closed {
+            return Err(TransportFrameError::SessionClosed);
+        }
+        if let Err(error) = self.validate_text_frame_size(text) {
+            return self.fail_with(error);
+        }
+
+        match self.accept_text_frame_inner(text) {
+            Ok(payload) => Ok(payload),
+            Err(error) => self.fail_with(error),
+        }
+    }
+
+    fn validate_text_frame_size(&self, text: &str) -> Result<(), TransportFrameError> {
         if text.len() > MAX_FRAME_BYTES {
             return Err(TransportFrameError::FrameTooLarge {
                 actual_bytes: text.len(),
                 max_bytes: MAX_FRAME_BYTES,
             });
         }
+        Ok(())
+    }
 
+    fn accept_text_frame_inner(&mut self, text: &str) -> Result<Value, TransportFrameError> {
         let envelope = parse_envelope(text)?;
         self.inbound.accept_envelope(&envelope)?;
         let encrypted = match envelope {
@@ -159,6 +199,19 @@ impl AuthenticatedTransportSession {
     fn decrypt_envelope(&self, envelope: &EncryptedEnvelope) -> Result<Value, TransportFrameError> {
         decrypt_encrypted_payload(envelope, self.inbound_direction, self.inbound_key)
             .map_err(TransportFrameError::ProtocolRejected)
+    }
+
+    fn fail_with<T>(&mut self, error: TransportFrameError) -> Result<T, TransportFrameError> {
+        self.fail_and_scrub_keys();
+        Err(error)
+    }
+
+    fn fail_and_scrub_keys(&mut self) {
+        self.closed = true;
+        self.inbound.fail();
+        self.inbound_key.fill(0);
+        self.outbound_key.fill(0);
+        self.next_outbound_counter = 0;
     }
 }
 
@@ -265,6 +318,12 @@ mod tests {
             server.accept_text_frame(&frame).unwrap_err(),
             TransportFrameError::ProtocolRejected(ProtocolError::DuplicateMessageId)
         );
+        assert!(server.is_closed());
+        assert_eq!(server.state(), ProtocolSessionState::Failed);
+        assert_eq!(
+            server.accept_text_frame(&frame).unwrap_err(),
+            TransportFrameError::SessionClosed
+        );
     }
 
     #[test]
@@ -278,6 +337,7 @@ mod tests {
             TransportFrameError::ProtocolRejected(ProtocolError::InvalidJson(_))
                 | TransportFrameError::ProtocolRejected(ProtocolError::InvalidField(_))
         ));
+        assert!(server.is_closed());
     }
 
     #[test]
@@ -305,6 +365,44 @@ mod tests {
         assert_eq!(
             server.accept_websocket_message(Message::Binary(vec![1, 2, 3].into())),
             Err(TransportFrameError::BinaryUnsupported)
+        );
+        assert!(server.is_closed());
+    }
+
+    #[test]
+    fn authenticated_transport_close_message_scrubs_session() {
+        let (_client, mut server) = session_pair();
+
+        assert_eq!(
+            server.accept_websocket_message(Message::Close(None)),
+            Ok(None)
+        );
+        assert!(server.is_closed());
+        assert_eq!(server.state(), ProtocolSessionState::Failed);
+        assert_eq!(
+            server.accept_websocket_message(Message::Ping(Vec::new().into())),
+            Err(TransportFrameError::SessionClosed)
+        );
+    }
+
+    #[test]
+    fn authenticated_transport_close_scrubs_keys_and_blocks_sends() {
+        let (mut client, _server) = session_pair();
+
+        client.close();
+
+        assert!(client.is_closed());
+        assert_eq!(client.state(), ProtocolSessionState::Failed);
+        assert_eq!(client.next_outbound_counter(), 0);
+        assert_eq!(
+            client
+                .encode_business_frame(
+                    MessageType::ItemLive,
+                    "018ff6f3-0d8c-7d1e-a38a-f308c64de79f".to_owned(),
+                    &serde_json::json!({"content": "blocked"})
+                )
+                .unwrap_err(),
+            TransportFrameError::SessionClosed
         );
     }
 }

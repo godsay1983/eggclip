@@ -263,6 +263,10 @@ export default function localUnitTest() {
       expect(duplicate.ok).assertEqual(false);
       expect(duplicate.error).assertEqual(ProtocolTransportFrameError.PROTOCOL_REJECTED);
       expect(duplicate.protocolError).assertEqual(ProtocolErrorCode.DUPLICATE_MESSAGE_ID);
+      expect(session.isClosed()).assertEqual(true);
+      expect(session.state()).assertEqual(ProtocolSessionState.FAILED);
+      expect(session.acceptTextFrame(ENCRYPTED_ITEM_LIVE_FIXTURE).error)
+        .assertEqual(ProtocolTransportFrameError.SESSION_CLOSED);
 
       const poc = new ProtocolTransportSession().acceptTextFrame('{"kind":"clipboardText","text":"not formal"}');
       expect(poc.ok).assertEqual(false);
@@ -280,12 +284,17 @@ export default function localUnitTest() {
       const duplicate = transport.decodeProtocolFrameMessage(ENCRYPTED_ITEM_LIVE_FIXTURE, session);
       expect(duplicate.ok).assertEqual(false);
       expect(duplicate.protocolError).assertEqual(ProtocolErrorCode.DUPLICATE_MESSAGE_ID);
+      expect(session.isClosed()).assertEqual(true);
+
+      const afterClosed = transport.decodeProtocolFrameMessage(ENCRYPTED_ITEM_LIVE_FIXTURE, session);
+      expect(afterClosed.ok).assertEqual(false);
+      expect(afterClosed.error).assertEqual(ProtocolTransportFrameError.SESSION_CLOSED);
 
       const diagnostics = transport.currentDiagnostics();
-      expect(diagnostics.receivedFrames).assertEqual(2);
+      expect(diagnostics.receivedFrames).assertEqual(3);
       expect(diagnostics.acceptedItems).assertEqual(1);
-      expect(diagnostics.rejectedFrames).assertEqual(1);
-      expect(diagnostics.lastRejection).assertEqual('正式协议拒绝：duplicateMessageId');
+      expect(diagnostics.rejectedFrames).assertEqual(2);
+      expect(diagnostics.lastRejection).assertEqual('正式协议拒绝：sessionClosed');
     });
 
     it('parsesProtocolEncryptedItemLiveFixture', 0, () => {
