@@ -40,6 +40,8 @@ export enum ProtocolErrorCode {
   MISSING_CIPHERTEXT = 'missingCiphertext',
   PLAINTEXT_AFTER_AUTH = 'plaintextAfterAuth',
   CIPHERTEXT_BEFORE_AUTH = 'ciphertextBeforeAuth',
+  DUPLICATE_MESSAGE_ID = 'duplicateMessageId',
+  REPLAY_COUNTER = 'replayCounter',
   INVALID_FIELD = 'invalidField',
   TEXT_TOO_LARGE = 'textTooLarge'
 }
@@ -383,6 +385,13 @@ export interface SessionGateResult {
   messageType?: MessageType;
 }
 
+export interface ReplayGuardResult {
+  ok: boolean;
+  error?: ProtocolErrorCode;
+  counter?: number;
+  highestSeen?: number;
+}
+
 export class ProtocolSessionGate {
   private currentState: ProtocolSessionState = ProtocolSessionState.DISCONNECTED;
 
@@ -494,6 +503,54 @@ export class ProtocolSessionGate {
       };
     }
     return { ok: false, state: this.currentState, error: ProtocolErrorCode.INVALID_FIELD, messageType };
+  }
+}
+
+export class ProtocolReplayGuard {
+  private highestCounter: number = -1;
+  private readonly seenMessageIds: Set<string> = new Set<string>();
+
+  acceptEnvelope(envelope: ParsedEnvelope): ReplayGuardResult {
+    if (this.seenMessageIds.has(envelope.messageId)) {
+      return { ok: false, error: ProtocolErrorCode.DUPLICATE_MESSAGE_ID };
+    }
+    if (envelope.sessionCounter <= this.highestCounter) {
+      return {
+        ok: false,
+        error: ProtocolErrorCode.REPLAY_COUNTER,
+        counter: envelope.sessionCounter,
+        highestSeen: this.highestCounter
+      };
+    }
+
+    this.seenMessageIds.add(envelope.messageId);
+    this.highestCounter = envelope.sessionCounter;
+    return { ok: true };
+  }
+}
+
+export class ProtocolInboundSession {
+  private readonly gate: ProtocolSessionGate = new ProtocolSessionGate();
+  private readonly replayGuard: ProtocolReplayGuard = new ProtocolReplayGuard();
+
+  state(): ProtocolSessionState {
+    return this.gate.state();
+  }
+
+  connect(): ProtocolSessionState {
+    return this.gate.connect();
+  }
+
+  startHandshake(): ProtocolSessionState {
+    return this.gate.startHandshake();
+  }
+
+  acceptEnvelope(envelope: ParsedEnvelope): SessionGateResult {
+    const replay = this.replayGuard.acceptEnvelope(envelope);
+    if (!replay.ok) {
+      return { ok: false, state: this.gate.state(), error: replay.error };
+    }
+    return this.gate.acceptEnvelope(envelope);
   }
 }
 

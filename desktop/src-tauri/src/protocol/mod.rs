@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{collections::HashSet, fmt};
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde::{Deserialize, Serialize};
@@ -23,6 +23,11 @@ pub enum ProtocolError {
     MissingCiphertext(MessageType),
     PlaintextAfterAuth(MessageType),
     CiphertextBeforeAuth(MessageType),
+    DuplicateMessageId,
+    ReplayCounter {
+        counter: u64,
+        highest_seen: u64,
+    },
     InvalidState {
         state: ProtocolSessionState,
         message_type: MessageType,
@@ -62,6 +67,14 @@ impl fmt::Display for ProtocolError {
                     "{message_type} must not use ciphertext before auth"
                 )
             }
+            ProtocolError::DuplicateMessageId => write!(formatter, "duplicate message id"),
+            ProtocolError::ReplayCounter {
+                counter,
+                highest_seen,
+            } => write!(
+                formatter,
+                "replayed or old session counter {counter}, highest seen {highest_seen}"
+            ),
             ProtocolError::InvalidState {
                 state,
                 message_type,
@@ -163,6 +176,29 @@ pub enum AeadAlgorithm {
 pub enum ProtocolEnvelope {
     PreAuth(PreAuthEnvelope),
     Encrypted(EncryptedEnvelope),
+}
+
+impl ProtocolEnvelope {
+    pub fn message_type(&self) -> MessageType {
+        match self {
+            ProtocolEnvelope::PreAuth(envelope) => envelope.message_type,
+            ProtocolEnvelope::Encrypted(envelope) => envelope.message_type,
+        }
+    }
+
+    pub fn message_id(&self) -> &str {
+        match self {
+            ProtocolEnvelope::PreAuth(envelope) => &envelope.message_id,
+            ProtocolEnvelope::Encrypted(envelope) => &envelope.message_id,
+        }
+    }
+
+    pub fn session_counter(&self) -> u64 {
+        match self {
+            ProtocolEnvelope::PreAuth(envelope) => envelope.session_counter,
+            ProtocolEnvelope::Encrypted(envelope) => envelope.session_counter,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -532,6 +568,63 @@ impl ProtocolSessionGate {
     }
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct ProtocolReplayGuard {
+    seen_message_ids: HashSet<String>,
+    highest_counter: Option<u64>,
+}
+
+impl ProtocolReplayGuard {
+    pub fn accept_envelope(&mut self, envelope: &ProtocolEnvelope) -> Result<(), ProtocolError> {
+        let message_id = envelope.message_id();
+        if self.seen_message_ids.contains(message_id) {
+            return Err(ProtocolError::DuplicateMessageId);
+        }
+
+        let counter = envelope.session_counter();
+        if let Some(highest_seen) = self.highest_counter {
+            if counter <= highest_seen {
+                return Err(ProtocolError::ReplayCounter {
+                    counter,
+                    highest_seen,
+                });
+            }
+        }
+
+        self.seen_message_ids.insert(message_id.to_owned());
+        self.highest_counter = Some(counter);
+        Ok(())
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct ProtocolInboundSession {
+    gate: ProtocolSessionGate,
+    replay_guard: ProtocolReplayGuard,
+}
+
+impl ProtocolInboundSession {
+    pub fn state(&self) -> ProtocolSessionState {
+        self.gate.state()
+    }
+
+    pub fn connect(&mut self) -> ProtocolSessionState {
+        self.gate.connect()
+    }
+
+    pub fn start_handshake(&mut self) -> ProtocolSessionState {
+        self.gate.start_handshake()
+    }
+
+    pub fn accept_envelope(
+        &mut self,
+        envelope: &ProtocolEnvelope,
+    ) -> Result<ProtocolSessionState, ProtocolError> {
+        self.replay_guard.accept_envelope(envelope)?;
+        self.gate.accept_envelope(envelope)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Capability {
@@ -846,6 +939,80 @@ mod tests {
         assert_eq!(
             gate.accept_envelope(&client_hello).unwrap_err(),
             ProtocolError::PlaintextAfterAuth(MessageType::ClientHello)
+        );
+    }
+
+    #[test]
+    fn replay_guard_rejects_duplicate_message_ids() {
+        let client_hello = parse_envelope(&read_vector(&[
+            "test-vectors",
+            "handshake",
+            "client-hello.valid.json",
+        ]))
+        .expect("client hello should parse");
+        let mut guard = ProtocolReplayGuard::default();
+
+        guard
+            .accept_envelope(&client_hello)
+            .expect("first message should pass");
+        assert_eq!(
+            guard.accept_envelope(&client_hello).unwrap_err(),
+            ProtocolError::DuplicateMessageId
+        );
+    }
+
+    #[test]
+    fn replay_guard_rejects_old_or_repeated_counters() {
+        let auth_proof = parse_envelope(&read_vector(&[
+            "test-vectors",
+            "handshake",
+            "auth-proof.valid.json",
+        ]))
+        .expect("auth proof should parse");
+        let auth_ok_old_counter = parse_envelope(
+            r#"{
+              "version": 1,
+              "type": "AUTH_OK",
+              "messageId": "018ff6f1-25f0-7c09-a4cf-3d683ebfae33",
+              "sessionCounter": 1,
+              "payload": {}
+            }"#,
+        )
+        .expect("auth ok should parse");
+        let mut guard = ProtocolReplayGuard::default();
+
+        guard
+            .accept_envelope(&auth_proof)
+            .expect("first message should pass");
+        assert_eq!(
+            guard.accept_envelope(&auth_ok_old_counter).unwrap_err(),
+            ProtocolError::ReplayCounter {
+                counter: 1,
+                highest_seen: 2
+            }
+        );
+    }
+
+    #[test]
+    fn inbound_session_applies_replay_guard_before_state_gate() {
+        let client_hello = parse_envelope(&read_vector(&[
+            "test-vectors",
+            "handshake",
+            "client-hello.valid.json",
+        ]))
+        .expect("client hello should parse");
+        let mut session = ProtocolInboundSession::default();
+        session.connect();
+
+        assert_eq!(
+            session
+                .accept_envelope(&client_hello)
+                .expect("first hello should pass"),
+            ProtocolSessionState::Handshaking
+        );
+        assert_eq!(
+            session.accept_envelope(&client_hello).unwrap_err(),
+            ProtocolError::DuplicateMessageId
         );
     }
 

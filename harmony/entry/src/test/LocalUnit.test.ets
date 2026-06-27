@@ -22,7 +22,9 @@ import {
   MessageType,
   ProtocolEnvelopeKind,
   ProtocolErrorCode,
+  ProtocolInboundSession,
   ProtocolParser,
+  ProtocolReplayGuard,
   ProtocolSessionGate,
   ProtocolSessionState,
   PROTOCOL_HANDSHAKE_TIMEOUT_SECONDS,
@@ -206,6 +208,38 @@ export default function localUnitTest() {
       expect(latePlaintext.error).assertEqual(ProtocolErrorCode.PLAINTEXT_AFTER_AUTH);
     });
 
+    it('rejectsProtocolReplayMessageIdAndOldCounter', 0, () => {
+      const parser = new ProtocolParser();
+      const clientHello = parser.parseEnvelope(CLIENT_HELLO_FIXTURE);
+      const authProof = parser.parseEnvelope(AUTH_PROOF_FIXTURE);
+      const authOkOldCounter = parser.parseEnvelope(AUTH_OK_OLD_COUNTER_FIXTURE);
+      const guard = new ProtocolReplayGuard();
+
+      expect(clientHello.ok).assertEqual(true);
+      expect(authProof.ok).assertEqual(true);
+      expect(authOkOldCounter.ok).assertEqual(true);
+      expect(guard.acceptEnvelope(clientHello.envelope!).ok).assertEqual(true);
+      expect(guard.acceptEnvelope(clientHello.envelope!).error)
+        .assertEqual(ProtocolErrorCode.DUPLICATE_MESSAGE_ID);
+
+      const secondGuard = new ProtocolReplayGuard();
+      expect(secondGuard.acceptEnvelope(authProof.envelope!).ok).assertEqual(true);
+      expect(secondGuard.acceptEnvelope(authOkOldCounter.envelope!).error)
+        .assertEqual(ProtocolErrorCode.REPLAY_COUNTER);
+    });
+
+    it('appliesProtocolInboundSessionReplayGuardBeforeStateGate', 0, () => {
+      const parser = new ProtocolParser();
+      const clientHello = parser.parseEnvelope(CLIENT_HELLO_FIXTURE);
+      const session = new ProtocolInboundSession();
+
+      expect(clientHello.ok).assertEqual(true);
+      session.connect();
+      expect(session.acceptEnvelope(clientHello.envelope!).state).assertEqual(ProtocolSessionState.HANDSHAKING);
+      expect(session.acceptEnvelope(clientHello.envelope!).error)
+        .assertEqual(ProtocolErrorCode.DUPLICATE_MESSAGE_ID);
+    });
+
     it('parsesProtocolEncryptedItemLiveFixture', 0, () => {
       const parser = new ProtocolParser();
       const result = parser.parseEnvelope(ENCRYPTED_ITEM_LIVE_FIXTURE);
@@ -280,6 +314,8 @@ const AUTH_PROOF_FIXTURE: string = '{"version":1,"type":"AUTH_PROOF","messageId"
 const AUTH_PROOF_TRANSCRIPT: string = 'EggClip v1 auth transcript\nrole=client\nspaceId=018ff6ef-c394-7d08-8b99-4b7d10f2767a\nlocalDeviceId=018ff6f0-0a3b-7815-a4db-3eb6e23d9338\nremoteDeviceId=018ff6f0-4adf-7d31-a987-3ef2b25d0212\nlocalIdentityPublicKey=11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo\nremoteIdentityPublicKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\nlocalEphemeralPublicKey=hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo\nremoteEphemeralPublicKey=3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08\npairingContext=trusted-device:018ff6ef-c394-7d08-8b99-4b7d10f2767a\n';
 
 const AUTH_OK_FIXTURE: string = '{"version":1,"type":"AUTH_OK","messageId":"018ff6f1-25f0-7c09-a4cf-3d683ebfae33","sessionCounter":3,"payload":{}}';
+
+const AUTH_OK_OLD_COUNTER_FIXTURE: string = '{"version":1,"type":"AUTH_OK","messageId":"018ff6f1-25f0-7c09-a4cf-3d683ebfae33","sessionCounter":1,"payload":{}}';
 
 const ENCRYPTED_ITEM_LIVE_FIXTURE: string = '{"version":1,"type":"ITEM_LIVE","messageId":"018ff6f3-0d8c-7d1e-a38a-f308c64de79f","sessionCounter":12,"ciphertext":{"algorithm":"AES-256-GCM","keyId":"session-v1-client-to-server","nonce":"DDDDDDDDDDDDDDDD","aad":"EEEEEEEEEEEEEEEE","body":"FFFFFFFFFFFFFFFF","tag":"GGGGGGGGGGGGGGGGGGGGGG"}}';
 

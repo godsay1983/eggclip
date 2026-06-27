@@ -223,7 +223,7 @@ harmony/entry/src/main/ets/
 - [ ] Ed25519 验证设备身份和空间绑定；已固定 canonical AUTH_PROOF transcript 并在 ArkTS 校验构造结果，真实 Ed25519 验签待接 CryptoFramework/HUKS。
 - [ ] HKDF 派生双向会话密钥；已固定共享 session key 向量并在 ArkTS 校验字段、长度和 nonce 规则，真实 CryptoFramework HKDF 未接入。
 - [ ] AES-256-GCM 解密认证后业务帧。
-- [ ] 维护接收计数器和 replay window；ArkTS 已有测试用单向 counter guard 校验，正式 session 未接入。
+- [ ] 维护接收计数器和 replay window；ArkTS 已有协议入站 replay guard 拒绝重复 messageId 与非递增 sessionCounter，正式 transport/session 未接入。
 - [ ] 未认证连接不能访问同步 service 和 RDB 正文；ArkTS 协议 session gate 已拒绝认证前业务帧，尚未接入 transport/sync/RDB。
 
 ### 前台连接

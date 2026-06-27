@@ -39,6 +39,8 @@ Authentication gate:
 - `SYNC_HEADS`, `REQUEST_RANGE`, and `ITEM_BATCH` move the session through `syncing`.
 - `ITEM_LIVE`, `ITEM_ACK`, `PING`, and `PONG` keep or return the session to `ready`.
 - `AUTH_ERROR` or safe protocol `ERROR` moves the session to `failed`.
+- The inbound session rejects repeated `messageId` values and non-increasing
+  `sessionCounter` values before dispatching payloads to sync or storage code.
 
 ## Envelope
 
