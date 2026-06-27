@@ -2,8 +2,10 @@ import {
   AppSettings,
   ClipboardItem,
   Device,
+  HlcTimestamp,
   Space,
   SyncHead,
+  buildLocalClipboardItemDraft,
   validateAppSettings,
   validateClipboardItemFields
 } from '../../models/DomainModels';
@@ -41,6 +43,23 @@ export interface DeviceRecord {
 export interface SyncHeadRecord {
   head: SyncHead;
   peerDeviceId: string;
+}
+
+export interface LocalClipboardPersistCommandInput {
+  itemId: string;
+  spaceId: string;
+  originDeviceId: string;
+  originSeq: number;
+  text: string;
+  contentDigest: string;
+  encryptedContent: Uint8Array;
+  settings: AppSettings;
+  nowMs: number;
+}
+
+export interface LocalClipboardPersistCommandPlan {
+  record: ClipboardItemRecord;
+  commands: RepositoryCommand[];
 }
 
 export class ClipboardRepository {
@@ -140,6 +159,55 @@ export class ClipboardRepository {
       this.markExpired(spaceId, nowMs),
       this.markOverflow(spaceId, settings.historyLimit, nowMs)
     ];
+  }
+}
+
+const MILLIS_PER_DAY: number = 24 * 60 * 60 * 1000;
+
+export class LocalClipboardPersistenceCommands {
+  build(input: LocalClipboardPersistCommandInput): LocalClipboardPersistCommandPlan | null {
+    if (!validateAppSettings(input.settings).ok) {
+      return null;
+    }
+    if (!Number.isSafeInteger(input.nowMs + input.settings.retentionDays * MILLIS_PER_DAY)) {
+      return null;
+    }
+
+    const item = buildLocalClipboardItemDraft({
+      itemId: input.itemId,
+      spaceId: input.spaceId,
+      originDeviceId: input.originDeviceId,
+      originSeq: input.originSeq,
+      hlc: new HlcTimestamp(input.nowMs, 0),
+      createdAt: input.nowMs,
+      contentDigest: input.contentDigest
+    }, input.text);
+    if (!item.ok || item.item === undefined) {
+      return null;
+    }
+
+    const identity = new LocalIdentityRepository();
+    const clipboard = new ClipboardRepository();
+    const record: ClipboardItemRecord = {
+      item: item.item,
+      encryptedContent: input.encryptedContent,
+      receivedAt: input.nowMs,
+      expiresAt: input.nowMs + input.settings.retentionDays * MILLIS_PER_DAY
+    };
+    const advance = identity.advanceOriginSeq(input.originSeq, input.nowMs);
+    const insert = clipboard.insert(record);
+    if (advance === null || insert === null) {
+      return null;
+    }
+
+    return {
+      record,
+      commands: [
+        identity.initializeOriginSeq(input.nowMs),
+        advance,
+        insert
+      ]
+    };
   }
 }
 

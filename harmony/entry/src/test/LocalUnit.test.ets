@@ -43,6 +43,7 @@ import {
   INITIAL_ORIGIN_SEQ,
   LOCAL_DEVICE_ID_KEY,
   LocalIdentityRepository,
+  LocalClipboardPersistenceCommands,
   NEXT_ORIGIN_SEQ_KEY,
   SettingsRepository,
   SpaceRepository,
@@ -411,6 +412,50 @@ export default function localUnitTest() {
       expect(advanceSeq.args[2]).assertEqual(NEXT_ORIGIN_SEQ_KEY);
       expect(advanceSeq.args[3]).assertEqual('7');
       expect(identity.advanceOriginSeq(Number.MAX_SAFE_INTEGER, 1700000000003)).assertEqual(null);
+    });
+
+    it('buildsLocalClipboardPersistenceCommandsWithoutBroadcasting', 0, () => {
+      const workflow = new LocalClipboardPersistenceCommands();
+      const plan = workflow.build({
+        itemId: '018ff6f1-c394-7d08-8b99-4b7d10f2767a',
+        spaceId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
+        originDeviceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
+        originSeq: 7,
+        text: '来自 PasteButton 的一次性明文',
+        contentDigest: 'VCKcnWkMQkRIXGbdZ29X9i2PfEJai3L2lV1hCUApXkw',
+        encryptedContent: new Uint8Array([9, 8, 7]),
+        settings: defaultAppSettings(),
+        nowMs: 1700000000100
+      });
+
+      expect(plan === null).assertEqual(false);
+      if (plan === null) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      expect(plan.record.item.originSeq).assertEqual(7);
+      expect(plan.record.item.hlc).assertEqual('0000018bcfe56864-0000');
+      expect(plan.record.item.plaintext).assertEqual('来自 PasteButton 的一次性明文');
+      expect(plan.record.expiresAt).assertEqual(1700604800100);
+      expect(plan.commands.length).assertEqual(3);
+      expect(plan.commands[0].args[0]).assertEqual(NEXT_ORIGIN_SEQ_KEY);
+      expect(plan.commands[1].args[0]).assertEqual('8');
+      expect(plan.commands[2].sql.indexOf('encrypted_content') >= 0).assertEqual(true);
+      expect(plan.commands[2].sql.indexOf('plaintext')).assertEqual(-1);
+      expect(plan.commands[2].args[8] instanceof Uint8Array).assertEqual(true);
+
+      const invalidText = workflow.build({
+        itemId: '018ff6f1-c394-7d08-8b99-4b7d10f2767a',
+        spaceId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
+        originDeviceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
+        originSeq: 7,
+        text: '',
+        contentDigest: 'VCKcnWkMQkRIXGbdZ29X9i2PfEJai3L2lV1hCUApXkw',
+        encryptedContent: new Uint8Array([9, 8, 7]),
+        settings: defaultAppSettings(),
+        nowMs: 1700000000100
+      });
+      expect(invalidText).assertEqual(null);
     });
 
     it('parsesProtocolClientHelloFixture', 0, () => {

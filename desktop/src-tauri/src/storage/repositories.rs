@@ -2,13 +2,15 @@ use rusqlite::{params, types::Type, Connection, OptionalExtension};
 use uuid::Uuid;
 
 use crate::sync::{
-    AppSettings, ClipboardItem, ContentType, Device, DeviceConnectionState, DeviceTrustState,
-    HlcTimestamp, Space, SpaceState, SyncHead, SyncModelError,
+    build_local_clipboard_item, new_uuid_v7, AppSettings, ClipboardItem, ContentType, Device,
+    DeviceConnectionState, DeviceTrustState, HlcTimestamp, LocalClipboardItemInput, Space,
+    SpaceState, SyncHead, SyncModelError,
 };
 
 pub const LOCAL_DEVICE_ID_KEY: &str = "localDeviceId";
 pub const NEXT_ORIGIN_SEQ_KEY: &str = "nextOriginSeq";
 pub const INITIAL_ORIGIN_SEQ: u64 = 1;
+const MILLIS_PER_DAY: u64 = 24 * 60 * 60 * 1_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpaceRecord {
@@ -39,6 +41,21 @@ pub struct SyncHeadRecord {
     pub peer_device_id: Uuid,
 }
 
+#[derive(Debug, Clone)]
+pub struct LocalClipboardPersistInput<'a> {
+    pub space_id: Uuid,
+    pub text: String,
+    pub encrypted_content: Vec<u8>,
+    pub hmac_key: &'a [u8],
+    pub settings: AppSettings,
+    pub now_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalClipboardPersistResult {
+    pub record: ClipboardItemRecord,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RetentionCleanupResult {
     pub expired_items: usize,
@@ -49,6 +66,71 @@ impl RetentionCleanupResult {
     pub fn total(self) -> usize {
         self.expired_items + self.overflow_items
     }
+}
+
+/// Persists a local clipboard write as an immutable item in one database transaction.
+///
+/// This boundary deliberately does not send network frames. Callers may broadcast
+/// `record.item` only after this function returns successfully, so transport
+/// failures cannot roll back the local history record or origin sequence.
+pub fn persist_local_clipboard_text(
+    connection: &mut Connection,
+    input: LocalClipboardPersistInput<'_>,
+) -> rusqlite::Result<LocalClipboardPersistResult> {
+    input
+        .settings
+        .validate()
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+
+    let expires_at = retention_expires_at(input.now_ms, input.settings.retention_days)?;
+    let transaction = connection.transaction()?;
+    let origin_device_id = get_or_create_device_id_in_transaction(&transaction, input.now_ms)?;
+    let origin_seq = allocate_origin_seq_in_transaction(&transaction, input.now_ms)?;
+    let item = build_local_clipboard_item(
+        LocalClipboardItemInput {
+            item_id: new_uuid_v7(),
+            space_id: input.space_id,
+            origin_device_id,
+            origin_seq,
+            hlc: HlcTimestamp::new(input.now_ms, 0),
+            created_at: input.now_ms,
+            hmac_key: input.hmac_key,
+        },
+        input.text,
+    )
+    .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+    let record = ClipboardItemRecord {
+        item,
+        encrypted_content: input.encrypted_content,
+        received_at: input.now_ms,
+        expires_at,
+        deleted_at: None,
+    };
+
+    transaction.execute(
+        "INSERT INTO clipboard_items(
+          item_id, space_id, origin_device_id, origin_seq, hlc, content_type,
+          content_length, content_digest, encrypted_content, created_at, received_at, expires_at, deleted_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        params![
+            record.item.item_id.to_string(),
+            record.item.space_id.to_string(),
+            record.item.origin_device_id.to_string(),
+            u64_to_i64(record.item.origin_seq)?,
+            record.item.hlc.to_wire(),
+            record.item.content_type.wire_value(),
+            usize_to_i64(record.item.content_length)?,
+            record.item.content_digest,
+            record.encrypted_content,
+            u64_to_i64(record.item.created_at)?,
+            u64_to_i64(record.received_at)?,
+            u64_to_i64(record.expires_at)?,
+            option_u64_to_i64(record.deleted_at)?,
+        ],
+    )?;
+    transaction.commit()?;
+
+    Ok(LocalClipboardPersistResult { record })
 }
 
 pub struct SpaceRepository<'a> {
@@ -480,6 +562,65 @@ impl<'a> LocalIdentityRepository<'a> {
     }
 }
 
+fn get_or_create_device_id_in_transaction(
+    transaction: &rusqlite::Transaction<'_>,
+    updated_at: u64,
+) -> rusqlite::Result<Uuid> {
+    let existing: Option<String> = transaction
+        .query_row(
+            "SELECT value FROM app_metadata WHERE key = ?1",
+            params![LOCAL_DEVICE_ID_KEY],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if let Some(value) = existing {
+        return parse_uuid(value, 0);
+    }
+
+    let device_id = Uuid::new_v4();
+    transaction.execute(
+        "INSERT INTO app_metadata(key, value, updated_at) VALUES (?1, ?2, ?3)",
+        params![
+            LOCAL_DEVICE_ID_KEY,
+            device_id.to_string(),
+            u64_to_i64(updated_at)?,
+        ],
+    )?;
+    Ok(device_id)
+}
+
+fn allocate_origin_seq_in_transaction(
+    transaction: &rusqlite::Transaction<'_>,
+    updated_at: u64,
+) -> rusqlite::Result<u64> {
+    transaction.execute(
+        "INSERT OR IGNORE INTO app_metadata(key, value, updated_at) VALUES (?1, ?2, ?3)",
+        params![
+            NEXT_ORIGIN_SEQ_KEY,
+            INITIAL_ORIGIN_SEQ.to_string(),
+            u64_to_i64(updated_at)?,
+        ],
+    )?;
+    let current_value: String = transaction.query_row(
+        "SELECT value FROM app_metadata WHERE key = ?1",
+        params![NEXT_ORIGIN_SEQ_KEY],
+        |row| row.get(0),
+    )?;
+    let current = parse_u64_metadata(&current_value, 0)?;
+    let next = current.checked_add(1).ok_or_else(|| {
+        rusqlite::Error::ToSqlConversionFailure(Box::new(SyncModelError::SequenceOverflow))
+    })?;
+    transaction.execute(
+        "UPDATE app_metadata SET value = ?2, updated_at = ?3 WHERE key = ?1",
+        params![
+            NEXT_ORIGIN_SEQ_KEY,
+            next.to_string(),
+            u64_to_i64(updated_at)?
+        ],
+    )?;
+    Ok(current)
+}
+
 fn row_to_space_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<SpaceRecord> {
     Ok(SpaceRecord {
         space: Space {
@@ -631,6 +772,17 @@ fn option_u64_to_i64(value: Option<u64>) -> rusqlite::Result<Option<i64>> {
     value.map(u64_to_i64).transpose()
 }
 
+fn retention_expires_at(created_at: u64, retention_days: u16) -> rusqlite::Result<u64> {
+    let ttl_ms = u64::from(retention_days)
+        .checked_mul(MILLIS_PER_DAY)
+        .ok_or_else(|| {
+            rusqlite::Error::ToSqlConversionFailure(Box::new(SyncModelError::SequenceOverflow))
+        })?;
+    created_at.checked_add(ttl_ms).ok_or_else(|| {
+        rusqlite::Error::ToSqlConversionFailure(Box::new(SyncModelError::SequenceOverflow))
+    })
+}
+
 fn i64_to_u64(value: i64, column: usize) -> rusqlite::Result<u64> {
     value.try_into().map_err(|_| int_error(column))
 }
@@ -663,6 +815,16 @@ mod tests {
         let space_id = Uuid::now_v7();
         let local_device_id = Uuid::now_v7();
         let peer_device_id = Uuid::now_v7();
+        seed_space_with_devices(connection, space_id, local_device_id, peer_device_id)?;
+        Ok((space_id, local_device_id, peer_device_id))
+    }
+
+    fn seed_space_with_devices(
+        connection: &Connection,
+        space_id: Uuid,
+        local_device_id: Uuid,
+        peer_device_id: Uuid,
+    ) -> rusqlite::Result<()> {
         let spaces = SpaceRepository::new(connection);
         let devices = DeviceRepository::new(connection);
 
@@ -695,7 +857,7 @@ mod tests {
                 revoked_at: None,
             })?;
         }
-        Ok((space_id, local_device_id, peer_device_id))
+        Ok(())
     }
 
     #[test]
@@ -989,5 +1151,91 @@ mod tests {
         assert_eq!(second_device_id, first_device_id);
         assert_eq!(identity.allocate_origin_seq(1_700_000_000_004), Ok(3));
         assert_eq!(identity.peek_next_origin_seq(), Ok(4));
+    }
+
+    #[test]
+    fn persist_local_clipboard_text_stores_item_and_advances_sequence_after_commit() {
+        let mut connection = open_in_memory_database().expect("database should initialize");
+        let now_ms = 1_700_000_000_000;
+        let local_device_id = {
+            let mut identity = LocalIdentityRepository::new(&mut connection);
+            identity
+                .get_or_create_device_id(now_ms)
+                .expect("local device id should be created")
+        };
+        let space_id = Uuid::now_v7();
+        let peer_device_id = Uuid::now_v7();
+        seed_space_with_devices(&connection, space_id, local_device_id, peer_device_id)
+            .expect("space and devices should seed");
+
+        let result = persist_local_clipboard_text(
+            &mut connection,
+            LocalClipboardPersistInput {
+                space_id,
+                text: "本地复制".to_string(),
+                encrypted_content: vec![0xAA, 0xBB, 0xCC],
+                hmac_key: b"space-key-for-tests",
+                settings: AppSettings::default(),
+                now_ms,
+            },
+        )
+        .expect("local clipboard item should persist");
+
+        assert_eq!(result.record.item.space_id, space_id);
+        assert_eq!(result.record.item.origin_device_id, local_device_id);
+        assert_eq!(result.record.item.origin_seq, INITIAL_ORIGIN_SEQ);
+        assert_eq!(result.record.item.hlc, HlcTimestamp::new(now_ms, 0));
+        assert_eq!(result.record.item.plaintext.as_deref(), Some("本地复制"));
+        assert_eq!(result.record.encrypted_content, vec![0xAA, 0xBB, 0xCC]);
+        assert_eq!(
+            result.record.expires_at,
+            now_ms + (u64::from(AppSettings::default().retention_days) * MILLIS_PER_DAY)
+        );
+
+        let stored = ClipboardRepository::new(&connection)
+            .get(result.record.item.item_id)
+            .expect("stored item should be readable")
+            .expect("stored item should exist");
+        assert_eq!(stored.item.plaintext, None);
+        assert_eq!(
+            stored.item.content_digest,
+            result.record.item.content_digest
+        );
+        assert_eq!(stored.encrypted_content, vec![0xAA, 0xBB, 0xCC]);
+
+        let identity = LocalIdentityRepository::new(&mut connection);
+        assert_eq!(identity.peek_next_origin_seq(), Ok(2));
+    }
+
+    #[test]
+    fn persist_local_clipboard_text_rolls_back_sequence_when_item_insert_fails() {
+        let mut connection = open_in_memory_database().expect("database should initialize");
+        let now_ms = 1_700_000_000_000;
+        {
+            let mut identity = LocalIdentityRepository::new(&mut connection);
+            identity
+                .get_or_create_device_id(now_ms)
+                .expect("local device id should be created");
+        }
+
+        let result = persist_local_clipboard_text(
+            &mut connection,
+            LocalClipboardPersistInput {
+                space_id: Uuid::now_v7(),
+                text: "没有空间外键".to_string(),
+                encrypted_content: vec![1, 2, 3],
+                hmac_key: b"space-key-for-tests",
+                settings: AppSettings::default(),
+                now_ms,
+            },
+        );
+
+        assert!(result.is_err());
+        let item_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM clipboard_items", [], |row| row.get(0))
+            .expect("item count should be readable");
+        assert_eq!(item_count, 0);
+        let identity = LocalIdentityRepository::new(&mut connection);
+        assert_eq!(identity.peek_next_origin_seq(), Ok(INITIAL_ORIGIN_SEQ));
     }
 }
