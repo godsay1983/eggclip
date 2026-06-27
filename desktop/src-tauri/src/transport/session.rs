@@ -9,6 +9,7 @@ use crate::{
     },
 };
 use serde_json::Value;
+use tokio_tungstenite::tungstenite::Message;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransportFrameError {
@@ -16,6 +17,7 @@ pub enum TransportFrameError {
         actual_bytes: usize,
         max_bytes: usize,
     },
+    BinaryUnsupported,
     UnexpectedPlaintext,
     ProtocolRejected(ProtocolError),
 }
@@ -30,6 +32,9 @@ impl fmt::Display for TransportFrameError {
                 formatter,
                 "frame is too large: {actual_bytes} bytes, max {max_bytes}"
             ),
+            TransportFrameError::BinaryUnsupported => {
+                formatter.write_str("authenticated transport only accepts text frames")
+            }
             TransportFrameError::UnexpectedPlaintext => {
                 formatter.write_str("authenticated transport requires encrypted frames")
             }
@@ -99,6 +104,39 @@ impl AuthenticatedTransportSession {
         let frame = serialize_encrypted_envelope(&envelope)?;
         self.next_outbound_counter = self.next_outbound_counter.saturating_add(1);
         Ok(frame)
+    }
+
+    pub fn encode_business_message(
+        &mut self,
+        message_type: MessageType,
+        message_id: String,
+        payload: &Value,
+    ) -> Result<Message, TransportFrameError> {
+        Ok(Message::Text(
+            self.encode_business_frame(message_type, message_id, payload)?
+                .into(),
+        ))
+    }
+
+    pub fn accept_websocket_message(
+        &mut self,
+        message: Message,
+    ) -> Result<Option<Value>, TransportFrameError> {
+        match message {
+            Message::Text(text) => self.accept_text_frame(&text).map(Some),
+            Message::Binary(bytes) => {
+                if bytes.len() > MAX_FRAME_BYTES {
+                    Err(TransportFrameError::FrameTooLarge {
+                        actual_bytes: bytes.len(),
+                        max_bytes: MAX_FRAME_BYTES,
+                    })
+                } else {
+                    Err(TransportFrameError::BinaryUnsupported)
+                }
+            }
+            Message::Close(_) => Ok(None),
+            Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => Ok(None),
+        }
     }
 
     pub fn accept_text_frame(&mut self, text: &str) -> Result<Value, TransportFrameError> {
@@ -240,5 +278,33 @@ mod tests {
             TransportFrameError::ProtocolRejected(ProtocolError::InvalidJson(_))
                 | TransportFrameError::ProtocolRejected(ProtocolError::InvalidField(_))
         ));
+    }
+
+    #[test]
+    fn authenticated_transport_accepts_and_encodes_websocket_messages() {
+        let (mut client, mut server) = session_pair();
+        let payload = serde_json::json!({"content": "websocket boundary"});
+
+        let message = client
+            .encode_business_message(
+                MessageType::ItemLive,
+                "018ff6f3-0d8c-7d1e-a38a-f308c64de79f".to_owned(),
+                &payload,
+            )
+            .expect("client should encode websocket message");
+        let decoded = server
+            .accept_websocket_message(message)
+            .expect("server should accept websocket message")
+            .expect("text message should produce payload");
+
+        assert_eq!(decoded, payload);
+        assert_eq!(
+            server.accept_websocket_message(Message::Ping(Vec::new().into())),
+            Ok(None)
+        );
+        assert_eq!(
+            server.accept_websocket_message(Message::Binary(vec![1, 2, 3].into())),
+            Err(TransportFrameError::BinaryUnsupported)
+        );
     }
 }

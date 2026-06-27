@@ -1,6 +1,11 @@
 import webSocket from '@ohos.net.webSocket';
 import { EndpointValidationResult, ManualEndpoint, POC_MAX_FRAME_BYTES, PocLifecycleState } from '../../models/PocModels';
 import { estimateUtf8Bytes, MAX_TEXT_BYTES } from '../../utils/TextLimits';
+import {
+  ProtocolTransportFrameError,
+  ProtocolTransportFrameResult,
+  ProtocolTransportSession
+} from './ProtocolTransportSession';
 
 const CONNECT_TIMEOUT_MS: number = 8000;
 
@@ -9,6 +14,13 @@ export interface PocTransportCallbacks {
   onClose: (reason: string) => void;
   onError: (reason: string) => void;
   onMessage: (message: string) => void;
+}
+
+export interface ProtocolTransportCallbacks {
+  onOpen: () => void;
+  onClose: (reason: string) => void;
+  onError: (reason: string) => void;
+  onFrame: (result: ProtocolTransportFrameResult) => void;
 }
 
 export interface PocClipboardTextMessage {
@@ -90,6 +102,64 @@ export class WebSocketTransportService {
   }
 
   async connect(endpoint: ManualEndpoint, callbacks: PocTransportCallbacks): Promise<EndpointValidationResult> {
+    return this.connectInternal(endpoint, {
+      timeoutMessage: '连接桌面 POC 超时',
+      connectFailureMessage: '连接桌面 POC 失败',
+      onOpen: callbacks.onOpen,
+      onClose: callbacks.onClose,
+      onError: callbacks.onError,
+      onTextMessage: callbacks.onMessage,
+      onBinaryMessage: () => {
+        this.recordBinaryRejection('POC 不支持二进制消息');
+        callbacks.onError('POC 不支持二进制消息');
+      }
+    });
+  }
+
+  async connectProtocol(
+    endpoint: ManualEndpoint,
+    session: ProtocolTransportSession,
+    callbacks: ProtocolTransportCallbacks
+  ): Promise<EndpointValidationResult> {
+    return this.connectInternal(endpoint, {
+      timeoutMessage: '连接桌面正式协议超时',
+      connectFailureMessage: '连接桌面正式协议失败',
+      onOpen: callbacks.onOpen,
+      onClose: callbacks.onClose,
+      onError: callbacks.onError,
+      onTextMessage: (message: string) => {
+        callbacks.onFrame(this.decodeProtocolFrameMessage(message, session));
+      },
+      onBinaryMessage: () => {
+        this.recordBinaryRejection('正式协议不支持二进制 WebSocket 消息');
+        callbacks.onFrame({
+          ok: false,
+          error: ProtocolTransportFrameError.BINARY_UNSUPPORTED
+        });
+        callbacks.onError('正式协议不支持二进制 WebSocket 消息');
+      }
+    });
+  }
+
+  decodeProtocolFrameMessage(
+    message: string,
+    session: ProtocolTransportSession
+  ): ProtocolTransportFrameResult {
+    this.diagnostics.receivedFrames += 1;
+    const result = session.acceptTextFrame(message);
+    if (result.ok) {
+      this.diagnostics.acceptedItems += 1;
+      return result;
+    }
+
+    this.diagnostics.rejectedFrames += 1;
+    this.diagnostics.lastRejection = result.protocolError !== undefined ?
+      `正式协议拒绝：${result.protocolError}` :
+      `正式协议拒绝：${result.error ?? ProtocolTransportFrameError.PROTOCOL_REJECTED}`;
+    return result;
+  }
+
+  private async connectInternal(endpoint: ManualEndpoint, callbacks: InternalTransportCallbacks): Promise<EndpointValidationResult> {
     const result = this.validateEndpoint(endpoint);
     if (!result.ok) {
       this.state = PocLifecycleState.FAILED;
@@ -106,7 +176,7 @@ export class WebSocketTransportService {
       if (this.state === PocLifecycleState.STARTING) {
         this.state = PocLifecycleState.FAILED;
         this.connected = false;
-        callbacks.onError('连接桌面 POC 超时');
+        callbacks.onError(callbacks.timeoutMessage);
         this.close();
       }
     }, CONNECT_TIMEOUT_MS);
@@ -119,10 +189,9 @@ export class WebSocketTransportService {
     });
     socket.on('message', (_error, data: string | ArrayBuffer) => {
       if (typeof data === 'string') {
-        callbacks.onMessage(data);
+        callbacks.onTextMessage(data);
       } else {
-        this.recordBinaryRejection();
-        callbacks.onError('POC 不支持二进制消息');
+        callbacks.onBinaryMessage(data);
       }
     });
     socket.on('close', (_error, closeResult: webSocket.CloseResult) => {
@@ -151,7 +220,7 @@ export class WebSocketTransportService {
       return {
         ok: false,
         normalizedUrl: result.normalizedUrl,
-        reason: '连接桌面 POC 失败'
+        reason: callbacks.connectFailureMessage
       };
     }
     return result;
@@ -276,9 +345,19 @@ export class WebSocketTransportService {
     };
   }
 
-  private recordBinaryRejection(): void {
+  private recordBinaryRejection(reason: string): void {
     this.diagnostics.receivedFrames += 1;
     this.diagnostics.rejectedFrames += 1;
-    this.diagnostics.lastRejection = 'POC 不支持二进制消息';
+    this.diagnostics.lastRejection = reason;
   }
+}
+
+interface InternalTransportCallbacks {
+  timeoutMessage: string;
+  connectFailureMessage: string;
+  onOpen: () => void;
+  onClose: (reason: string) => void;
+  onError: (reason: string) => void;
+  onTextMessage: (message: string) => void;
+  onBinaryMessage: (data: ArrayBuffer) => void;
 }

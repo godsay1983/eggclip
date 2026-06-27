@@ -269,6 +269,25 @@ export default function localUnitTest() {
       expect(poc.error).assertEqual(ProtocolTransportFrameError.PROTOCOL_REJECTED);
     });
 
+    it('routesProtocolFramesThroughWebSocketTransportDiagnostics', 0, () => {
+      const transport = new WebSocketTransportService();
+      const session = new ProtocolTransportSession();
+
+      const accepted = transport.decodeProtocolFrameMessage(ENCRYPTED_ITEM_LIVE_FIXTURE, session);
+      expect(accepted.ok).assertEqual(true);
+      expect(accepted.envelope?.messageType).assertEqual(MessageType.ITEM_LIVE);
+
+      const duplicate = transport.decodeProtocolFrameMessage(ENCRYPTED_ITEM_LIVE_FIXTURE, session);
+      expect(duplicate.ok).assertEqual(false);
+      expect(duplicate.protocolError).assertEqual(ProtocolErrorCode.DUPLICATE_MESSAGE_ID);
+
+      const diagnostics = transport.currentDiagnostics();
+      expect(diagnostics.receivedFrames).assertEqual(2);
+      expect(diagnostics.acceptedItems).assertEqual(1);
+      expect(diagnostics.rejectedFrames).assertEqual(1);
+      expect(diagnostics.lastRejection).assertEqual('正式协议拒绝：duplicateMessageId');
+    });
+
     it('parsesProtocolEncryptedItemLiveFixture', 0, () => {
       const parser = new ProtocolParser();
       const result = parser.parseEnvelope(ENCRYPTED_ITEM_LIVE_FIXTURE);

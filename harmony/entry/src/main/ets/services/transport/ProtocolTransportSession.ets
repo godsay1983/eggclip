@@ -11,6 +11,7 @@ import {
 
 export enum ProtocolTransportFrameError {
   FRAME_TOO_LARGE = 'frameTooLarge',
+  BINARY_UNSUPPORTED = 'binaryUnsupported',
   PROTOCOL_REJECTED = 'protocolRejected',
   UNEXPECTED_PLAINTEXT = 'unexpectedPlaintext'
 }
