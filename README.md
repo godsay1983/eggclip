@@ -84,12 +84,12 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 
 ## 当前验证结果
 
-- 桌面：Svelte 类型检查、Vitest、前端构建、Rust fmt/check/test 通过；Rust 共 22 个测试通过。
+- 桌面：Svelte 类型检查、Vitest、前端构建、Rust fmt/check/test 通过；Rust 共 30 个测试通过。
 - 桌面：Tauri dev 进程、Vite 服务和 `eggclip.exe` 已成功启动；托盘交互仍需人工回归。
 - HarmonyOS：mDNS 搜索代码、WebSocket/PasteButton POC 以及 H1 边界单测已通过 `hvigorw test`，当前产物未签名。
 - 桌面 POC server 启动时会发布 `_eggclip._tcp.local.` 临时服务；mDNS 只提供候选地址，不代表设备可信。
 - 当前手动回归清单包含 Windows 剪贴板隐私标记样本工具和 POC WebSocket 帧探针脚本，便于补齐 D1/H1 剩余验收。
-- 已创建 `protocol/README.md`、`protocol/v1.schema.json` 和初始 schema/解析测试向量目录；密码学字节级向量仍待补齐。
+- 已创建 `protocol/README.md`、`protocol/v1.schema.json` 和初始 schema/解析测试向量目录；桌面 Rust 已接入协议类型和 fixture 测试，密码学字节级向量与 ArkTS 消费仍待补齐。
 - 当前工作树未发现签名密码、证书路径或剪贴板正文。
 
 ## 开发顺序

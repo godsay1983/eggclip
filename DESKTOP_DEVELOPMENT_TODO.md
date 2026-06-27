@@ -166,6 +166,9 @@ desktop/
 - [x] 定义状态机：disconnected、connecting、handshaking、authenticated、syncing、ready、failed。
 - [x] 定义最大帧、最大 batch、超时和未知版本处理规则。
 - [ ] 创建 Rust/ArkTS 共用 JSON 和二进制测试向量；当前仅有 schema/解析用 JSON 初始样例，密码学二进制向量待实现 crypto 时补齐。
+- [x] 桌面 Rust 实现 v1 envelope、message type、ciphertext、hello、clipboard item 和 sync heads 类型。
+- [x] 桌面 Rust 消费 `protocol/test-vectors/`，覆盖合法握手、加密 envelope、clipboard item、未知版本和认证后明文拒绝。
+- [ ] HarmonyOS ArkTS 实现同等协议类型和测试向量消费。
 
 ### 设备身份与本地密钥
 

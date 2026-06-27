@@ -42,10 +42,10 @@ cargo run --bin clipboard_marker_sample -- inspect
 
 验证方式：保持桌面端运行并打开面板，分别写入样本后确认“当前剪贴板”不会更新为新的本机同步候选；`inspect` 只输出标记状态，不输出剪贴板正文。
 
-- [ ] 使用测试工具写入 `ExcludeClipboardContentFromMonitorProcessing` 后，EggClip 不产生本机同步候选。
-- [ ] 使用测试工具写入 `CanUploadToCloudClipboard=0` 后，EggClip 不产生本机同步候选。
-- [ ] 通过 EggClip 复制文本后，确认 `CanUploadToCloudClipboard` 为 0，文本仍可在本机剪贴板使用。
-- [ ] 上述排除路径不输出正文或标记原始数据到普通日志。
+- [x] 使用测试工具写入 `ExcludeClipboardContentFromMonitorProcessing` 后，EggClip 不产生本机同步候选。
+- [x] 使用测试工具写入 `CanUploadToCloudClipboard=0` 后，EggClip 不产生本机同步候选。
+- [x] 通过 EggClip 复制文本后，确认 `CanUploadToCloudClipboard` 为 0，文本仍可在本机剪贴板使用。
+- [x] 上述排除路径不输出正文或标记原始数据到普通日志。
 
 ## POC 安全帧诊断
 
@@ -58,10 +58,10 @@ cd D:\Develop\eggclip\desktop
 
 验证方式：运行前记录面板中的“帧诊断”计数。`all` 会为每种样本各建立一次 WebSocket 连接；正常文本应增加接收/接受，非法 JSON、空文本、超限正文和二进制帧应增加接收/拒绝。不要把真实剪贴板内容放进探针样本。
 
-- [ ] 正常文本到达时，两端“接收”和“接受”各增加 1，“拒绝”不变。
-- [ ] 非法 JSON、空文本、超限正文或二进制帧只增加“接收/拒绝”，不进入最新文本预览。
-- [ ] 重新建立 POC 会话后诊断计数归零。
-- [ ] 诊断页面和普通日志不显示正文、摘要或完整网络帧。
+- [x] 正常文本到达时，两端“接收”和“接受”各增加 1，“拒绝”不变。
+- [x] 非法 JSON、空文本、超限正文或二进制帧只增加“接收/拒绝”，不进入最新文本预览。
+- [x] 重新建立 POC 会话后诊断计数归零。
+- [x] 诊断页面和普通日志不显示正文、摘要或完整网络帧。
 
 ## HarmonyOS 生命周期与发现
 

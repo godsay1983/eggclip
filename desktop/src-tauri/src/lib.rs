@@ -3,6 +3,7 @@ mod tray;
 
 pub mod clipboard;
 pub mod discovery;
+pub mod protocol;
 pub mod sync;
 pub mod transport;
 

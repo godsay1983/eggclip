@@ -5,7 +5,7 @@
   "originSeq": 42,
   "hlc": "1781946000123:0:018ff6f0",
   "contentType": "text/plain",
-  "contentLength": 18,
+  "contentLength": 17,
   "contentDigest": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
   "createdAt": 1781946000123,
   "content": "EggClip test text"
