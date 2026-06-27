@@ -112,6 +112,32 @@ Connection:
 - local and remote ephemeral public keys
 - pairing or trusted-device context
 
+The canonical transcript is UTF-8 text with fixed LF line endings:
+
+```text
+EggClip v1 auth transcript
+role=<client|server>
+spaceId=<uuid>
+localDeviceId=<uuid>
+remoteDeviceId=<uuid>
+localIdentityPublicKey=<base64url>
+remoteIdentityPublicKey=<base64url>
+localEphemeralPublicKey=<base64url>
+remoteEphemeralPublicKey=<base64url>
+pairingContext=<versioned context>
+```
+
+An `AUTH_PROOF` payload carries:
+
+```json
+{
+  "role": "client",
+  "signatureAlgorithm": "Ed25519",
+  "transcriptHash": "base64url-sha256-canonical-transcript",
+  "signature": "base64url-ed25519-signature"
+}
+```
+
 `AUTH_OK` confirms both sides derived the same session context. `AUTH_ERROR` terminates the session and must not include secrets.
 
 ## Encrypted Payload

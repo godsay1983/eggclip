@@ -17,6 +17,7 @@ import {
 } from '../main/ets/models/PocModels';
 import {
   AeadAlgorithm,
+  AuthRole,
   ContentType,
   MessageType,
   ProtocolEnvelopeKind,
@@ -29,7 +30,8 @@ import {
   PROTOCOL_MAX_BATCH_PLAINTEXT_BYTES,
   PROTOCOL_MAX_FRAME_BYTES,
   PROTOCOL_MAX_TEXT_BYTES,
-  PROTOCOL_VERSION
+  PROTOCOL_VERSION,
+  canonicalAuthTranscript
 } from '../main/ets/models/ProtocolModels';
 import { MAX_TEXT_BYTES } from '../main/ets/utils/TextLimits';
 
@@ -131,6 +133,35 @@ export default function localUnitTest() {
       expect(hello.payload?.capabilities.length).assertEqual(4);
     });
 
+    it('parsesProtocolAuthProofFixture', 0, () => {
+      const parser = new ProtocolParser();
+      const result = parser.parseEnvelope(AUTH_PROOF_FIXTURE);
+
+      expect(result.ok).assertEqual(true);
+      expect(result.envelope?.kind).assertEqual(ProtocolEnvelopeKind.PRE_AUTH);
+      expect(result.envelope?.messageType).assertEqual(MessageType.AUTH_PROOF);
+      const proof = parser.parseAuthProofPayload(result.envelope?.payload);
+      expect(proof.ok).assertEqual(true);
+      expect(proof.payload?.role).assertEqual(AuthRole.CLIENT);
+      expect(proof.payload?.transcriptHash).assertEqual('aM5GGwvEfnwOx_BNJSJktCEYEkmCrSH0wgAESnSOYEw');
+    });
+
+    it('buildsProtocolAuthTranscriptFixture', 0, () => {
+      const transcript = canonicalAuthTranscript({
+        role: AuthRole.CLIENT,
+        spaceId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
+        localDeviceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
+        remoteDeviceId: '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        localIdentityPublicKey: '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo',
+        remoteIdentityPublicKey: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        localEphemeralPublicKey: 'hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo',
+        remoteEphemeralPublicKey: '3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08',
+        pairingContext: 'trusted-device:018ff6ef-c394-7d08-8b99-4b7d10f2767a'
+      });
+
+      expect(transcript).assertEqual(AUTH_PROOF_TRANSCRIPT);
+    });
+
     it('parsesProtocolEncryptedItemLiveFixture', 0, () => {
       const parser = new ProtocolParser();
       const result = parser.parseEnvelope(ENCRYPTED_ITEM_LIVE_FIXTURE);
@@ -199,6 +230,10 @@ export default function localUnitTest() {
 }
 
 const CLIENT_HELLO_FIXTURE: string = '{"version":1,"type":"CLIENT_HELLO","messageId":"018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01","sessionCounter":0,"payload":{"spaceId":"018ff6ef-c394-7d08-8b99-4b7d10f2767a","deviceId":"018ff6f0-0a3b-7815-a4db-3eb6e23d9338","identityPublicKey":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","ephemeralPublicKey":"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB","capabilities":["textPlain","syncHeads","itemBatch","itemLive"]}}';
+
+const AUTH_PROOF_FIXTURE: string = '{"version":1,"type":"AUTH_PROOF","messageId":"018ff6f1-1d2a-725d-8d1a-894d2f5b0a42","sessionCounter":2,"payload":{"role":"client","signatureAlgorithm":"Ed25519","transcriptHash":"aM5GGwvEfnwOx_BNJSJktCEYEkmCrSH0wgAESnSOYEw","signature":"cdpm2njgsHCfH0hrubU-NbHMbWcN1xNtr-vZTKx_Tdf85hHKW8gIJuk463rj4f744vegLphZFO0RTvP_gQjeAg"}}';
+
+const AUTH_PROOF_TRANSCRIPT: string = 'EggClip v1 auth transcript\nrole=client\nspaceId=018ff6ef-c394-7d08-8b99-4b7d10f2767a\nlocalDeviceId=018ff6f0-0a3b-7815-a4db-3eb6e23d9338\nremoteDeviceId=018ff6f0-4adf-7d31-a987-3ef2b25d0212\nlocalIdentityPublicKey=11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo\nremoteIdentityPublicKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\nlocalEphemeralPublicKey=hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo\nremoteEphemeralPublicKey=3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08\npairingContext=trusted-device:018ff6ef-c394-7d08-8b99-4b7d10f2767a\n';
 
 const ENCRYPTED_ITEM_LIVE_FIXTURE: string = '{"version":1,"type":"ITEM_LIVE","messageId":"018ff6f3-0d8c-7d1e-a38a-f308c64de79f","sessionCounter":12,"ciphertext":{"algorithm":"AES-256-GCM","keyId":"session-v1-client-to-server","nonce":"DDDDDDDDDDDDDDDD","aad":"EEEEEEEEEEEEEEEE","body":"FFFFFFFFFFFFFFFF","tag":"GGGGGGGGGGGGGGGGGGGGGG"}}';
 

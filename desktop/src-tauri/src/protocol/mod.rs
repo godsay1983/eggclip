@@ -1,7 +1,9 @@
 use std::fmt;
 
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 pub const PROTOCOL_VERSION: u16 = 1;
 pub const MAX_FRAME_BYTES: usize = 1024 * 1024;
@@ -261,6 +263,105 @@ impl HelloPayload {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub enum AuthRole {
+    Client,
+    Server,
+}
+
+impl fmt::Display for AuthRole {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AuthRole::Client => formatter.write_str("client"),
+            AuthRole::Server => formatter.write_str("server"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthProofPayload {
+    pub role: AuthRole,
+    pub signature_algorithm: SignatureAlgorithm,
+    pub transcript_hash: String,
+    pub signature: String,
+}
+
+impl AuthProofPayload {
+    pub fn validate(&self) -> Result<(), ProtocolError> {
+        validate_base64url(&self.transcript_hash, "transcriptHash")?;
+        validate_base64url(&self.signature, "signature")
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SignatureAlgorithm {
+    Ed25519,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthTranscriptInput {
+    pub role: AuthRole,
+    pub space_id: String,
+    pub local_device_id: String,
+    pub remote_device_id: String,
+    pub local_identity_public_key: String,
+    pub remote_identity_public_key: String,
+    pub local_ephemeral_public_key: String,
+    pub remote_ephemeral_public_key: String,
+    pub pairing_context: String,
+}
+
+impl AuthTranscriptInput {
+    pub fn validate(&self) -> Result<(), ProtocolError> {
+        validate_uuid(&self.space_id, "spaceId")?;
+        validate_uuid(&self.local_device_id, "localDeviceId")?;
+        validate_uuid(&self.remote_device_id, "remoteDeviceId")?;
+        validate_base64url(&self.local_identity_public_key, "localIdentityPublicKey")?;
+        validate_base64url(&self.remote_identity_public_key, "remoteIdentityPublicKey")?;
+        validate_base64url(&self.local_ephemeral_public_key, "localEphemeralPublicKey")?;
+        validate_base64url(
+            &self.remote_ephemeral_public_key,
+            "remoteEphemeralPublicKey",
+        )?;
+        validate_transcript_field(&self.pairing_context, "pairingContext")
+    }
+}
+
+pub fn canonical_auth_transcript(input: &AuthTranscriptInput) -> Result<String, ProtocolError> {
+    input.validate()?;
+    Ok(format!(
+        "EggClip v1 auth transcript\n\
+         role={}\n\
+         spaceId={}\n\
+         localDeviceId={}\n\
+         remoteDeviceId={}\n\
+         localIdentityPublicKey={}\n\
+         remoteIdentityPublicKey={}\n\
+         localEphemeralPublicKey={}\n\
+         remoteEphemeralPublicKey={}\n\
+         pairingContext={}\n",
+        input.role,
+        input.space_id,
+        input.local_device_id,
+        input.remote_device_id,
+        input.local_identity_public_key,
+        input.remote_identity_public_key,
+        input.local_ephemeral_public_key,
+        input.remote_ephemeral_public_key,
+        input.pairing_context
+    ))
+}
+
+pub fn auth_transcript_hash_base64url(
+    input: &AuthTranscriptInput,
+) -> Result<String, ProtocolError> {
+    let transcript = canonical_auth_transcript(input)?;
+    Ok(URL_SAFE_NO_PAD.encode(Sha256::digest(transcript.as_bytes())))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Capability {
     TextPlain,
     SyncHeads,
@@ -393,10 +494,37 @@ fn validate_base64url(value: &str, field: &'static str) -> Result<(), ProtocolEr
     }
 }
 
+fn validate_transcript_field(value: &str, field: &'static str) -> Result<(), ProtocolError> {
+    if value.is_empty() || value.contains('\n') || value.contains('\r') {
+        Err(ProtocolError::InvalidField(field))
+    } else {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::crypto::{decode_base64url, fixed_bytes, verify_ed25519_signature};
+    use serde::Deserialize;
     use std::{fs, path::PathBuf};
+
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct AuthProofTranscriptVector {
+        role: AuthRole,
+        space_id: String,
+        local_device_id: String,
+        remote_device_id: String,
+        local_identity_public_key: String,
+        remote_identity_public_key: String,
+        local_ephemeral_public_key: String,
+        remote_ephemeral_public_key: String,
+        pairing_context: String,
+        canonical_transcript: String,
+        transcript_hash: String,
+        signature: String,
+    }
 
     fn vector_path(parts: &[&str]) -> PathBuf {
         let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -411,6 +539,10 @@ mod tests {
 
     fn read_vector(parts: &[&str]) -> String {
         fs::read_to_string(vector_path(parts)).expect("test vector should be readable")
+    }
+
+    fn read_json_vector<T: for<'de> Deserialize<'de>>(parts: &[&str]) -> T {
+        serde_json::from_str(&read_vector(parts)).expect("test vector should deserialize")
     }
 
     #[test]
@@ -438,6 +570,65 @@ mod tests {
         let payload: HelloPayload =
             serde_json::from_value(envelope.payload).expect("hello payload should deserialize");
         payload.validate().expect("hello payload should validate");
+    }
+
+    #[test]
+    fn parses_auth_proof_fixture() {
+        let fixture = read_vector(&["test-vectors", "handshake", "auth-proof.valid.json"]);
+        let ProtocolEnvelope::PreAuth(envelope) =
+            parse_envelope(&fixture).expect("auth proof should parse")
+        else {
+            panic!("auth proof should be pre-auth");
+        };
+
+        assert_eq!(envelope.message_type, MessageType::AuthProof);
+        let payload: AuthProofPayload =
+            serde_json::from_value(envelope.payload).expect("auth proof should deserialize");
+        payload.validate().expect("auth proof should validate");
+        assert_eq!(payload.role, AuthRole::Client);
+        assert_eq!(payload.signature_algorithm, SignatureAlgorithm::Ed25519);
+    }
+
+    #[test]
+    fn builds_and_verifies_auth_proof_transcript_vector() {
+        let vector: AuthProofTranscriptVector =
+            read_json_vector(&["test-vectors", "crypto", "auth-proof-transcript.valid.json"]);
+        let input = AuthTranscriptInput {
+            role: vector.role,
+            space_id: vector.space_id,
+            local_device_id: vector.local_device_id,
+            remote_device_id: vector.remote_device_id,
+            local_identity_public_key: vector.local_identity_public_key,
+            remote_identity_public_key: vector.remote_identity_public_key,
+            local_ephemeral_public_key: vector.local_ephemeral_public_key,
+            remote_ephemeral_public_key: vector.remote_ephemeral_public_key,
+            pairing_context: vector.pairing_context,
+        };
+
+        assert_eq!(
+            canonical_auth_transcript(&input).expect("transcript should build"),
+            vector.canonical_transcript
+        );
+        assert_eq!(
+            auth_transcript_hash_base64url(&input).expect("hash should build"),
+            vector.transcript_hash
+        );
+        let public_key = fixed_bytes::<32>(
+            &decode_base64url(&input.local_identity_public_key).expect("public key should decode"),
+            "publicKey",
+        )
+        .expect("public key should be fixed");
+        let signature = fixed_bytes::<64>(
+            &decode_base64url(&vector.signature).expect("signature should decode"),
+            "signature",
+        )
+        .expect("signature should be fixed");
+        verify_ed25519_signature(
+            public_key,
+            vector.canonical_transcript.as_bytes(),
+            signature,
+        )
+        .expect("auth proof signature should verify");
     }
 
     #[test]

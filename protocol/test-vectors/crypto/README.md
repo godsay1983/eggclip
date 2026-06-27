@@ -6,6 +6,7 @@ Deterministic byte-for-byte vectors in this directory cover:
 - X25519 shared secret derivation
 - HKDF-SHA-256 session key derivation
 - AES-256-GCM encryption and tamper rejection
+- EggClip v1 AUTH_PROOF transcript binding
 - EggClip v1 directional session key and nonce derivation
 - Replay and counter rejection fixtures
 

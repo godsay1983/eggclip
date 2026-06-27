@@ -55,6 +55,15 @@ export enum Capability {
   ITEM_LIVE = 'itemLive'
 }
 
+export enum AuthRole {
+  CLIENT = 'client',
+  SERVER = 'server'
+}
+
+export enum SignatureAlgorithm {
+  ED25519 = 'Ed25519'
+}
+
 export enum ContentType {
   TEXT_PLAIN = 'text/plain'
 }
@@ -97,6 +106,32 @@ export interface HelloPayloadResult {
   payload?: HelloPayload;
   error?: ProtocolErrorCode;
   field?: string;
+}
+
+export interface AuthProofPayload {
+  role: AuthRole;
+  signatureAlgorithm: SignatureAlgorithm;
+  transcriptHash: string;
+  signature: string;
+}
+
+export interface AuthProofPayloadResult {
+  ok: boolean;
+  payload?: AuthProofPayload;
+  error?: ProtocolErrorCode;
+  field?: string;
+}
+
+export interface AuthTranscriptInput {
+  role: AuthRole;
+  spaceId: string;
+  localDeviceId: string;
+  remoteDeviceId: string;
+  localIdentityPublicKey: string;
+  remoteIdentityPublicKey: string;
+  localEphemeralPublicKey: string;
+  remoteEphemeralPublicKey: string;
+  pairingContext: string;
 }
 
 export interface ClipboardItem {
@@ -268,6 +303,33 @@ export class ProtocolParser {
     return { ok: true, payload };
   }
 
+  parseAuthProofPayload(value: JsonValue | undefined): AuthProofPayloadResult {
+    if (value === undefined || !isJsonObject(value)) {
+      return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'payload' };
+    }
+    const payloadObject = value as JsonObject;
+    const role = parseAuthRole(getString(payloadObject, 'role'));
+    if (role === null) {
+      return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'role' };
+    }
+    if (payloadObject.signatureAlgorithm !== SignatureAlgorithm.ED25519) {
+      return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'signatureAlgorithm' };
+    }
+    const payload: AuthProofPayload = {
+      role,
+      signatureAlgorithm: SignatureAlgorithm.ED25519,
+      transcriptHash: getString(payloadObject, 'transcriptHash'),
+      signature: getString(payloadObject, 'signature')
+    };
+    if (!isBase64Url(payload.transcriptHash)) {
+      return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'transcriptHash' };
+    }
+    if (!isBase64Url(payload.signature)) {
+      return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'signature' };
+    }
+    return { ok: true, payload };
+  }
+
   parseClipboardItem(input: string): ClipboardItemResult {
     let value: JsonObject;
     try {
@@ -302,6 +364,22 @@ export class ProtocolParser {
     }
     return { ok: false, error: ProtocolErrorCode.PLAINTEXT_AFTER_AUTH, field: 'payload' };
   }
+}
+
+export function canonicalAuthTranscript(input: AuthTranscriptInput): string | null {
+  if (!validateAuthTranscriptInput(input)) {
+    return null;
+  }
+  return 'EggClip v1 auth transcript\n' +
+    `role=${input.role}\n` +
+    `spaceId=${input.spaceId}\n` +
+    `localDeviceId=${input.localDeviceId}\n` +
+    `remoteDeviceId=${input.remoteDeviceId}\n` +
+    `localIdentityPublicKey=${input.localIdentityPublicKey}\n` +
+    `remoteIdentityPublicKey=${input.remoteIdentityPublicKey}\n` +
+    `localEphemeralPublicKey=${input.localEphemeralPublicKey}\n` +
+    `remoteEphemeralPublicKey=${input.remoteEphemeralPublicKey}\n` +
+    `pairingContext=${input.pairingContext}\n`;
 }
 
 function parseCiphertext(value: JsonValue | undefined): CiphertextFrame | null {
@@ -409,6 +487,32 @@ function parseCapability(value: string): Capability | null {
     default:
       return null;
   }
+}
+
+function parseAuthRole(value: string): AuthRole | null {
+  switch (value) {
+    case AuthRole.CLIENT:
+      return AuthRole.CLIENT;
+    case AuthRole.SERVER:
+      return AuthRole.SERVER;
+    default:
+      return null;
+  }
+}
+
+function validateAuthTranscriptInput(input: AuthTranscriptInput): boolean {
+  return isUuid(input.spaceId) &&
+    isUuid(input.localDeviceId) &&
+    isUuid(input.remoteDeviceId) &&
+    isBase64Url(input.localIdentityPublicKey) &&
+    isBase64Url(input.remoteIdentityPublicKey) &&
+    isBase64Url(input.localEphemeralPublicKey) &&
+    isBase64Url(input.remoteEphemeralPublicKey) &&
+    isTranscriptField(input.pairingContext);
+}
+
+function isTranscriptField(value: string): boolean {
+  return value.length > 0 && value.indexOf('\n') < 0 && value.indexOf('\r') < 0;
 }
 
 function isPreAuthAllowed(messageType: MessageType): boolean {

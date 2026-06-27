@@ -143,6 +143,29 @@ function validateCryptoVector(value) {
       }
       requireUint(value.counter, "counter");
       return;
+    case "EggClip-Auth-Proof-v1":
+      for (const field of ["spaceId", "localDeviceId", "remoteDeviceId"]) {
+        requireUuid(value[field], field);
+      }
+      for (const field of [
+        "localIdentityPublicKey",
+        "remoteIdentityPublicKey",
+        "localEphemeralPublicKey",
+        "remoteEphemeralPublicKey",
+        "transcriptHash",
+        "signature",
+      ]) {
+        requireBase64Url(value[field], field);
+      }
+      if (!["client", "server"].includes(value.role)) {
+        throw new Error("role must be client or server");
+      }
+      for (const field of ["pairingContext", "canonicalTranscript"]) {
+        if (typeof value[field] !== "string" || value[field].length === 0) {
+          throw new Error(`${field} must be a non-empty string`);
+        }
+      }
+      return;
     case "EggClip-Session-Counter-v1":
       if (!Array.isArray(value.accepted) || !Array.isArray(value.rejected)) {
         throw new Error("counter vector must include accepted and rejected arrays");

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "type": "AUTH_PROOF",
+  "messageId": "018ff6f1-1d2a-725d-8d1a-894d2f5b0a42",
+  "sessionCounter": 2,
+  "payload": {
+    "role": "client",
+    "signatureAlgorithm": "Ed25519",
+    "transcriptHash": "aM5GGwvEfnwOx_BNJSJktCEYEkmCrSH0wgAESnSOYEw",
+    "signature": "cdpm2njgsHCfH0hrubU-NbHMbWcN1xNtr-vZTKx_Tdf85hHKW8gIJuk463rj4f744vegLphZFO0RTvP_gQjeAg"
+  }
+}
