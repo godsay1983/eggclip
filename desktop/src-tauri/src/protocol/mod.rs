@@ -23,6 +23,10 @@ pub enum ProtocolError {
     MissingCiphertext(MessageType),
     PlaintextAfterAuth(MessageType),
     CiphertextBeforeAuth(MessageType),
+    InvalidState {
+        state: ProtocolSessionState,
+        message_type: MessageType,
+    },
     InvalidField(&'static str),
     TextTooLarge {
         actual_bytes: usize,
@@ -56,6 +60,15 @@ impl fmt::Display for ProtocolError {
                 write!(
                     formatter,
                     "{message_type} must not use ciphertext before auth"
+                )
+            }
+            ProtocolError::InvalidState {
+                state,
+                message_type,
+            } => {
+                write!(
+                    formatter,
+                    "{message_type} is not valid while session state is {state}"
                 )
             }
             ProtocolError::InvalidField(field) => write!(formatter, "invalid field {field}"),
@@ -362,6 +375,165 @@ pub fn auth_transcript_hash_base64url(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub enum ProtocolSessionState {
+    Disconnected,
+    Connecting,
+    Handshaking,
+    Authenticated,
+    Syncing,
+    Ready,
+    Failed,
+}
+
+impl fmt::Display for ProtocolSessionState {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let value = serde_json::to_string(self).map_err(|_| fmt::Error)?;
+        formatter.write_str(value.trim_matches('"'))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProtocolSessionGate {
+    state: ProtocolSessionState,
+}
+
+impl Default for ProtocolSessionGate {
+    fn default() -> Self {
+        Self {
+            state: ProtocolSessionState::Disconnected,
+        }
+    }
+}
+
+impl ProtocolSessionGate {
+    pub fn state(&self) -> ProtocolSessionState {
+        self.state
+    }
+
+    pub fn connect(&mut self) -> ProtocolSessionState {
+        self.state = ProtocolSessionState::Connecting;
+        self.state
+    }
+
+    pub fn start_handshake(&mut self) -> ProtocolSessionState {
+        self.state = ProtocolSessionState::Handshaking;
+        self.state
+    }
+
+    pub fn mark_ready(&mut self) -> Result<ProtocolSessionState, ProtocolError> {
+        if matches!(
+            self.state,
+            ProtocolSessionState::Authenticated
+                | ProtocolSessionState::Syncing
+                | ProtocolSessionState::Ready
+        ) {
+            self.state = ProtocolSessionState::Ready;
+            Ok(self.state)
+        } else {
+            Err(ProtocolError::InvalidState {
+                state: self.state,
+                message_type: MessageType::SyncHeads,
+            })
+        }
+    }
+
+    pub fn fail(&mut self) -> ProtocolSessionState {
+        self.state = ProtocolSessionState::Failed;
+        self.state
+    }
+
+    pub fn accept_envelope(
+        &mut self,
+        envelope: &ProtocolEnvelope,
+    ) -> Result<ProtocolSessionState, ProtocolError> {
+        match envelope {
+            ProtocolEnvelope::PreAuth(envelope) => self.accept_pre_auth(envelope.message_type),
+            ProtocolEnvelope::Encrypted(envelope) => self.accept_encrypted(envelope.message_type),
+        }
+    }
+
+    fn accept_pre_auth(
+        &mut self,
+        message_type: MessageType,
+    ) -> Result<ProtocolSessionState, ProtocolError> {
+        match self.state {
+            ProtocolSessionState::Connecting | ProtocolSessionState::Handshaking => {
+                self.accept_handshake_message(message_type)
+            }
+            ProtocolSessionState::Authenticated
+            | ProtocolSessionState::Syncing
+            | ProtocolSessionState::Ready => {
+                if matches!(message_type, MessageType::AuthError | MessageType::Error) {
+                    self.state = ProtocolSessionState::Failed;
+                    Ok(self.state)
+                } else {
+                    Err(ProtocolError::PlaintextAfterAuth(message_type))
+                }
+            }
+            ProtocolSessionState::Disconnected | ProtocolSessionState::Failed => {
+                Err(ProtocolError::InvalidState {
+                    state: self.state,
+                    message_type,
+                })
+            }
+        }
+    }
+
+    fn accept_handshake_message(
+        &mut self,
+        message_type: MessageType,
+    ) -> Result<ProtocolSessionState, ProtocolError> {
+        match message_type {
+            MessageType::ClientHello | MessageType::ServerHello | MessageType::AuthProof => {
+                self.state = ProtocolSessionState::Handshaking;
+                Ok(self.state)
+            }
+            MessageType::AuthOk => {
+                self.state = ProtocolSessionState::Authenticated;
+                Ok(self.state)
+            }
+            MessageType::AuthError | MessageType::Error => {
+                self.state = ProtocolSessionState::Failed;
+                Ok(self.state)
+            }
+            _ => Err(ProtocolError::PlaintextAfterAuth(message_type)),
+        }
+    }
+
+    fn accept_encrypted(
+        &mut self,
+        message_type: MessageType,
+    ) -> Result<ProtocolSessionState, ProtocolError> {
+        match self.state {
+            ProtocolSessionState::Authenticated
+            | ProtocolSessionState::Syncing
+            | ProtocolSessionState::Ready => {
+                self.state = match message_type {
+                    MessageType::SyncHeads | MessageType::RequestRange | MessageType::ItemBatch => {
+                        ProtocolSessionState::Syncing
+                    }
+                    MessageType::DeviceRevoked | MessageType::SpaceKeyRotated => {
+                        ProtocolSessionState::Authenticated
+                    }
+                    _ => ProtocolSessionState::Ready,
+                };
+                Ok(self.state)
+            }
+            ProtocolSessionState::Connecting | ProtocolSessionState::Handshaking => {
+                Err(ProtocolError::CiphertextBeforeAuth(message_type))
+            }
+            ProtocolSessionState::Disconnected | ProtocolSessionState::Failed => {
+                Err(ProtocolError::InvalidState {
+                    state: self.state,
+                    message_type,
+                })
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Capability {
     TextPlain,
     SyncHeads,
@@ -587,6 +759,94 @@ mod tests {
         payload.validate().expect("auth proof should validate");
         assert_eq!(payload.role, AuthRole::Client);
         assert_eq!(payload.signature_algorithm, SignatureAlgorithm::Ed25519);
+    }
+
+    #[test]
+    fn session_gate_accepts_handshake_then_encrypted_business() {
+        let client_hello = parse_envelope(&read_vector(&[
+            "test-vectors",
+            "handshake",
+            "client-hello.valid.json",
+        ]))
+        .expect("client hello should parse");
+        let auth_proof = parse_envelope(&read_vector(&[
+            "test-vectors",
+            "handshake",
+            "auth-proof.valid.json",
+        ]))
+        .expect("auth proof should parse");
+        let auth_ok = parse_envelope(
+            r#"{
+              "version": 1,
+              "type": "AUTH_OK",
+              "messageId": "018ff6f1-25f0-7c09-a4cf-3d683ebfae33",
+              "sessionCounter": 3,
+              "payload": {}
+            }"#,
+        )
+        .expect("auth ok should parse");
+        let item_live = parse_envelope(&read_vector(&[
+            "test-vectors",
+            "sync",
+            "encrypted-item-live-envelope.valid.json",
+        ]))
+        .expect("item live should parse");
+
+        let mut gate = ProtocolSessionGate::default();
+        assert_eq!(gate.connect(), ProtocolSessionState::Connecting);
+        assert_eq!(
+            gate.accept_envelope(&client_hello).expect("hello accepted"),
+            ProtocolSessionState::Handshaking
+        );
+        assert_eq!(
+            gate.accept_envelope(&auth_proof)
+                .expect("auth proof accepted"),
+            ProtocolSessionState::Handshaking
+        );
+        assert_eq!(
+            gate.accept_envelope(&auth_ok).expect("auth ok accepted"),
+            ProtocolSessionState::Authenticated
+        );
+        assert_eq!(
+            gate.accept_envelope(&item_live)
+                .expect("item live accepted"),
+            ProtocolSessionState::Ready
+        );
+    }
+
+    #[test]
+    fn session_gate_rejects_business_before_auth() {
+        let item_live = parse_envelope(&read_vector(&[
+            "test-vectors",
+            "sync",
+            "encrypted-item-live-envelope.valid.json",
+        ]))
+        .expect("item live should parse");
+        let mut gate = ProtocolSessionGate::default();
+        gate.start_handshake();
+
+        assert_eq!(
+            gate.accept_envelope(&item_live).unwrap_err(),
+            ProtocolError::CiphertextBeforeAuth(MessageType::ItemLive)
+        );
+    }
+
+    #[test]
+    fn session_gate_rejects_plaintext_after_auth() {
+        let client_hello = parse_envelope(&read_vector(&[
+            "test-vectors",
+            "handshake",
+            "client-hello.valid.json",
+        ]))
+        .expect("client hello should parse");
+        let mut gate = ProtocolSessionGate {
+            state: ProtocolSessionState::Authenticated,
+        };
+
+        assert_eq!(
+            gate.accept_envelope(&client_hello).unwrap_err(),
+            ProtocolError::PlaintextAfterAuth(MessageType::ClientHello)
+        );
     }
 
     #[test]

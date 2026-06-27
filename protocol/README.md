@@ -31,6 +31,15 @@ disconnected
 
 Any state may move to `failed` on timeout, malformed frame, unsupported version, authentication failure, replay, AEAD failure, or transport close. Recovery creates a fresh connection and a fresh session counter space.
 
+Authentication gate:
+
+- `connecting` and `handshaking` accept only plaintext handshake messages.
+- `AUTH_OK` moves the session to `authenticated`.
+- `authenticated`, `syncing`, and `ready` accept encrypted business messages only.
+- `SYNC_HEADS`, `REQUEST_RANGE`, and `ITEM_BATCH` move the session through `syncing`.
+- `ITEM_LIVE`, `ITEM_ACK`, `PING`, and `PONG` keep or return the session to `ready`.
+- `AUTH_ERROR` or safe protocol `ERROR` moves the session to `failed`.
+
 ## Envelope
 
 Every frame uses an envelope:

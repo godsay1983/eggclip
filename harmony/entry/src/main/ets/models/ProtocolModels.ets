@@ -64,6 +64,16 @@ export enum SignatureAlgorithm {
   ED25519 = 'Ed25519'
 }
 
+export enum ProtocolSessionState {
+  DISCONNECTED = 'disconnected',
+  CONNECTING = 'connecting',
+  HANDSHAKING = 'handshaking',
+  AUTHENTICATED = 'authenticated',
+  SYNCING = 'syncing',
+  READY = 'ready',
+  FAILED = 'failed'
+}
+
 export enum ContentType {
   TEXT_PLAIN = 'text/plain'
 }
@@ -363,6 +373,127 @@ export class ProtocolParser {
       return { ok: false, error: ProtocolErrorCode.CIPHERTEXT_BEFORE_AUTH, field: 'ciphertext' };
     }
     return { ok: false, error: ProtocolErrorCode.PLAINTEXT_AFTER_AUTH, field: 'payload' };
+  }
+}
+
+export interface SessionGateResult {
+  ok: boolean;
+  state: ProtocolSessionState;
+  error?: ProtocolErrorCode;
+  messageType?: MessageType;
+}
+
+export class ProtocolSessionGate {
+  private currentState: ProtocolSessionState = ProtocolSessionState.DISCONNECTED;
+
+  state(): ProtocolSessionState {
+    return this.currentState;
+  }
+
+  connect(): ProtocolSessionState {
+    this.currentState = ProtocolSessionState.CONNECTING;
+    return this.currentState;
+  }
+
+  startHandshake(): ProtocolSessionState {
+    this.currentState = ProtocolSessionState.HANDSHAKING;
+    return this.currentState;
+  }
+
+  markReady(): SessionGateResult {
+    if (this.currentState === ProtocolSessionState.AUTHENTICATED ||
+      this.currentState === ProtocolSessionState.SYNCING ||
+      this.currentState === ProtocolSessionState.READY) {
+      this.currentState = ProtocolSessionState.READY;
+      return { ok: true, state: this.currentState };
+    }
+    return { ok: false, state: this.currentState, error: ProtocolErrorCode.INVALID_FIELD };
+  }
+
+  fail(): ProtocolSessionState {
+    this.currentState = ProtocolSessionState.FAILED;
+    return this.currentState;
+  }
+
+  acceptEnvelope(envelope: ParsedEnvelope): SessionGateResult {
+    if (envelope.kind === ProtocolEnvelopeKind.PRE_AUTH) {
+      return this.acceptPreAuth(envelope.messageType);
+    }
+    return this.acceptEncrypted(envelope.messageType);
+  }
+
+  private acceptPreAuth(messageType: MessageType): SessionGateResult {
+    if (this.currentState === ProtocolSessionState.CONNECTING ||
+      this.currentState === ProtocolSessionState.HANDSHAKING) {
+      return this.acceptHandshakeMessage(messageType);
+    }
+    if (this.currentState === ProtocolSessionState.AUTHENTICATED ||
+      this.currentState === ProtocolSessionState.SYNCING ||
+      this.currentState === ProtocolSessionState.READY) {
+      if (messageType === MessageType.AUTH_ERROR || messageType === MessageType.ERROR) {
+        this.currentState = ProtocolSessionState.FAILED;
+        return { ok: true, state: this.currentState };
+      }
+      return {
+        ok: false,
+        state: this.currentState,
+        error: ProtocolErrorCode.PLAINTEXT_AFTER_AUTH,
+        messageType
+      };
+    }
+    return { ok: false, state: this.currentState, error: ProtocolErrorCode.INVALID_FIELD, messageType };
+  }
+
+  private acceptHandshakeMessage(messageType: MessageType): SessionGateResult {
+    switch (messageType) {
+      case MessageType.CLIENT_HELLO:
+      case MessageType.SERVER_HELLO:
+      case MessageType.AUTH_PROOF:
+        this.currentState = ProtocolSessionState.HANDSHAKING;
+        return { ok: true, state: this.currentState };
+      case MessageType.AUTH_OK:
+        this.currentState = ProtocolSessionState.AUTHENTICATED;
+        return { ok: true, state: this.currentState };
+      case MessageType.AUTH_ERROR:
+      case MessageType.ERROR:
+        this.currentState = ProtocolSessionState.FAILED;
+        return { ok: true, state: this.currentState };
+      default:
+        return {
+          ok: false,
+          state: this.currentState,
+          error: ProtocolErrorCode.PLAINTEXT_AFTER_AUTH,
+          messageType
+        };
+    }
+  }
+
+  private acceptEncrypted(messageType: MessageType): SessionGateResult {
+    if (this.currentState === ProtocolSessionState.AUTHENTICATED ||
+      this.currentState === ProtocolSessionState.SYNCING ||
+      this.currentState === ProtocolSessionState.READY) {
+      if (messageType === MessageType.SYNC_HEADS ||
+        messageType === MessageType.REQUEST_RANGE ||
+        messageType === MessageType.ITEM_BATCH) {
+        this.currentState = ProtocolSessionState.SYNCING;
+      } else if (messageType === MessageType.DEVICE_REVOKED ||
+        messageType === MessageType.SPACE_KEY_ROTATED) {
+        this.currentState = ProtocolSessionState.AUTHENTICATED;
+      } else {
+        this.currentState = ProtocolSessionState.READY;
+      }
+      return { ok: true, state: this.currentState };
+    }
+    if (this.currentState === ProtocolSessionState.CONNECTING ||
+      this.currentState === ProtocolSessionState.HANDSHAKING) {
+      return {
+        ok: false,
+        state: this.currentState,
+        error: ProtocolErrorCode.CIPHERTEXT_BEFORE_AUTH,
+        messageType
+      };
+    }
+    return { ok: false, state: this.currentState, error: ProtocolErrorCode.INVALID_FIELD, messageType };
   }
 }
 

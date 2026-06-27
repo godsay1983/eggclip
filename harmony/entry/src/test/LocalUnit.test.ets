@@ -23,6 +23,8 @@ import {
   ProtocolEnvelopeKind,
   ProtocolErrorCode,
   ProtocolParser,
+  ProtocolSessionGate,
+  ProtocolSessionState,
   PROTOCOL_HANDSHAKE_TIMEOUT_SECONDS,
   PROTOCOL_HEARTBEAT_INTERVAL_SECONDS,
   PROTOCOL_IDLE_DISCONNECT_SECONDS,
@@ -162,6 +164,48 @@ export default function localUnitTest() {
       expect(transcript).assertEqual(AUTH_PROOF_TRANSCRIPT);
     });
 
+    it('movesProtocolSessionGateThroughHandshakeAndEncryptedBusiness', 0, () => {
+      const parser = new ProtocolParser();
+      const gate = new ProtocolSessionGate();
+      const clientHelloResult = parser.parseEnvelope(CLIENT_HELLO_FIXTURE);
+      const authProofResult = parser.parseEnvelope(AUTH_PROOF_FIXTURE);
+      const authOkResult = parser.parseEnvelope(AUTH_OK_FIXTURE);
+      const itemLiveResult = parser.parseEnvelope(ENCRYPTED_ITEM_LIVE_FIXTURE);
+
+      expect(clientHelloResult.ok).assertEqual(true);
+      expect(authProofResult.ok).assertEqual(true);
+      expect(authOkResult.ok).assertEqual(true);
+      expect(itemLiveResult.ok).assertEqual(true);
+
+      expect(gate.connect()).assertEqual(ProtocolSessionState.CONNECTING);
+      expect(gate.acceptEnvelope(clientHelloResult.envelope!).state).assertEqual(ProtocolSessionState.HANDSHAKING);
+      expect(gate.acceptEnvelope(authProofResult.envelope!).state).assertEqual(ProtocolSessionState.HANDSHAKING);
+      expect(gate.acceptEnvelope(authOkResult.envelope!).state).assertEqual(ProtocolSessionState.AUTHENTICATED);
+      expect(gate.acceptEnvelope(itemLiveResult.envelope!).state).assertEqual(ProtocolSessionState.READY);
+    });
+
+    it('rejectsProtocolSessionGateBusinessBeforeAuthAndPlaintextAfterAuth', 0, () => {
+      const parser = new ProtocolParser();
+      const itemLiveResult = parser.parseEnvelope(ENCRYPTED_ITEM_LIVE_FIXTURE);
+      const clientHelloResult = parser.parseEnvelope(CLIENT_HELLO_FIXTURE);
+      const authOkResult = parser.parseEnvelope(AUTH_OK_FIXTURE);
+      const gate = new ProtocolSessionGate();
+
+      expect(itemLiveResult.ok).assertEqual(true);
+      expect(clientHelloResult.ok).assertEqual(true);
+      expect(authOkResult.ok).assertEqual(true);
+
+      gate.startHandshake();
+      const earlyBusiness = gate.acceptEnvelope(itemLiveResult.envelope!);
+      expect(earlyBusiness.ok).assertEqual(false);
+      expect(earlyBusiness.error).assertEqual(ProtocolErrorCode.CIPHERTEXT_BEFORE_AUTH);
+
+      gate.acceptEnvelope(authOkResult.envelope!);
+      const latePlaintext = gate.acceptEnvelope(clientHelloResult.envelope!);
+      expect(latePlaintext.ok).assertEqual(false);
+      expect(latePlaintext.error).assertEqual(ProtocolErrorCode.PLAINTEXT_AFTER_AUTH);
+    });
+
     it('parsesProtocolEncryptedItemLiveFixture', 0, () => {
       const parser = new ProtocolParser();
       const result = parser.parseEnvelope(ENCRYPTED_ITEM_LIVE_FIXTURE);
@@ -234,6 +278,8 @@ const CLIENT_HELLO_FIXTURE: string = '{"version":1,"type":"CLIENT_HELLO","messag
 const AUTH_PROOF_FIXTURE: string = '{"version":1,"type":"AUTH_PROOF","messageId":"018ff6f1-1d2a-725d-8d1a-894d2f5b0a42","sessionCounter":2,"payload":{"role":"client","signatureAlgorithm":"Ed25519","transcriptHash":"aM5GGwvEfnwOx_BNJSJktCEYEkmCrSH0wgAESnSOYEw","signature":"cdpm2njgsHCfH0hrubU-NbHMbWcN1xNtr-vZTKx_Tdf85hHKW8gIJuk463rj4f744vegLphZFO0RTvP_gQjeAg"}}';
 
 const AUTH_PROOF_TRANSCRIPT: string = 'EggClip v1 auth transcript\nrole=client\nspaceId=018ff6ef-c394-7d08-8b99-4b7d10f2767a\nlocalDeviceId=018ff6f0-0a3b-7815-a4db-3eb6e23d9338\nremoteDeviceId=018ff6f0-4adf-7d31-a987-3ef2b25d0212\nlocalIdentityPublicKey=11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo\nremoteIdentityPublicKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\nlocalEphemeralPublicKey=hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo\nremoteEphemeralPublicKey=3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08\npairingContext=trusted-device:018ff6ef-c394-7d08-8b99-4b7d10f2767a\n';
+
+const AUTH_OK_FIXTURE: string = '{"version":1,"type":"AUTH_OK","messageId":"018ff6f1-25f0-7c09-a4cf-3d683ebfae33","sessionCounter":3,"payload":{}}';
 
 const ENCRYPTED_ITEM_LIVE_FIXTURE: string = '{"version":1,"type":"ITEM_LIVE","messageId":"018ff6f3-0d8c-7d1e-a38a-f308c64de79f","sessionCounter":12,"ciphertext":{"algorithm":"AES-256-GCM","keyId":"session-v1-client-to-server","nonce":"DDDDDDDDDDDDDDDD","aad":"EEEEEEEEEEEEEEEE","body":"FFFFFFFFFFFFFFFF","tag":"GGGGGGGGGGGGGGGGGGGGGG"}}';
 
