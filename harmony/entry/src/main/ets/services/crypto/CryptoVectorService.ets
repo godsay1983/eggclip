@@ -12,6 +12,11 @@ export interface CryptoVectorValidationResult {
   field?: string;
 }
 
+export enum SessionDirection {
+  CLIENT_TO_SERVER = 'clientToServer',
+  SERVER_TO_CLIENT = 'serverToClient'
+}
+
 interface Ed25519SignatureVector {
   algorithm?: Object | string | number | boolean | null;
   privateSeed?: Object | string | number | boolean | null;
@@ -54,6 +59,19 @@ interface ReplayCounterVector {
   algorithm?: Object | string | number | boolean | null;
   accepted?: number[];
   rejected?: RejectedCounter[];
+}
+
+interface SessionKeysVector {
+  algorithm?: Object | string | number | boolean | null;
+  sharedSecret?: Object | string | number | boolean | null;
+  transcriptSalt?: Object | string | number | boolean | null;
+  clientToServerInfo?: Object | string | number | boolean | null;
+  serverToClientInfo?: Object | string | number | boolean | null;
+  clientToServerKey?: Object | string | number | boolean | null;
+  serverToClientKey?: Object | string | number | boolean | null;
+  counter?: Object | string | number | boolean | null;
+  clientToServerNonce?: Object | string | number | boolean | null;
+  serverToClientNonce?: Object | string | number | boolean | null;
 }
 
 interface RejectedCounter {
@@ -148,6 +166,39 @@ export class CryptoVectorService {
     return allOk(checks);
   }
 
+  validateSessionKeysVector(input: string): CryptoVectorValidationResult {
+    const vector = parseJson<SessionKeysVector>(input);
+    if (vector === null || vector.algorithm !== 'EggClip-Session-Keys-v1') {
+      return { ok: false, error: CryptoVectorErrorCode.INVALID_FIELD, field: 'algorithm' };
+    }
+    if (vector.clientToServerInfo !== 'EggClip v1 session key client-to-server' ||
+      vector.serverToClientInfo !== 'EggClip v1 session key server-to-client') {
+      return { ok: false, error: CryptoVectorErrorCode.INVALID_FIELD, field: 'info' };
+    }
+    if (typeof vector.counter !== 'number' || !Number.isSafeInteger(vector.counter) || vector.counter < 0) {
+      return { ok: false, error: CryptoVectorErrorCode.INVALID_FIELD, field: 'counter' };
+    }
+    const checks: CryptoVectorValidationResult[] = [
+      requireDecodedLength(requireStringValue(vector.sharedSecret), 32, 'sharedSecret'),
+      requireBase64Url(requireStringValue(vector.transcriptSalt), 'transcriptSalt'),
+      requireDecodedLength(requireStringValue(vector.clientToServerKey), 32, 'clientToServerKey'),
+      requireDecodedLength(requireStringValue(vector.serverToClientKey), 32, 'serverToClientKey'),
+      requireDecodedLength(requireStringValue(vector.clientToServerNonce), 12, 'clientToServerNonce'),
+      requireDecodedLength(requireStringValue(vector.serverToClientNonce), 12, 'serverToClientNonce')
+    ];
+    const shape = allOk(checks);
+    if (!shape.ok) {
+      return shape;
+    }
+    if (encodeBase64Url(sessionNonce(SessionDirection.CLIENT_TO_SERVER, vector.counter)) !== vector.clientToServerNonce) {
+      return { ok: false, error: CryptoVectorErrorCode.INVALID_FIELD, field: 'clientToServerNonce' };
+    }
+    if (encodeBase64Url(sessionNonce(SessionDirection.SERVER_TO_CLIENT, vector.counter)) !== vector.serverToClientNonce) {
+      return { ok: false, error: CryptoVectorErrorCode.INVALID_FIELD, field: 'serverToClientNonce' };
+    }
+    return { ok: true };
+  }
+
   validateReplayCounterVector(input: string): CryptoVectorValidationResult {
     const vector = parseJson<ReplayCounterVector>(input);
     if (vector === null || vector.algorithm !== 'EggClip-Session-Counter-v1') {
@@ -172,6 +223,26 @@ export class CryptoVectorService {
     }
     return { ok: true };
   }
+}
+
+export function sessionNonce(direction: SessionDirection, counter: number): Uint8Array {
+  const nonce = new Uint8Array(12);
+  if (direction === SessionDirection.CLIENT_TO_SERVER) {
+    nonce[0] = 0x63;
+    nonce[1] = 0x32;
+    nonce[2] = 0x73;
+  } else {
+    nonce[0] = 0x73;
+    nonce[1] = 0x32;
+    nonce[2] = 0x63;
+  }
+  nonce[3] = 0x01;
+  let remaining = Math.trunc(counter);
+  for (let index = 11; index >= 4; index -= 1) {
+    nonce[index] = remaining & 0xff;
+    remaining = Math.floor(remaining / 256);
+  }
+  return nonce;
 }
 
 class SessionCounterGuard {
@@ -259,6 +330,32 @@ export function decodeBase64Url(value: string): Uint8Array | null {
     return null;
   }
   return new Uint8Array(bytes);
+}
+
+export function encodeBase64Url(value: Uint8Array): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  let output = '';
+  let index = 0;
+  while (index + 2 < value.length) {
+    const triple = (value[index] << 16) | (value[index + 1] << 8) | value[index + 2];
+    output += alphabet.charAt((triple >> 18) & 0x3f);
+    output += alphabet.charAt((triple >> 12) & 0x3f);
+    output += alphabet.charAt((triple >> 6) & 0x3f);
+    output += alphabet.charAt(triple & 0x3f);
+    index += 3;
+  }
+  const remaining = value.length - index;
+  if (remaining === 1) {
+    const single = value[index];
+    output += alphabet.charAt((single >> 2) & 0x3f);
+    output += alphabet.charAt((single << 4) & 0x3f);
+  } else if (remaining === 2) {
+    const pair = (value[index] << 8) | value[index + 1];
+    output += alphabet.charAt((pair >> 10) & 0x3f);
+    output += alphabet.charAt((pair >> 4) & 0x3f);
+    output += alphabet.charAt((pair << 2) & 0x3f);
+  }
+  return output;
 }
 
 function decodeBase64UrlChar(code: number): number {

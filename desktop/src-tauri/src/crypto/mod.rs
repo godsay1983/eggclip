@@ -19,6 +19,11 @@ pub const X25519_SHARED_SECRET_BYTES: usize = 32;
 pub const AES_256_KEY_BYTES: usize = 32;
 pub const AES_GCM_NONCE_BYTES: usize = 12;
 pub const AES_GCM_TAG_BYTES: usize = 16;
+pub const SESSION_KEY_BYTES: usize = AES_256_KEY_BYTES;
+pub const SESSION_KEY_INFO_CLIENT_TO_SERVER: &[u8] = b"EggClip v1 session key client-to-server";
+pub const SESSION_KEY_INFO_SERVER_TO_CLIENT: &[u8] = b"EggClip v1 session key server-to-client";
+const NONCE_PREFIX_CLIENT_TO_SERVER: [u8; 4] = [b'c', b'2', b's', 1];
+const NONCE_PREFIX_SERVER_TO_CLIENT: [u8; 4] = [b's', b'2', b'c', 1];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CryptoError {
@@ -207,6 +212,75 @@ pub fn aes256_gcm_decrypt(
         .map_err(|_| CryptoError::AeadFailed)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionDirection {
+    ClientToServer,
+    ServerToClient,
+}
+
+impl SessionDirection {
+    fn key_info(self) -> &'static [u8] {
+        match self {
+            SessionDirection::ClientToServer => SESSION_KEY_INFO_CLIENT_TO_SERVER,
+            SessionDirection::ServerToClient => SESSION_KEY_INFO_SERVER_TO_CLIENT,
+        }
+    }
+
+    fn nonce_prefix(self) -> [u8; 4] {
+        match self {
+            SessionDirection::ClientToServer => NONCE_PREFIX_CLIENT_TO_SERVER,
+            SessionDirection::ServerToClient => NONCE_PREFIX_SERVER_TO_CLIENT,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionKeys {
+    pub client_to_server: [u8; SESSION_KEY_BYTES],
+    pub server_to_client: [u8; SESSION_KEY_BYTES],
+}
+
+pub fn derive_session_keys(
+    shared_secret: [u8; X25519_SHARED_SECRET_BYTES],
+    transcript_salt: &[u8],
+) -> Result<SessionKeys, CryptoError> {
+    Ok(SessionKeys {
+        client_to_server: derive_directional_session_key(
+            shared_secret,
+            transcript_salt,
+            SessionDirection::ClientToServer,
+        )?,
+        server_to_client: derive_directional_session_key(
+            shared_secret,
+            transcript_salt,
+            SessionDirection::ServerToClient,
+        )?,
+    })
+}
+
+pub fn derive_directional_session_key(
+    shared_secret: [u8; X25519_SHARED_SECRET_BYTES],
+    transcript_salt: &[u8],
+    direction: SessionDirection,
+) -> Result<[u8; SESSION_KEY_BYTES], CryptoError> {
+    fixed_bytes(
+        &hkdf_sha256(
+            &shared_secret,
+            transcript_salt,
+            direction.key_info(),
+            SESSION_KEY_BYTES,
+        )?,
+        "sessionKey",
+    )
+}
+
+pub fn session_nonce(direction: SessionDirection, counter: u64) -> [u8; AES_GCM_NONCE_BYTES] {
+    let mut nonce = [0u8; AES_GCM_NONCE_BYTES];
+    nonce[..4].copy_from_slice(&direction.nonce_prefix());
+    nonce[4..].copy_from_slice(&counter.to_be_bytes());
+    nonce
+}
+
 #[derive(Debug, Default)]
 pub struct SessionCounterGuard {
     highest_seen: Option<u64>,
@@ -277,6 +351,20 @@ mod tests {
     struct CounterVector {
         accepted: Vec<u64>,
         rejected: Vec<RejectedCounter>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct SessionKeysVector {
+        shared_secret: String,
+        transcript_salt: String,
+        client_to_server_info: String,
+        server_to_client_info: String,
+        client_to_server_key: String,
+        server_to_client_key: String,
+        counter: u64,
+        client_to_server_nonce: String,
+        server_to_client_nonce: String,
     }
 
     #[derive(Debug, Deserialize)]
@@ -403,6 +491,49 @@ mod tests {
         assert_eq!(
             aes256_gcm_decrypt(key, nonce, &aad, &ciphertext, tampered_tag).unwrap_err(),
             CryptoError::AeadFailed
+        );
+    }
+
+    #[test]
+    fn session_keys_and_nonces_match_shared_vector() {
+        let vector: SessionKeysVector =
+            read_vector(&["test-vectors", "crypto", "session-keys.valid.json"]);
+        assert_eq!(
+            vector.client_to_server_info.as_bytes(),
+            SESSION_KEY_INFO_CLIENT_TO_SERVER
+        );
+        assert_eq!(
+            vector.server_to_client_info.as_bytes(),
+            SESSION_KEY_INFO_SERVER_TO_CLIENT
+        );
+
+        let shared_secret =
+            decoded_fixed(&vector.shared_secret, "sharedSecret").expect("shared secret");
+        let transcript_salt =
+            decode_base64url(&vector.transcript_salt).expect("transcript salt should decode");
+        let expected_client_key =
+            decoded_fixed(&vector.client_to_server_key, "clientToServerKey").expect("c2s key");
+        let expected_server_key =
+            decoded_fixed(&vector.server_to_client_key, "serverToClientKey").expect("s2c key");
+        let expected_client_nonce =
+            decoded_fixed(&vector.client_to_server_nonce, "clientToServerNonce")
+                .expect("c2s nonce");
+        let expected_server_nonce =
+            decoded_fixed(&vector.server_to_client_nonce, "serverToClientNonce")
+                .expect("s2c nonce");
+
+        let keys = derive_session_keys(shared_secret, &transcript_salt)
+            .expect("session keys should derive");
+        assert_eq!(keys.client_to_server, expected_client_key);
+        assert_eq!(keys.server_to_client, expected_server_key);
+        assert_ne!(keys.client_to_server, keys.server_to_client);
+        assert_eq!(
+            session_nonce(SessionDirection::ClientToServer, vector.counter),
+            expected_client_nonce
+        );
+        assert_eq!(
+            session_nonce(SessionDirection::ServerToClient, vector.counter),
+            expected_server_nonce
         );
     }
 

@@ -125,6 +125,24 @@ function validateCryptoVector(value) {
         requireBase64Url(value[field], field);
       }
       return;
+    case "EggClip-Session-Keys-v1":
+      for (const field of [
+        "sharedSecret",
+        "transcriptSalt",
+        "clientToServerKey",
+        "serverToClientKey",
+        "clientToServerNonce",
+        "serverToClientNonce",
+      ]) {
+        requireBase64Url(value[field], field);
+      }
+      for (const field of ["clientToServerInfo", "serverToClientInfo"]) {
+        if (typeof value[field] !== "string" || value[field].length === 0) {
+          throw new Error(`${field} must be a non-empty string`);
+        }
+      }
+      requireUint(value.counter, "counter");
+      return;
     case "EggClip-Session-Counter-v1":
       if (!Array.isArray(value.accepted) || !Array.isArray(value.rejected)) {
         throw new Error("counter vector must include accepted and rejected arrays");

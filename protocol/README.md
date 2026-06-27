@@ -138,7 +138,12 @@ After `AUTH_OK`, each business frame uses:
 Nonce rules:
 
 - Each direction has an independent session key and counter.
+- Session keys are derived with HKDF-SHA-256 from the X25519 shared secret,
+  handshake transcript salt and a direction-specific info string.
 - The sender increments `sessionCounter` monotonically.
+- The 96-bit AES-GCM nonce is `directionPrefix || sessionCounter`, where
+  `directionPrefix` is `c2s\x01` or `s2c\x01` and `sessionCounter` is an
+  unsigned 64-bit big-endian integer.
 - A receiver rejects old counters, repeated counters, repeated `messageId`, and AEAD failures.
 
 ## Clipboard Item
@@ -205,6 +210,7 @@ test-vectors/
 ```
 
 Current fixtures include schema/parsing JSON and deterministic byte-for-byte
-crypto vectors for Ed25519, X25519, HKDF-SHA-256, AES-256-GCM and replay
-counter rejection. These are public or synthetic test-only vectors; they are not
-production keys, invitations or clipboard content.
+crypto vectors for Ed25519, X25519, HKDF-SHA-256, AES-256-GCM, directional
+session keys, nonce construction and replay counter rejection. These are public
+or synthetic test-only vectors; they are not production keys, invitations or
+clipboard content.

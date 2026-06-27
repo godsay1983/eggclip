@@ -1,0 +1,13 @@
+{
+  "algorithm": "EggClip-Session-Keys-v1",
+  "source": "Synthetic test-only session key derivation vector",
+  "sharedSecret": "Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I",
+  "transcriptSalt": "RWdnQ2xpcCB2MSB0ZXN0IGhhbmRzaGFrZSBzYWx0",
+  "clientToServerInfo": "EggClip v1 session key client-to-server",
+  "serverToClientInfo": "EggClip v1 session key server-to-client",
+  "clientToServerKey": "_CuE_7SfzdShnxyzHQy4IJ0zQjMAUVq-tynBZ2lBPYQ",
+  "serverToClientKey": "TSo91xPhGNnQb2KPW6xyjJJFeHsimcUss0Rm2Tnbo2M",
+  "counter": 12,
+  "clientToServerNonce": "YzJzAQAAAAAAAAAM",
+  "serverToClientNonce": "czJjAQAAAAAAAAAM"
+}

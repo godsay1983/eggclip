@@ -191,9 +191,9 @@ desktop/
 
 - [ ] X25519 协商临时共享秘密；Rust 已完成基于共享向量的 X25519 基元，正式握手状态机未接入。
 - [ ] Ed25519 签名绑定身份、空间和握手 transcript。
-- [ ] HKDF-SHA-256 派生双向独立会话密钥；Rust 基元已通过共享向量，正式 transcript/context 规则未接入。
+- [ ] HKDF-SHA-256 派生双向独立会话密钥；Rust 已实现方向隔离 session key 派生并通过共享向量，正式握手 transcript 输入未接入。
 - [ ] AES-256-GCM 加密认证后全部业务消息；Rust 基元已通过共享向量和 tag 篡改拒绝，正式业务帧未接入。
-- [ ] 使用方向独立的单调计数器构造 nonce。
+- [ ] 使用方向独立的单调计数器构造 nonce；Rust 已实现 `directionPrefix || u64be(counter)` 并通过共享向量，正式 session 未接入。
 - [ ] 拒绝旧计数器、重复消息、AEAD 失败和认证失败帧；Rust 已有单向 session counter guard 与 AEAD 失败测试，正式 session 未接入。
 - [ ] 会话结束后清理临时密钥材料。
 

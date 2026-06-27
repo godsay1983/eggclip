@@ -221,9 +221,9 @@ harmony/entry/src/main/ets/
 - [ ] 实现 disconnected、discovering、connecting、handshaking、authenticated、syncing、ready、failed。
 - [ ] X25519 建立临时共享秘密。
 - [ ] Ed25519 验证设备身份和空间绑定。
-- [ ] HKDF 派生双向会话密钥。
+- [ ] HKDF 派生双向会话密钥；已固定共享 session key 向量并在 ArkTS 校验字段、长度和 nonce 规则，真实 CryptoFramework HKDF 未接入。
 - [ ] AES-256-GCM 解密认证后业务帧。
-- [ ] 维护接收计数器和 replay window。
+- [ ] 维护接收计数器和 replay window；ArkTS 已有测试用单向 counter guard 校验，正式 session 未接入。
 - [ ] 未认证连接不能访问同步 service 和 RDB 正文。
 
 ### 前台连接
