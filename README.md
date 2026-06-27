@@ -2,7 +2,7 @@
 
 EggClip 是纯局域网剪贴板同步工具。Windows 桌面端负责自动监听和同步，HarmonyOS 端在前台连接，并通过系统授权操作发送或复制文本。
 
-当前已完成 D1/H1 技术 POC 的主要自动化和代码链路：Windows 剪贴板监听、双向 WebSocket 文本传输、桌面端手动 IP/端口出站连接、最小 mDNS 服务发布、局域网候选地址诊断和 POC peer 状态已接通；HarmonyOS 已接入真实 PasteButton、严格 IPv4 手动连接、前台 mDNS 搜索和动态连接状态。两端统一限制正文最大 256 KiB，外层 POC 帧最大 1 MiB，并显示不含正文的接收/接受/拒绝诊断计数。桌面端尊重 Windows 剪贴板的监控/跨设备同步排除标记，EggClip 写入不会被 Windows 云剪贴板上传。当前 POC 尚未认证，因此远端文本只进入预览，必须由用户点击复制；人工真机验收因暂时没有条件已延期记录到 `docs/MANUAL_REGRESSION.md`，不视为通过。当前已开始共享协议开发，配对、端到端加密、历史存储和正式同步实现尚未完成。
+当前已完成 D1/H1 技术 POC 的主要自动化、代码链路和人工真机回归：Windows 剪贴板监听、双向 WebSocket 文本传输、桌面端手动 IP/端口出站连接、最小 mDNS 服务发布、局域网候选地址诊断和 POC peer 状态已接通；HarmonyOS 已接入真实 PasteButton、严格 IPv4 手动连接、前台 mDNS 搜索和动态连接状态。两端统一限制正文最大 256 KiB，外层 POC 帧最大 1 MiB，并显示不含正文的接收/接受/拒绝诊断计数。桌面端尊重 Windows 剪贴板的监控/跨设备同步排除标记，EggClip 写入不会被 Windows 云剪贴板上传。当前 POC 尚未认证，因此远端文本只进入预览，必须由用户点击复制。当前已开始共享协议开发，配对、端到端加密、历史存储和正式同步实现尚未完成。
 
 最后核对：2026-06-27。
 
@@ -86,19 +86,18 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 
 - 桌面：Svelte 类型检查、Vitest、前端构建、Rust fmt/check/test 通过；Rust 共 30 个测试通过。
 - 桌面：Tauri dev 进程、Vite 服务和 `eggclip.exe` 已成功启动；托盘交互仍需人工回归。
-- HarmonyOS：mDNS 搜索代码、WebSocket/PasteButton POC 以及 H1 边界单测已通过 `hvigorw test`，当前产物未签名。
+- HarmonyOS：mDNS 搜索代码、WebSocket/PasteButton POC、协议解析模型以及 H1/D3 边界单测已通过 `hvigorw test`，当前产物未签名。
 - 桌面 POC server 启动时会发布 `_eggclip._tcp.local.` 临时服务；mDNS 只提供候选地址，不代表设备可信。
-- 当前手动回归清单包含 Windows 剪贴板隐私标记样本工具和 POC WebSocket 帧探针脚本，便于补齐 D1/H1 剩余验收。
-- 已创建 `protocol/README.md`、`protocol/v1.schema.json` 和初始 schema/解析测试向量目录；桌面 Rust 已接入协议类型和 fixture 测试，密码学字节级向量与 ArkTS 消费仍待补齐。
+- 当前手动回归清单包含 Windows 剪贴板隐私标记样本工具和 POC WebSocket 帧探针脚本，D1/H1 手动验收已通过。
+- 已创建 `protocol/README.md`、`protocol/v1.schema.json` 和初始 schema/解析测试向量目录；桌面 Rust 与 HarmonyOS ArkTS 已接入协议类型和 fixture 测试，密码学字节级向量仍待补齐。
 - 当前工作树未发现签名密码、证书路径或剪贴板正文。
 
 ## 开发顺序
 
-1. 补齐 `protocol/test-vectors/` 中的 Rust/ArkTS 共用 schema、解析和密码学向量。
-2. 实现 Rust/ArkTS 协议类型、解析校验和未知版本拒绝。
-3. 实现设备身份、配对和端到端加密握手。
-4. 在有真机条件后回补 D1/H1 手动验收：Windows ↔ HarmonyOS 双向链路、mDNS 生命周期、防火墙和快速复制。
-5. 实现自动发现、补同步、设备管理和发布回归。
+1. 补齐 `protocol/test-vectors/` 中的密码学字节级向量。
+2. 实现设备身份、本地密钥保存、配对和端到端加密握手。
+3. 实现本地历史、sync heads、`ITEM_LIVE` / `ITEM_BATCH` 分流和 retention。
+4. 实现自动发现、补同步、设备管理和发布回归。
 
 ## 相关文档
 

@@ -5,7 +5,7 @@
 ## 当前状态
 
 - 工程目录：`D:\Develop\eggclip\desktop`
-- D0 工程基线已建立，桌面 UI 已拆出 TypeScript API / store / component 基线；D1 剪贴板 POC 已开始，当前完成文本边界、Win32 剪贴板事件监听、Windows 剪贴板同步排除标记、WebSocket POC server/手动客户端、最小 mDNS POC 发布、网卡/IPv4 诊断、POC peer/安全帧诊断状态、Desktop ↔ Desktop/Harmony 临时文本消息、100 条消息编解码回归和 sequence/digest/TTL 回环抑制基础。未认证 POC 只允许用户触发发送和复制。因当前没有人工真机测试条件，D1 剩余手动验收已记录到 `docs/MANUAL_REGRESSION.md` 延期执行，不视为通过；按用户确认先进入共享协议开发。
+- D0 工程基线已建立，桌面 UI 已拆出 TypeScript API / store / component 基线；D1 剪贴板 POC 已完成主要代码链路和人工回归：文本边界、Win32 剪贴板事件监听、Windows 剪贴板同步排除标记、WebSocket POC server/手动客户端、最小 mDNS POC 发布、网卡/IPv4 诊断、POC peer/安全帧诊断状态、Desktop ↔ Desktop/Harmony 临时文本消息、100 条消息编解码回归、sequence/digest/TTL 回环抑制基础、防火墙/网络差异和真机互通。未认证 POC 只允许用户触发发送和复制。
 - 目标平台：Windows 10/11。
 - 目标技术栈：Tauri 2、Svelte 5、SvelteKit、TypeScript、Rust、SQLite。
 - 应用标识建议：`com.eggclip.desktop`。
@@ -96,7 +96,7 @@ desktop/
 - [x] 实现文本写入系统剪贴板。
 - [ ] 使用 digest、系统 sequence 和短时 suppression token 防止远端写入回环；核心实现与单元测试已完成，等待认证 `ITEM_LIVE` 接入后做真机闭环。
 - [x] 将本机剪贴板变化通过 Tauri event 推送到前端 POC 面板。
-- [ ] 连续复制相同文本时验证“立即重复”和“稍后再次复制”的差异；sequence/TTL 单元测试已覆盖，Windows 真机快速复制仍待验收。
+- [x] 连续复制相同文本时验证“立即重复”和“稍后再次复制”的差异；sequence/TTL 单元测试已覆盖，Windows 真机快速复制已验收。
 - [x] 尊重 `ExcludeClipboardContentFromMonitorProcessing` 和 `CanUploadToCloudClipboard=0`，并禁止 EggClip 写入被 Windows 云剪贴板上传；真机格式检查保留在手动回归。
 
 ### 手动 WebSocket
@@ -109,7 +109,7 @@ desktop/
 - [x] 发送到 POC peer 失败时清理断开的临时连接引用。
 - [x] 连接和剪贴板处理运行在 Rust 后端，不阻塞 Tauri UI 线程。
 - [x] 增加消息大小、连接超时和基础错误处理。
-- [ ] 验证 Windows 防火墙首次提示和专用/公用网络差异。
+- [x] 验证 Windows 防火墙首次提示和专用/公用网络差异。
 
 验收标准：
 
@@ -168,7 +168,7 @@ desktop/
 - [ ] 创建 Rust/ArkTS 共用 JSON 和二进制测试向量；当前仅有 schema/解析用 JSON 初始样例，密码学二进制向量待实现 crypto 时补齐。
 - [x] 桌面 Rust 实现 v1 envelope、message type、ciphertext、hello、clipboard item 和 sync heads 类型。
 - [x] 桌面 Rust 消费 `protocol/test-vectors/`，覆盖合法握手、加密 envelope、clipboard item、未知版本和认证后明文拒绝。
-- [ ] HarmonyOS ArkTS 实现同等协议类型和测试向量消费。
+- [x] HarmonyOS ArkTS 实现同等协议类型和测试向量消费。
 
 ### 设备身份与本地密钥
 
