@@ -49,6 +49,25 @@ pub struct PocTransportDiagnostics {
     last_rejection: Option<PocRejectionReason>,
 }
 
+impl PocTransportDiagnostics {
+    fn record_frame(&mut self, result: Result<(), PocRejectionReason>) {
+        self.received_frames = self.received_frames.saturating_add(1);
+        match result {
+            Ok(()) => {
+                self.accepted_items = self.accepted_items.saturating_add(1);
+            }
+            Err(reason) => {
+                self.rejected_frames = self.rejected_frames.saturating_add(1);
+                self.last_rejection = Some(reason);
+            }
+        }
+    }
+
+    fn reset(&mut self) {
+        *self = Self::default();
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PocRejectionReason {
@@ -323,7 +342,7 @@ fn reset_poc_diagnostics(runtime: &PocTransportRuntime) -> Result<(), String> {
         .diagnostics
         .lock()
         .map_err(|_| "WebSocket POC 诊断状态锁已损坏".to_owned())?;
-    *diagnostics = PocTransportDiagnostics::default();
+    diagnostics.reset();
     Ok(())
 }
 
@@ -338,16 +357,7 @@ fn diagnostics_snapshot(runtime: &PocTransportRuntime) -> PocTransportDiagnostic
 fn record_poc_frame_result(app: &AppHandle, result: Result<(), PocRejectionReason>) {
     let runtime = app.state::<PocTransportRuntime>();
     let snapshot = runtime.diagnostics.lock().ok().map(|mut diagnostics| {
-        diagnostics.received_frames = diagnostics.received_frames.saturating_add(1);
-        match result {
-            Ok(()) => {
-                diagnostics.accepted_items = diagnostics.accepted_items.saturating_add(1);
-            }
-            Err(reason) => {
-                diagnostics.rejected_frames = diagnostics.rejected_frames.saturating_add(1);
-                diagnostics.last_rejection = Some(reason);
-            }
-        }
+        diagnostics.record_frame(result);
         diagnostics.clone()
     });
     if let Some(snapshot) = snapshot {
@@ -602,5 +612,39 @@ mod tests {
         assert!(validate_poc_endpoint("224.0.0.1", 4567).is_err());
         assert!(validate_poc_endpoint("255.255.255.255", 4567).is_err());
         assert!(validate_poc_endpoint("127.0.0.1", 0).is_err());
+    }
+
+    #[test]
+    fn records_poc_diagnostics_without_content() {
+        let mut diagnostics = PocTransportDiagnostics::default();
+
+        diagnostics.record_frame(Ok(()));
+        assert_eq!(diagnostics.received_frames, 1);
+        assert_eq!(diagnostics.accepted_items, 1);
+        assert_eq!(diagnostics.rejected_frames, 0);
+        assert_eq!(diagnostics.last_rejection, None);
+
+        diagnostics.record_frame(Err(PocRejectionReason::InvalidMessage));
+        assert_eq!(diagnostics.received_frames, 2);
+        assert_eq!(diagnostics.accepted_items, 1);
+        assert_eq!(diagnostics.rejected_frames, 1);
+        assert_eq!(
+            diagnostics.last_rejection,
+            Some(PocRejectionReason::InvalidMessage)
+        );
+    }
+
+    #[test]
+    fn resets_poc_diagnostics_for_a_new_session() {
+        let mut diagnostics = PocTransportDiagnostics::default();
+
+        diagnostics.record_frame(Ok(()));
+        diagnostics.record_frame(Err(PocRejectionReason::TextTooLarge));
+        diagnostics.reset();
+
+        assert_eq!(diagnostics.received_frames, 0);
+        assert_eq!(diagnostics.accepted_items, 0);
+        assert_eq!(diagnostics.rejected_frames, 0);
+        assert_eq!(diagnostics.last_rejection, None);
     }
 }

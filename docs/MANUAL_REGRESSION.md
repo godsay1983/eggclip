@@ -31,12 +31,32 @@
 
 ## Windows 剪贴板隐私标记
 
+辅助命令：
+
+```powershell
+cd D:\Develop\eggclip\desktop\src-tauri
+cargo run --bin clipboard_marker_sample -- exclude-monitoring
+cargo run --bin clipboard_marker_sample -- cloud-deny
+cargo run --bin clipboard_marker_sample -- inspect
+```
+
+验证方式：保持桌面端运行并打开面板，分别写入样本后确认“当前剪贴板”不会更新为新的本机同步候选；`inspect` 只输出标记状态，不输出剪贴板正文。
+
 - [ ] 使用测试工具写入 `ExcludeClipboardContentFromMonitorProcessing` 后，EggClip 不产生本机同步候选。
 - [ ] 使用测试工具写入 `CanUploadToCloudClipboard=0` 后，EggClip 不产生本机同步候选。
 - [ ] 通过 EggClip 复制文本后，确认 `CanUploadToCloudClipboard` 为 0，文本仍可在本机剪贴板使用。
 - [ ] 上述排除路径不输出正文或标记原始数据到普通日志。
 
 ## POC 安全帧诊断
+
+辅助命令：
+
+```powershell
+cd D:\Develop\eggclip\desktop
+.\scripts\poc-frame-probe.ps1 -HostName 127.0.0.1 -Port <桌面面板显示的 POC 端口> -Case all
+```
+
+验证方式：运行前记录面板中的“帧诊断”计数。`all` 会为每种样本各建立一次 WebSocket 连接；正常文本应增加接收/接受，非法 JSON、空文本、超限正文和二进制帧应增加接收/拒绝。不要把真实剪贴板内容放进探针样本。
 
 - [ ] 正常文本到达时，两端“接收”和“接受”各增加 1，“拒绝”不变。
 - [ ] 非法 JSON、空文本、超限正文或二进制帧只增加“接收/拒绝”，不进入最新文本预览。
