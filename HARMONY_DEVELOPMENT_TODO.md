@@ -131,7 +131,7 @@ harmony/entry/src/main/ets/
 
 ### 模型和 store
 
-- [ ] 定义 `ClipboardItem`、`Device`、`Space`、`SyncHead`、`ConnectionState` 和 `AppSettings`。
+- [x] 定义 `ClipboardItem`、`Device`、`Space`、`SyncHead`、`ConnectionState` 和 `AppSettings`。
 - [ ] 定义 `ClipboardStore`、`ConnectionStore`、`DeviceStore` 和 `SettingsStore`。
 - [ ] store 统一处理 loading、empty、ready、offline 和 error 状态。
 - [ ] 页面不直接操作 RDB 和网络 service。

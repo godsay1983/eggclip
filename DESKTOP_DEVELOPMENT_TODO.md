@@ -122,12 +122,12 @@ desktop/
 
 ### 数据模型
 
-- [ ] 定义 `ClipboardItem`、`Device`、`Space`、`SyncHead` 和 `AppSettings`。
+- [x] 定义 `ClipboardItem`、`Device`、`Space`、`SyncHead` 和 `AppSettings`。
 - [ ] 为本机生成并持久化随机 `deviceId`。
 - [ ] 为本机事件维护持久化单调 `originSeq`。
-- [ ] 实现 Hybrid Logical Clock，用于跨设备稳定排序。
-- [ ] 使用 UUID v7 生成 `itemId`。
-- [ ] 使用 HMAC-SHA-256 生成内容摘要，不保存裸 SHA-256。
+- [x] 实现 Hybrid Logical Clock，用于跨设备稳定排序。
+- [x] 使用 UUID v7 生成 `itemId`。
+- [x] 使用 HMAC-SHA-256 生成内容摘要，不保存裸 SHA-256。
 
 ### SQLite
 

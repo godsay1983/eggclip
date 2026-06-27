@@ -1053,6 +1053,7 @@ dependencies = [
  "ed25519-dalek",
  "futures-util",
  "hkdf",
+ "hmac",
  "if-addrs",
  "mdns-sd",
  "serde",
@@ -1064,6 +1065,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tokio",
  "tokio-tungstenite",
+ "uuid",
  "x25519-dalek",
 ]
 

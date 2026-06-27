@@ -22,6 +22,15 @@ import {
   POC_MAX_FRAME_BYTES
 } from '../main/ets/models/PocModels';
 import {
+  ContentType as DomainContentType,
+  DomainValidationError,
+  HlcTimestamp,
+  OriginSeqAllocator,
+  buildLocalClipboardItemDraft,
+  defaultAppSettings,
+  validateAppSettings
+} from '../main/ets/models/DomainModels';
+import {
   AeadAlgorithm,
   AuthRole,
   ContentType,
@@ -129,6 +138,65 @@ export default function localUnitTest() {
       expect(PROTOCOL_HANDSHAKE_TIMEOUT_SECONDS).assertEqual(8);
       expect(PROTOCOL_HEARTBEAT_INTERVAL_SECONDS).assertEqual(20);
       expect(PROTOCOL_IDLE_DISCONNECT_SECONDS).assertEqual(60);
+    });
+
+    it('buildsDomainHlcAndOriginSequenceModels', 0, () => {
+      const local = new HlcTimestamp(1000, 0);
+      const tickSameMs = local.tick(1000);
+      const tickNewMs = tickSameMs.tick(1005);
+      const observed = tickNewMs.observe(new HlcTimestamp(1005, 8), 1004);
+
+      expect(tickSameMs.toWire()).assertEqual('00000000000003e8-0001');
+      expect(tickNewMs.toWire()).assertEqual('00000000000003ed-0000');
+      expect(observed.toWire()).assertEqual('00000000000003ed-0009');
+      expect(local.compare(tickSameMs)).assertEqual(-1);
+      expect(observed.compare(tickNewMs)).assertEqual(1);
+
+      const allocator = new OriginSeqAllocator(7);
+      expect(allocator.nextSeq()).assertEqual(7);
+      expect(allocator.nextSeq()).assertEqual(8);
+      expect(allocator.peekNext()).assertEqual(9);
+    });
+
+    it('validatesDomainClipboardItemDraftAndSettings', 0, () => {
+      const item = buildLocalClipboardItemDraft({
+        itemId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
+        spaceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
+        originDeviceId: '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        originSeq: 42,
+        hlc: new HlcTimestamp(1700000000100, 0),
+        createdAt: 1700000000100,
+        contentDigest: 'VCKcnWkMQkRIXGbdZ29X9i2PfEJai3L2lV1hCUApXkw'
+      }, '蛋定 Clip');
+
+      expect(item.ok).assertEqual(true);
+      expect(item.item?.contentType).assertEqual(DomainContentType.TEXT_PLAIN);
+      expect(item.item?.contentLength).assertEqual(11);
+      expect(item.item?.hlc).assertEqual('0000018bcfe56864-0000');
+
+      const empty = buildLocalClipboardItemDraft({
+        itemId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
+        spaceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
+        originDeviceId: '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        originSeq: 43,
+        hlc: new HlcTimestamp(1700000000101, 0),
+        createdAt: 1700000000101,
+        contentDigest: 'VCKcnWkMQkRIXGbdZ29X9i2PfEJai3L2lV1hCUApXkw'
+      }, '');
+      expect(empty.error).assertEqual(DomainValidationError.EMPTY_TEXT);
+
+      const settings = defaultAppSettings();
+      expect(settings.historyLimit).assertEqual(50);
+      expect(settings.autoWriteEnabled).assertEqual(false);
+      expect(validateAppSettings(settings).ok).assertEqual(true);
+      expect(validateAppSettings({
+        syncEnabled: true,
+        autoReceiveEnabled: true,
+        autoWriteEnabled: false,
+        historyEnabled: true,
+        historyLimit: 10,
+        retentionDays: 7
+      }).error).assertEqual(DomainValidationError.INVALID_HISTORY_LIMIT);
     });
 
     it('parsesProtocolClientHelloFixture', 0, () => {
