@@ -19,6 +19,7 @@ pub enum TransportFrameError {
     },
     BinaryUnsupported,
     UnexpectedPlaintext,
+    RemoteError,
     SessionClosed,
     ProtocolRejected(ProtocolError),
 }
@@ -38,6 +39,9 @@ impl fmt::Display for TransportFrameError {
             }
             TransportFrameError::UnexpectedPlaintext => {
                 formatter.write_str("authenticated transport requires encrypted frames")
+            }
+            TransportFrameError::RemoteError => {
+                formatter.write_str("remote peer sent an encrypted protocol error")
             }
             TransportFrameError::SessionClosed => {
                 formatter.write_str("authenticated transport session is closed")
@@ -193,7 +197,11 @@ impl AuthenticatedTransportSession {
             ProtocolEnvelope::Encrypted(envelope) => envelope,
             ProtocolEnvelope::PreAuth(_) => return Err(TransportFrameError::UnexpectedPlaintext),
         };
-        self.decrypt_envelope(&encrypted)
+        let payload = self.decrypt_envelope(&encrypted)?;
+        if encrypted.message_type == MessageType::Error {
+            return Err(TransportFrameError::RemoteError);
+        }
+        Ok(payload)
     }
 
     fn decrypt_envelope(&self, envelope: &EncryptedEnvelope) -> Result<Value, TransportFrameError> {
@@ -382,6 +390,29 @@ mod tests {
         assert_eq!(
             server.accept_websocket_message(Message::Ping(Vec::new().into())),
             Err(TransportFrameError::SessionClosed)
+        );
+    }
+
+    #[test]
+    fn authenticated_transport_decrypts_remote_error_then_closes_session() {
+        let (mut client, mut server) = session_pair();
+        let frame = client
+            .encode_business_frame(
+                MessageType::Error,
+                "018ff6f4-0d8c-7d1e-a38a-f308c64de79f".to_owned(),
+                &serde_json::json!({"code": "authFailed"}),
+            )
+            .expect("client should encode encrypted error");
+
+        assert_eq!(
+            server.accept_text_frame(&frame).unwrap_err(),
+            TransportFrameError::RemoteError
+        );
+        assert!(server.is_closed());
+        assert_eq!(server.state(), ProtocolSessionState::Failed);
+        assert_eq!(
+            server.accept_text_frame(&frame).unwrap_err(),
+            TransportFrameError::SessionClosed
         );
     }
 

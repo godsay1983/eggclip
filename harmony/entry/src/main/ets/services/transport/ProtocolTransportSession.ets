@@ -1,5 +1,6 @@
 import { estimateUtf8Bytes } from '../../utils/TextLimits';
 import {
+  MessageType,
   ParsedEnvelope,
   ProtocolEnvelopeKind,
   ProtocolErrorCode,
@@ -14,6 +15,7 @@ export enum ProtocolTransportFrameError {
   BINARY_UNSUPPORTED = 'binaryUnsupported',
   PROTOCOL_REJECTED = 'protocolRejected',
   UNEXPECTED_PLAINTEXT = 'unexpectedPlaintext',
+  REMOTE_ERROR = 'remoteError',
   SESSION_CLOSED = 'sessionClosed'
 }
 
@@ -73,6 +75,9 @@ export class ProtocolTransportSession {
 
     if (parsed.envelope.kind !== ProtocolEnvelopeKind.ENCRYPTED) {
       return this.failWith({ ok: false, error: ProtocolTransportFrameError.UNEXPECTED_PLAINTEXT });
+    }
+    if (parsed.envelope.messageType === MessageType.ERROR) {
+      return this.failWith({ ok: false, error: ProtocolTransportFrameError.REMOTE_ERROR });
     }
 
     return {

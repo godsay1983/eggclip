@@ -247,6 +247,7 @@ harmony/entry/src/main/ets/
   - [x] ArkTS `ProtocolTransportSession` 已在已认证 transport 帧入口接入 replay guard。
   - [x] WebSocket service 已新增正式协议连接入口和 `decodeProtocolFrameMessage`，收包路径接入 `ProtocolTransportSession`。
   - [x] ArkTS `ProtocolTransportSession` 在协议拒绝、replay、超限和明文帧时进入 failed/closed，阻止后续收包。
+  - [x] ArkTS `ProtocolTransportSession` 收到正式加密 `ERROR` envelope 后进入 failed/closed，不分发为业务 envelope。
   - [ ] 正式连接生命周期接入已配对设备和握手派生出的真实 session。
 - [ ] 未认证连接不能访问同步 service 和 RDB 正文。
   - [x] ArkTS 协议 session gate 已拒绝认证前业务帧。

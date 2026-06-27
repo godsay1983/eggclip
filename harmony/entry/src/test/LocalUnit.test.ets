@@ -273,6 +273,18 @@ export default function localUnitTest() {
       expect(poc.error).assertEqual(ProtocolTransportFrameError.PROTOCOL_REJECTED);
     });
 
+    it('closesProtocolTransportSessionOnEncryptedRemoteError', 0, () => {
+      const session = new ProtocolTransportSession();
+      const result = session.acceptTextFrame(ENCRYPTED_ERROR_FIXTURE);
+
+      expect(result.ok).assertEqual(false);
+      expect(result.error).assertEqual(ProtocolTransportFrameError.REMOTE_ERROR);
+      expect(session.isClosed()).assertEqual(true);
+      expect(session.state()).assertEqual(ProtocolSessionState.FAILED);
+      expect(session.acceptTextFrame(ENCRYPTED_ERROR_FIXTURE).error)
+        .assertEqual(ProtocolTransportFrameError.SESSION_CLOSED);
+    });
+
     it('routesProtocolFramesThroughWebSocketTransportDiagnostics', 0, () => {
       const transport = new WebSocketTransportService();
       const session = new ProtocolTransportSession();
@@ -410,6 +422,8 @@ const AUTH_OK_FIXTURE: string = '{"version":1,"type":"AUTH_OK","messageId":"018f
 const AUTH_OK_OLD_COUNTER_FIXTURE: string = '{"version":1,"type":"AUTH_OK","messageId":"018ff6f1-25f0-7c09-a4cf-3d683ebfae33","sessionCounter":1,"payload":{}}';
 
 const ENCRYPTED_ITEM_LIVE_FIXTURE: string = '{"version":1,"type":"ITEM_LIVE","messageId":"018ff6f3-0d8c-7d1e-a38a-f308c64de79f","sessionCounter":12,"ciphertext":{"algorithm":"AES-256-GCM","keyId":"session-v1-client-to-server","nonce":"DDDDDDDDDDDDDDDD","aad":"EEEEEEEEEEEEEEEE","body":"FFFFFFFFFFFFFFFF","tag":"GGGGGGGGGGGGGGGGGGGGGG"}}';
+
+const ENCRYPTED_ERROR_FIXTURE: string = '{"version":1,"type":"ERROR","messageId":"018ff6f4-0d8c-7d1e-a38a-f308c64de79f","sessionCounter":12,"ciphertext":{"algorithm":"AES-256-GCM","keyId":"session-v1-client-to-server","nonce":"DDDDDDDDDDDDDDDD","aad":"EEEEEEEEEEEEEEEE","body":"FFFFFFFFFFFFFFFF","tag":"GGGGGGGGGGGGGGGGGGGGGG"}}';
 
 const CLIPBOARD_ITEM_FIXTURE: string = '{"itemId":"018ff6f3-3653-7c79-b38b-f4af3575396b","spaceId":"018ff6ef-c394-7d08-8b99-4b7d10f2767a","originDeviceId":"018ff6f0-0a3b-7815-a4db-3eb6e23d9338","originSeq":42,"hlc":"1781946000123:0:018ff6f0","contentType":"text/plain","contentLength":17,"contentDigest":"CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC","createdAt":1781946000123,"content":"EggClip test text"}';
 
