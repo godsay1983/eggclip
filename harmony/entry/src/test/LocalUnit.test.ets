@@ -1,6 +1,8 @@
 import { describe, expect, it } from '@ohos/hypium';
 import { ClipboardBridgeService } from '../main/ets/services/clipboard/ClipboardBridgeService';
 import {
+  ProtocolHandshakeFrameOutcome,
+  ProtocolHandshakeTransportSession,
   ProtocolTransportFrameError,
   ProtocolTransportSession
 } from '../main/ets/services/transport/ProtocolTransportSession';
@@ -245,6 +247,40 @@ export default function localUnitTest() {
         .assertEqual(ProtocolErrorCode.DUPLICATE_MESSAGE_ID);
     });
 
+    it('movesProtocolHandshakeTransportThroughHelloAndAuthOk', 0, () => {
+      const session = new ProtocolHandshakeTransportSession();
+      const hello = session.acceptTextFrame(CLIENT_HELLO_FIXTURE);
+
+      expect(hello.ok).assertEqual(true);
+      expect(hello.outcome).assertEqual(ProtocolHandshakeFrameOutcome.CONTINUE);
+      expect(hello.envelope?.messageType).assertEqual(MessageType.CLIENT_HELLO);
+
+      const authOk = session.acceptTextFrame(AUTH_OK_FIXTURE);
+      expect(authOk.ok).assertEqual(true);
+      expect(authOk.outcome).assertEqual(ProtocolHandshakeFrameOutcome.AUTHENTICATED);
+      expect(session.state()).assertEqual(ProtocolSessionState.AUTHENTICATED);
+      expect(session.isClosed()).assertEqual(false);
+    });
+
+    it('closesProtocolHandshakeTransportOnAuthErrorAndRejectsEncryptedBusiness', 0, () => {
+      const authErrorSession = new ProtocolHandshakeTransportSession();
+      const authError = authErrorSession.acceptTextFrame(AUTH_ERROR_FIXTURE);
+
+      expect(authError.ok).assertEqual(true);
+      expect(authError.outcome).assertEqual(ProtocolHandshakeFrameOutcome.FAILED);
+      expect(authError.envelope?.messageType).assertEqual(MessageType.AUTH_ERROR);
+      expect(authErrorSession.isClosed()).assertEqual(true);
+      expect(authErrorSession.state()).assertEqual(ProtocolSessionState.FAILED);
+      expect(authErrorSession.acceptTextFrame(AUTH_ERROR_FIXTURE).error)
+        .assertEqual(ProtocolTransportFrameError.SESSION_CLOSED);
+
+      const encryptedSession = new ProtocolHandshakeTransportSession();
+      const encrypted = encryptedSession.acceptTextFrame(ENCRYPTED_ITEM_LIVE_FIXTURE);
+      expect(encrypted.ok).assertEqual(false);
+      expect(encrypted.protocolError).assertEqual(ProtocolErrorCode.CIPHERTEXT_BEFORE_AUTH);
+      expect(encryptedSession.isClosed()).assertEqual(true);
+    });
+
     it('acceptsProtocolTransportEncryptedFrameAfterAuth', 0, () => {
       const session = new ProtocolTransportSession();
       const result = session.acceptTextFrame(ENCRYPTED_ITEM_LIVE_FIXTURE);
@@ -420,6 +456,8 @@ const AUTH_PROOF_TRANSCRIPT: string = 'EggClip v1 auth transcript\nrole=client\n
 const AUTH_OK_FIXTURE: string = '{"version":1,"type":"AUTH_OK","messageId":"018ff6f1-25f0-7c09-a4cf-3d683ebfae33","sessionCounter":3,"payload":{}}';
 
 const AUTH_OK_OLD_COUNTER_FIXTURE: string = '{"version":1,"type":"AUTH_OK","messageId":"018ff6f1-25f0-7c09-a4cf-3d683ebfae33","sessionCounter":1,"payload":{}}';
+
+const AUTH_ERROR_FIXTURE: string = '{"version":1,"type":"AUTH_ERROR","messageId":"018ff6f1-35f0-7c09-a4cf-3d683ebfae33","sessionCounter":3,"payload":{"code":"authFailed"}}';
 
 const ENCRYPTED_ITEM_LIVE_FIXTURE: string = '{"version":1,"type":"ITEM_LIVE","messageId":"018ff6f3-0d8c-7d1e-a38a-f308c64de79f","sessionCounter":12,"ciphertext":{"algorithm":"AES-256-GCM","keyId":"session-v1-client-to-server","nonce":"DDDDDDDDDDDDDDDD","aad":"EEEEEEEEEEEEEEEE","body":"FFFFFFFFFFFFFFFF","tag":"GGGGGGGGGGGGGGGGGGGGGG"}}';
 

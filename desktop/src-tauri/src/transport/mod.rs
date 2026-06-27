@@ -14,7 +14,10 @@ use tokio::{
 };
 use tokio_tungstenite::{connect_async, tungstenite::Message, WebSocketStream};
 
-pub use session::{AuthenticatedTransportSession, TransportFrameError};
+pub use session::{
+    AuthenticatedTransportSession, HandshakeFrame, HandshakeFrameOutcome,
+    HandshakeTransportSession, TransportFrameError,
+};
 
 pub const POC_MAX_FRAME_BYTES: usize = 1024 * 1024;
 const POC_CONNECT_TIMEOUT: Duration = Duration::from_secs(8);

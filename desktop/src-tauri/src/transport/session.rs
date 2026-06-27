@@ -24,6 +24,19 @@ pub enum TransportFrameError {
     ProtocolRejected(ProtocolError),
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct HandshakeFrame {
+    pub message_type: MessageType,
+    pub payload: Value,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum HandshakeFrameOutcome {
+    Continue(HandshakeFrame),
+    Authenticated(HandshakeFrame),
+    Failed(HandshakeFrame),
+}
+
 impl fmt::Display for TransportFrameError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -56,6 +69,119 @@ impl std::error::Error for TransportFrameError {}
 impl From<ProtocolError> for TransportFrameError {
     fn from(error: ProtocolError) -> Self {
         Self::ProtocolRejected(error)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct HandshakeTransportSession {
+    inbound: ProtocolInboundSession,
+    closed: bool,
+}
+
+impl Default for HandshakeTransportSession {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl HandshakeTransportSession {
+    pub fn new() -> Self {
+        let mut inbound = ProtocolInboundSession::default();
+        inbound.connect();
+        inbound.start_handshake();
+        Self {
+            inbound,
+            closed: false,
+        }
+    }
+
+    pub fn state(&self) -> ProtocolSessionState {
+        self.inbound.state()
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.closed
+    }
+
+    pub fn close(&mut self) {
+        self.closed = true;
+        self.inbound.fail();
+    }
+
+    pub fn accept_websocket_message(
+        &mut self,
+        message: Message,
+    ) -> Result<Option<HandshakeFrameOutcome>, TransportFrameError> {
+        if self.closed {
+            return Err(TransportFrameError::SessionClosed);
+        }
+        match message {
+            Message::Text(text) => self.accept_text_frame(&text).map(Some),
+            Message::Binary(bytes) => {
+                if bytes.len() > MAX_FRAME_BYTES {
+                    self.fail_with(TransportFrameError::FrameTooLarge {
+                        actual_bytes: bytes.len(),
+                        max_bytes: MAX_FRAME_BYTES,
+                    })
+                } else {
+                    self.fail_with(TransportFrameError::BinaryUnsupported)
+                }
+            }
+            Message::Close(_) => {
+                self.close();
+                Ok(None)
+            }
+            Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => Ok(None),
+        }
+    }
+
+    pub fn accept_text_frame(
+        &mut self,
+        text: &str,
+    ) -> Result<HandshakeFrameOutcome, TransportFrameError> {
+        if self.closed {
+            return Err(TransportFrameError::SessionClosed);
+        }
+        if text.len() > MAX_FRAME_BYTES {
+            return self.fail_with(TransportFrameError::FrameTooLarge {
+                actual_bytes: text.len(),
+                max_bytes: MAX_FRAME_BYTES,
+            });
+        }
+
+        match self.accept_text_frame_inner(text) {
+            Ok(outcome) => Ok(outcome),
+            Err(error) => self.fail_with(error),
+        }
+    }
+
+    fn accept_text_frame_inner(
+        &mut self,
+        text: &str,
+    ) -> Result<HandshakeFrameOutcome, TransportFrameError> {
+        let envelope = parse_envelope(text)?;
+        self.inbound.accept_envelope(&envelope)?;
+        let pre_auth = match envelope {
+            ProtocolEnvelope::PreAuth(envelope) => envelope,
+            ProtocolEnvelope::Encrypted(_) => return Err(TransportFrameError::UnexpectedPlaintext),
+        };
+        let frame = HandshakeFrame {
+            message_type: pre_auth.message_type,
+            payload: pre_auth.payload,
+        };
+        match frame.message_type {
+            MessageType::AuthOk => Ok(HandshakeFrameOutcome::Authenticated(frame)),
+            MessageType::AuthError | MessageType::Error => {
+                self.close();
+                Ok(HandshakeFrameOutcome::Failed(frame))
+            }
+            _ => Ok(HandshakeFrameOutcome::Continue(frame)),
+        }
+    }
+
+    fn fail_with<T>(&mut self, error: TransportFrameError) -> Result<T, TransportFrameError> {
+        self.close();
+        Err(error)
     }
 }
 
@@ -281,6 +407,120 @@ mod tests {
             12,
         );
         (client, server)
+    }
+
+    #[test]
+    fn handshake_transport_accepts_plaintext_handshake_then_auth_ok() {
+        let mut session = HandshakeTransportSession::new();
+
+        let client_hello = r#"{
+          "version": 1,
+          "type": "CLIENT_HELLO",
+          "messageId": "018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01",
+          "sessionCounter": 0,
+          "payload": {
+            "spaceId": "018ff6ef-c394-7d08-8b99-4b7d10f2767a"
+          }
+        }"#;
+        let auth_ok = r#"{
+          "version": 1,
+          "type": "AUTH_OK",
+          "messageId": "018ff6f1-25f0-7c09-a4cf-3d683ebfae33",
+          "sessionCounter": 1,
+          "payload": {}
+        }"#;
+
+        let outcome = session
+            .accept_text_frame(client_hello)
+            .expect("client hello should pass");
+        assert!(matches!(
+            outcome,
+            HandshakeFrameOutcome::Continue(HandshakeFrame {
+                message_type: MessageType::ClientHello,
+                ..
+            })
+        ));
+
+        let outcome = session
+            .accept_websocket_message(Message::Text(auth_ok.into()))
+            .expect("auth ok should pass")
+            .expect("auth ok should produce outcome");
+        assert!(matches!(
+            outcome,
+            HandshakeFrameOutcome::Authenticated(HandshakeFrame {
+                message_type: MessageType::AuthOk,
+                ..
+            })
+        ));
+        assert_eq!(session.state(), ProtocolSessionState::Authenticated);
+        assert!(!session.is_closed());
+    }
+
+    #[test]
+    fn handshake_transport_closes_on_auth_error() {
+        let mut session = HandshakeTransportSession::new();
+        let auth_error = r#"{
+          "version": 1,
+          "type": "AUTH_ERROR",
+          "messageId": "018ff6f1-25f0-7c09-a4cf-3d683ebfae33",
+          "sessionCounter": 1,
+          "payload": {
+            "code": "authFailed"
+          }
+        }"#;
+
+        let outcome = session
+            .accept_text_frame(auth_error)
+            .expect("auth error should parse");
+
+        assert!(matches!(
+            outcome,
+            HandshakeFrameOutcome::Failed(HandshakeFrame {
+                message_type: MessageType::AuthError,
+                ..
+            })
+        ));
+        assert!(session.is_closed());
+        assert_eq!(session.state(), ProtocolSessionState::Failed);
+        assert_eq!(
+            session.accept_text_frame(auth_error).unwrap_err(),
+            TransportFrameError::SessionClosed
+        );
+    }
+
+    #[test]
+    fn handshake_transport_rejects_encrypted_or_duplicate_frames() {
+        let mut session = HandshakeTransportSession::new();
+        let encrypted = read_json_vector::<serde_json::Value>(&[
+            "test-vectors",
+            "sync",
+            "encrypted-item-live-envelope.valid.json",
+        ])
+        .to_string();
+
+        assert_eq!(
+            session.accept_text_frame(&encrypted).unwrap_err(),
+            TransportFrameError::ProtocolRejected(ProtocolError::CiphertextBeforeAuth(
+                MessageType::ItemLive
+            ))
+        );
+        assert!(session.is_closed());
+
+        let mut duplicate_session = HandshakeTransportSession::new();
+        let auth_error = r#"{
+          "version": 1,
+          "type": "AUTH_ERROR",
+          "messageId": "018ff6f1-25f0-7c09-a4cf-3d683ebfae33",
+          "sessionCounter": 1,
+          "payload": {}
+        }"#;
+        duplicate_session
+            .accept_text_frame(auth_error)
+            .expect("first auth error should pass");
+        assert_eq!(
+            duplicate_session.accept_text_frame(auth_error).unwrap_err(),
+            TransportFrameError::SessionClosed
+        );
     }
 
     #[test]

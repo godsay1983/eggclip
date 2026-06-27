@@ -227,7 +227,8 @@ desktop/
   - [x] authenticated transport session 在协议拒绝、replay、超限和二进制帧时进入 failed/closed，阻止后续收发。
   - [x] authenticated transport session 收到已通过 AEAD 校验的加密 `ERROR` 帧后进入 failed/closed，不分发为业务 payload。
   - [ ] replay guard 接入真实 WebSocket 收包路径。
-  - [ ] 真实握手/认证阶段的 `AUTH_ERROR` 关闭正式 session。
+  - [x] handshake transport session 已接入明文握手 envelope、状态门控、replay guard，并在 `AUTH_ERROR` / `ERROR` 时进入 failed/closed。
+  - [ ] 真实握手/认证生命周期接入后由 `AUTH_ERROR` 关闭正式 peer session。
 - [ ] 会话结束后清理临时密钥材料。
   - [x] Rust authenticated transport session close/fail 时擦除方向会话密钥并重置发送计数器。
   - [ ] 正式握手/session 生命周期结束时清理临时 X25519 secret、transcript 中间态和生产会话密钥。
