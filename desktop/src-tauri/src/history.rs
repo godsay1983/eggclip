@@ -1,11 +1,28 @@
 use std::path::Path;
 
+use serde::Serialize;
 use tauri::AppHandle;
 
 use crate::{
     settings::{database_path, now_ms},
-    storage::{open_database, repositories::ClipboardRepository},
+    storage::{
+        open_database,
+        repositories::{ClipboardItemRecord, ClipboardRepository},
+    },
 };
+
+const HISTORY_PREVIEW_LIMIT: u16 = 5;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryItemSummary {
+    pub id: String,
+    pub title: String,
+    pub preview: String,
+    pub source: String,
+    pub received_at_ms: u64,
+    pub content_length: usize,
+}
 
 #[tauri::command]
 pub fn clear_clipboard_history(app: AppHandle) -> Result<usize, String> {
@@ -17,6 +34,12 @@ pub fn clear_clipboard_history(app: AppHandle) -> Result<usize, String> {
 pub fn get_clipboard_history_used(app: AppHandle) -> Result<usize, String> {
     let path = database_path(&app)?;
     get_clipboard_history_used_at_path(&path)
+}
+
+#[tauri::command]
+pub fn list_clipboard_history_preview(app: AppHandle) -> Result<Vec<HistoryItemSummary>, String> {
+    let path = database_path(&app)?;
+    list_clipboard_history_preview_at_path(&path, HISTORY_PREVIEW_LIMIT)
 }
 
 fn clear_clipboard_history_at_path(path: &Path, deleted_at: u64) -> Result<usize, String> {
@@ -31,6 +54,30 @@ fn get_clipboard_history_used_at_path(path: &Path) -> Result<usize, String> {
     ClipboardRepository::new(&connection)
         .active_count_all()
         .map_err(|error| format!("无法读取历史数量：{error}"))
+}
+
+fn list_clipboard_history_preview_at_path(
+    path: &Path,
+    limit: u16,
+) -> Result<Vec<HistoryItemSummary>, String> {
+    let connection = open_database(path).map_err(|error| format!("无法打开本地数据库：{error}"))?;
+    ClipboardRepository::new(&connection)
+        .list_recent_all(limit)
+        .map(|records| records.iter().map(to_history_item_summary).collect())
+        .map_err(|error| format!("无法读取历史记录：{error}"))
+}
+
+fn to_history_item_summary(record: &ClipboardItemRecord) -> HistoryItemSummary {
+    let device = record.item.origin_device_id.to_string();
+    let short_device = device.get(0..8).unwrap_or("unknown");
+    HistoryItemSummary {
+        id: record.item.item_id.to_string(),
+        title: format!("{} 字节文本", record.item.content_length),
+        preview: "内容已保存；正文预览将在密钥解密链路接入后显示".to_string(),
+        source: format!("来源设备 {short_device}"),
+        received_at_ms: record.received_at,
+        content_length: record.item.content_length,
+    }
 }
 
 #[cfg(test)]
@@ -79,7 +126,7 @@ mod tests {
                 "INSERT INTO clipboard_items(
                     item_id, space_id, origin_device_id, origin_seq, hlc, content_type,
                     content_length, content_digest, encrypted_content, created_at, received_at, expires_at, deleted_at
-                 ) VALUES(?1, ?2, ?3, 1, '1700000000000-0000', 'text/plain', 4, 'digest-a', X'74657374', 1700000000000, 1700000000000, 1700604800000, NULL)",
+                 ) VALUES(?1, ?2, ?3, 1, '0000018bcfe56800-0000', 'text/plain', 4, 'digest-a', X'74657374', 1700000000000, 1700000000000, 1700604800000, NULL)",
                 params![item_id, space_id, device_id],
             )
             .expect("active item should insert");
@@ -88,7 +135,7 @@ mod tests {
                 "INSERT INTO clipboard_items(
                     item_id, space_id, origin_device_id, origin_seq, hlc, content_type,
                     content_length, content_digest, encrypted_content, created_at, received_at, expires_at, deleted_at
-                 ) VALUES(?1, ?2, ?3, 2, '1700000000001-0000', 'text/plain', 4, 'digest-b', X'74657374', 1700000000001, 1700000000001, 1700604800000, 1700000000100)",
+                 ) VALUES(?1, ?2, ?3, 2, '0000018bcfe56801-0000', 'text/plain', 4, 'digest-b', X'74657374', 1700000000001, 1700000000001, 1700604800000, 1700000000100)",
                 params![deleted_item_id, space_id, device_id],
             )
             .expect("deleted item should insert");
@@ -98,6 +145,12 @@ mod tests {
             get_clipboard_history_used_at_path(&path).expect("history count should load"),
             1
         );
+        let items =
+            list_clipboard_history_preview_at_path(&path, 5).expect("history preview should load");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].id, item_id);
+        assert_eq!(items[0].content_length, 4);
+        assert!(items[0].preview.contains("密钥解密链路"));
         let cleared = clear_clipboard_history_at_path(&path, 1_700_000_002_000)
             .expect("history should clear");
         assert_eq!(

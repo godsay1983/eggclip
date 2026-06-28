@@ -180,6 +180,24 @@ export class ClipboardRdbRepository {
     }
   }
 
+  async listRecentAll(limit: number): Promise<ClipboardItemRecord[]> {
+    const store = await Database.getStore(this.context);
+    const command = this.commands.listRecentAll(limit);
+    const resultSet = await store.querySql(command.sql, this.runner.bindArgs(command.args));
+    const records: ClipboardItemRecord[] = [];
+    try {
+      if (!resultSet.goToFirstRow()) {
+        return records;
+      }
+      do {
+        records.push(readClipboardRecord(resultSet));
+      } while (resultSet.goToNextRow());
+      return records;
+    } finally {
+      resultSet.close();
+    }
+  }
+
   async countAllActive(): Promise<number> {
     const store = await Database.getStore(this.context);
     const command = this.commands.countAllActive();

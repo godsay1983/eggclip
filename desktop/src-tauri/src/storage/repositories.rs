@@ -398,6 +398,21 @@ impl<'a> ClipboardRepository<'a> {
         records
     }
 
+    pub fn list_recent_all(&self, limit: u16) -> rusqlite::Result<Vec<ClipboardItemRecord>> {
+        let mut statement = self.connection.prepare(
+            "SELECT item_id, space_id, origin_device_id, origin_seq, hlc, content_type,
+              content_length, content_digest, encrypted_content, created_at, received_at, expires_at, deleted_at
+             FROM clipboard_items
+             WHERE deleted_at IS NULL
+             ORDER BY hlc DESC, item_id DESC
+             LIMIT ?1",
+        )?;
+        let records = statement
+            .query_map(params![i64::from(limit)], row_to_clipboard_record)?
+            .collect();
+        records
+    }
+
     pub fn mark_deleted(&self, item_id: Uuid, deleted_at: u64) -> rusqlite::Result<bool> {
         let affected = self.connection.execute(
             "UPDATE clipboard_items SET deleted_at = ?2

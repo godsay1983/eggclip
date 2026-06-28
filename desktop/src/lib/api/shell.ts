@@ -1,6 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { ClipboardPreview, PocDiagnostics, ShellSnapshot } from "$lib/types/shell";
+import type {
+  ClipboardPreview,
+  HistoryItemSummary,
+  PocDiagnostics,
+  ShellSnapshot,
+} from "$lib/types/shell";
 
 interface ClipboardTextItem {
   text: string;
@@ -52,6 +57,15 @@ interface PocPeerEvent {
   peer: string;
 }
 
+interface HistoryItemSummaryDto {
+  id: string;
+  title: string;
+  preview: string;
+  source: string;
+  receivedAtMs: number;
+  contentLength: number;
+}
+
 export function createInitialShellSnapshot(): ShellSnapshot {
   return {
     connection: {
@@ -70,6 +84,7 @@ export function createInitialShellSnapshot(): ShellSnapshot {
     history: {
       used: 0,
       limit: 50,
+      items: [],
     },
     pocDiagnostics: {
       receivedFrames: 0,
@@ -99,6 +114,11 @@ export async function clearClipboardHistory(): Promise<number> {
 
 export async function getClipboardHistoryUsed(): Promise<number> {
   return invoke<number>("get_clipboard_history_used");
+}
+
+export async function listClipboardHistoryPreview(): Promise<HistoryItemSummary[]> {
+  const items = await invoke<HistoryItemSummaryDto[]>("list_clipboard_history_preview");
+  return items.map(toHistoryItemSummary);
 }
 
 export async function sendPocClipboardText(text: string): Promise<number> {
@@ -229,6 +249,21 @@ function toClipboardPreview(
       second: "2-digit",
     }),
     canCopy: true,
+  };
+}
+
+function toHistoryItemSummary(item: HistoryItemSummaryDto): HistoryItemSummary {
+  return {
+    id: item.id,
+    title: item.title,
+    preview: item.preview,
+    source: item.source,
+    receivedAt: new Date(item.receivedAtMs).toLocaleTimeString("zh-CN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }),
+    contentLength: item.contentLength,
   };
 }
 

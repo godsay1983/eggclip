@@ -541,6 +541,31 @@ footer {
   line-height: 1.45;
 }
 
+.history-list {
+  display: grid;
+  gap: 10px;
+}
+
+.history-item {
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--control);
+}
+
+.history-item strong {
+  font-size: 13px;
+}
+
+.history-item p {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .empty-state {
   display: grid;
   min-height: 112px;

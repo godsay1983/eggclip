@@ -2,6 +2,7 @@ import { common } from '@kit.AbilityKit';
 import { ClipboardBridgeService } from '../services/clipboard/ClipboardBridgeService';
 import {
   HistoryStore,
+  HistoryPreviewItem,
   HistoryStoreSnapshot
 } from '../store/HistoryStore';
 import {
@@ -33,6 +34,7 @@ export struct HomePage {
   @State private latestReceivedSource: string = '暂无内容';
   @State private historyUsed: number = 0;
   @State private historyLimit: number = 50;
+  @State private historyItems: HistoryPreviewItem[] = [];
   @State private historyStatus: string = '正在读取本机历史摘要';
 
   aboutToAppear(): void {
@@ -211,10 +213,19 @@ export struct HomePage {
           .fontColor(EggClipColors.textSecondary)
           .lineHeight(20)
 
-        Text(this.historyStatus)
+        if (this.historyItems.length > 0) {
+          Column({ space: 8 }) {
+            ForEach(this.historyItems, (item: HistoryPreviewItem) => {
+              this.HistoryItem(item)
+            }, (item: HistoryPreviewItem) => item.id)
+          }
           .width('100%')
-          .fontSize(11)
-          .fontColor(EggClipColors.textSecondary)
+        } else {
+          Text(this.historyStatus)
+            .width('100%')
+            .fontSize(11)
+            .fontColor(EggClipColors.textSecondary)
+        }
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
@@ -224,6 +235,40 @@ export struct HomePage {
     .padding(EggClipSpacing.cardPadding)
     .backgroundColor(EggClipColors.cardBackground)
     .borderRadius(EggClipSpacing.radiusMedium)
+  }
+
+  @Builder
+  private HistoryItem(item: HistoryPreviewItem) {
+    Column({ space: 4 }) {
+      Row() {
+        Text(item.title)
+          .fontSize(EggClipTypography.captionSize)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(EggClipColors.textPrimary)
+          .layoutWeight(1)
+
+        Text(item.receivedAt)
+          .fontSize(11)
+          .fontColor(EggClipColors.textSecondary)
+      }
+      .width('100%')
+
+      Text(item.preview)
+        .width('100%')
+        .fontSize(11)
+        .fontColor(EggClipColors.textSecondary)
+        .lineHeight(18)
+
+      Text(item.source)
+        .width('100%')
+        .fontSize(10)
+        .fontColor(EggClipColors.textSecondary)
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+    .backgroundColor(EggClipColors.controlBackground)
+    .borderRadius(14)
   }
 
   private sendPocClipboardText(text: string): void {
@@ -267,9 +312,11 @@ export struct HomePage {
       .then((snapshot: HistoryStoreSnapshot) => {
         this.historyUsed = snapshot.used;
         this.historyLimit = snapshot.limit;
+        this.historyItems = snapshot.items;
         this.historyStatus = snapshot.errorMessage.length > 0 ? snapshot.errorMessage : '只显示数量，不展示历史正文';
       })
       .catch(() => {
+        this.historyItems = [];
         this.historyStatus = '读取历史摘要失败';
       });
   }

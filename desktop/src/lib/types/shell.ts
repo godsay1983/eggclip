@@ -24,6 +24,16 @@ export interface ClipboardPreview {
 export interface HistorySummary {
   used: number;
   limit: number;
+  items: HistoryItemSummary[];
+}
+
+export interface HistoryItemSummary {
+  id: string;
+  title: string;
+  preview: string;
+  source: string;
+  receivedAt: string;
+  contentLength: number;
 }
 
 export type PocRejectionReason =

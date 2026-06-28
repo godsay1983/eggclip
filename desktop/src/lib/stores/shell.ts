@@ -6,6 +6,7 @@ import {
   disconnectAllPocPeers,
   getClipboardHistoryUsed,
   getPocTransportStatus,
+  listClipboardHistoryPreview,
   onLocalClipboardText,
   onPocClipboardText,
   onPocDiagnostics,
@@ -269,12 +270,16 @@ export const shellSnapshot = {
   },
   async refreshHistorySummary() {
     try {
-      const used = await getClipboardHistoryUsed();
+      const [used, items] = await Promise.all([
+        getClipboardHistoryUsed(),
+        listClipboardHistoryPreview(),
+      ]);
       snapshot.update((state) => ({
         ...state,
         history: {
           ...state.history,
           used,
+          items,
         },
       }));
     } catch (error) {
@@ -296,6 +301,7 @@ export const shellSnapshot = {
         history: {
           ...state.history,
           used: 0,
+          items: [],
         },
         connection: {
           state: "online",

@@ -111,6 +111,18 @@ export class ClipboardRepository {
     };
   }
 
+  listRecentAll(limit: number): RepositoryCommand {
+    return {
+      sql: `SELECT item_id, space_id, origin_device_id, origin_seq, hlc, content_type,
+        content_length, content_digest, encrypted_content, created_at, received_at, expires_at, deleted_at
+        FROM clipboard_items
+        WHERE deleted_at IS NULL
+        ORDER BY hlc DESC, item_id DESC
+        LIMIT ?`,
+      args: [limit]
+    };
+  }
+
   countAllActive(): RepositoryCommand {
     return {
       sql: 'SELECT COUNT(*) AS active_count FROM clipboard_items WHERE deleted_at IS NULL',
