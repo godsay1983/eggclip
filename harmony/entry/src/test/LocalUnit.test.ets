@@ -32,11 +32,13 @@ import {
 } from '../main/ets/models/DomainModels';
 import {
   CURRENT_SCHEMA_VERSION,
+  DATABASE_NAME,
   INITIAL_SCHEMA_TABLES,
   allSchemaSql,
   pendingMigrations,
   validateSchemaPlan
 } from '../main/ets/data/migrations/SchemaMigrations';
+import { DATABASE_VERSION, STORE_CONFIG } from '../main/ets/data/db/DbConstants';
 import {
   ClipboardRepository,
   DeviceRepository,
@@ -228,6 +230,8 @@ export default function localUnitTest() {
       const sql = allSchemaSql().join('\n').toLowerCase();
 
       expect(CURRENT_SCHEMA_VERSION).assertEqual(1);
+      expect(DATABASE_VERSION).assertEqual(CURRENT_SCHEMA_VERSION);
+      expect(STORE_CONFIG.name).assertEqual(DATABASE_NAME);
       expect(pending.length).assertEqual(1);
       expect(pendingMigrations(CURRENT_SCHEMA_VERSION).length).assertEqual(0);
       expect(validateSchemaPlan()).assertEqual(true);
