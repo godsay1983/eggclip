@@ -92,7 +92,9 @@
     current={$shellSnapshot.current}
     onRead={() => shellSnapshot.readLocalClipboard()}
     onCopy={() => shellSnapshot.copyCurrentToClipboard()}
-    onSendPoc={() => shellSnapshot.sendCurrentToPocPeer()}
+    onSendPoc={() => shellSnapshot.sendCurrentToPocPeer($settingsSnapshot.settings.syncEnabled)}
+    sendDisabled={!$settingsSnapshot.settings.syncEnabled}
+    sendLabel={$settingsSnapshot.settings.syncEnabled ? "发送到 Harmony" : "同步已暂停"}
   />
 
   <HistoryList

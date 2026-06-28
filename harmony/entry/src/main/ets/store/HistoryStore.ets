@@ -1,6 +1,10 @@
 import { common } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
-import { defaultAppSettings } from '../models/DomainModels';
+import {
+  LocalClipboardSyncPolicy,
+  defaultAppSettings,
+  localClipboardSyncPolicy
+} from '../models/DomainModels';
 import {
   ClipboardRdbRepository,
   SettingsRdbRepository
@@ -33,6 +37,11 @@ export interface HistoryPreviewItem {
   preview: string;
   source: string;
   receivedAt: string;
+}
+
+export interface LocalBroadcastPolicySnapshot {
+  allowed: boolean;
+  message: string;
 }
 
 export class HistoryStore {
@@ -116,6 +125,17 @@ export class HistoryStore {
       return this.snapshot();
     }
     return this.loadSummary();
+  }
+
+  async loadLocalBroadcastPolicy(): Promise<LocalBroadcastPolicySnapshot> {
+    const settings = await this.settingsRepository.loadAppSettings() ?? defaultAppSettings();
+    const policy: LocalClipboardSyncPolicy = localClipboardSyncPolicy(settings);
+    return {
+      allowed: policy.broadcastAfterCommit,
+      message: policy.broadcastAfterCommit ?
+        '同步策略允许发送到桌面端' :
+        '已读取纯文本并更新本机历史；自动同步已关闭，未发送到桌面端'
+    };
   }
 }
 

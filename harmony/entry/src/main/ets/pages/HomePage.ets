@@ -3,6 +3,7 @@ import { ClipboardBridgeService } from '../services/clipboard/ClipboardBridgeSer
 import {
   HistoryStore,
   HistoryPreviewItem,
+  LocalBroadcastPolicySnapshot,
   HistoryStoreSnapshot
 } from '../store/HistoryStore';
 import {
@@ -323,17 +324,32 @@ export struct HomePage {
   }
 
   private sendPocClipboardText(text: string): void {
-    if (!pocConnectionStore.isConnected()) {
-      this.pasteStatus = '已读取纯文本；尚未连接桌面端，未发送。请到设备页连接桌面端';
+    if (this.historyStore === null) {
+      this.pasteStatus = '无法读取同步策略，未发送到桌面端';
       return;
     }
 
-    pocConnectionStore.sendClipboardText(text)
-      .then((sent) => {
-        this.pasteStatus = sent ? '已发送到桌面端' : '发送失败：WebSocket 未连接';
+    this.historyStore.loadLocalBroadcastPolicy()
+      .then((policy: LocalBroadcastPolicySnapshot) => {
+        if (!policy.allowed) {
+          this.pasteStatus = policy.message;
+          return;
+        }
+        if (!pocConnectionStore.isConnected()) {
+          this.pasteStatus = '已读取纯文本；尚未连接桌面端，未发送。请到设备页连接桌面端';
+          return;
+        }
+
+        pocConnectionStore.sendClipboardText(text)
+          .then((sent) => {
+            this.pasteStatus = sent ? '已发送到桌面端' : '发送失败：WebSocket 未连接';
+          })
+          .catch(() => {
+            this.pasteStatus = '发送到桌面端失败';
+          });
       })
       .catch(() => {
-        this.pasteStatus = '发送到桌面端失败';
+        this.pasteStatus = '读取同步策略失败，未发送到桌面端';
       });
   }
 

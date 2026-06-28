@@ -377,7 +377,19 @@ export const shellSnapshot = {
       throw error;
     }
   },
-  async sendCurrentToPocPeer() {
+  async sendCurrentToPocPeer(syncEnabled = true) {
+    if (!syncEnabled) {
+      snapshot.update((state) => ({
+        ...state,
+        connection: {
+          state: "paused",
+          title: "同步已暂停",
+          description: "当前设置关闭了自动同步，未向 Harmony 发送文本",
+        },
+      }));
+      return;
+    }
+
     let text = "";
     const unsubscribe = snapshot.subscribe((state) => {
       text = state.current?.text ?? "";

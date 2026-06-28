@@ -5,6 +5,8 @@
   export let onRead: () => void = () => {};
   export let onCopy: () => void = () => {};
   export let onSendPoc: () => void = () => {};
+  export let sendDisabled = false;
+  export let sendLabel = "发送到 Harmony";
 
   let expanded = false;
   let currentId = "";
@@ -55,8 +57,13 @@
     <button class="primary-action" type="button" disabled={!current?.canCopy} on:click={onCopy}>
       复制此内容
     </button>
-    <button class="secondary-action" type="button" disabled={!current} on:click={onSendPoc}>
-      发送到 Harmony
+    <button
+      class="secondary-action"
+      type="button"
+      disabled={!current || sendDisabled}
+      on:click={onSendPoc}
+    >
+      {sendLabel}
     </button>
   </div>
 </section>
