@@ -151,6 +151,20 @@ pub struct SyncHead {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub enum ThemeMode {
+    System,
+    Light,
+    Dark,
+}
+
+impl Default for ThemeMode {
+    fn default() -> Self {
+        Self::System
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     pub sync_enabled: bool,
     pub auto_receive_enabled: bool,
@@ -158,6 +172,8 @@ pub struct AppSettings {
     pub history_enabled: bool,
     pub history_limit: u16,
     pub retention_days: u16,
+    #[serde(default)]
+    pub theme_mode: ThemeMode,
 }
 
 impl Default for AppSettings {
@@ -169,6 +185,7 @@ impl Default for AppSettings {
             history_enabled: true,
             history_limit: DEFAULT_HISTORY_LIMIT,
             retention_days: DEFAULT_RETENTION_DAYS,
+            theme_mode: ThemeMode::System,
         }
     }
 }

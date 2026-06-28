@@ -7,7 +7,7 @@
   import StatusDot from "$lib/components/common/StatusDot.svelte";
   import { settingsSnapshot } from "$lib/stores/settings";
   import { shellSnapshot } from "$lib/stores/shell";
-  import type { AppSettings } from "$lib/types/settings";
+  import type { AppSettings, ThemeMode } from "$lib/types/settings";
   import { onMount } from "svelte";
 
   let settingsVisible = false;
@@ -36,6 +36,19 @@
       ? (parsed as AppSettings["historyLimit"])
       : 50;
   }
+
+  function themeModeFromValue(value: string): ThemeMode {
+    return value === "light" || value === "dark" ? value : "system";
+  }
+
+  function applyTheme(themeMode: ThemeMode) {
+    if (typeof document === "undefined") {
+      return;
+    }
+    document.documentElement.dataset.theme = themeMode;
+  }
+
+  $: applyTheme($settingsSnapshot.settings.themeMode);
 </script>
 
 <svelte:head>
@@ -47,7 +60,7 @@
 
 <main class="panel-shell">
   <header class="brand-row">
-    <div class="brand-mark" aria-hidden="true">🥚</div>
+    <img class="brand-mark" src="/app-icon.png" alt="" aria-hidden="true" />
     <div class="brand-copy">
       <div class="title-line">
         <h1>蛋定 Clip</h1>
@@ -71,22 +84,12 @@
     >
   </header>
 
-  <StatusCard
-    state={$shellSnapshot.connection.state}
-    title={$shellSnapshot.connection.title}
-    description={$shellSnapshot.connection.description}
-  />
-
-  <PocConnectCard />
-
   <ClipboardCard
     current={$shellSnapshot.current}
     onRead={() => shellSnapshot.readLocalClipboard()}
     onCopy={() => shellSnapshot.copyCurrentToClipboard()}
     onSendPoc={() => shellSnapshot.sendCurrentToPocPeer()}
   />
-
-  <DeviceChips devices={$shellSnapshot.devices} />
 
   <HistoryList history={$shellSnapshot.history} />
 
@@ -179,7 +182,32 @@
               saveSetting("retentionDays", Number(event.currentTarget.value))}
           />
         </label>
+        <label>
+          <span>主题</span>
+          <select
+            value={$settingsSnapshot.settings.themeMode}
+            disabled={$settingsSnapshot.state === "saving"}
+            on:change={(event) =>
+              saveSetting("themeMode", themeModeFromValue(event.currentTarget.value))}
+          >
+            <option value="system">跟随系统</option>
+            <option value="light">浅色</option>
+            <option value="dark">深色</option>
+          </select>
+        </label>
       </div>
+
+      <div class="settings-divider"></div>
+
+      <StatusCard
+        state={$shellSnapshot.connection.state}
+        title={$shellSnapshot.connection.title}
+        description={$shellSnapshot.connection.description}
+      />
+
+      <PocConnectCard />
+
+      <DeviceChips devices={$shellSnapshot.devices} />
     </section>
   {/if}
 

@@ -9,6 +9,7 @@ export function defaultAppSettings(): AppSettings {
     historyEnabled: true,
     historyLimit: 50,
     retentionDays: 7,
+    themeMode: "system",
   };
 }
 
@@ -26,6 +27,9 @@ export function validateAppSettings(settings: AppSettings): string | null {
   }
   if (!Number.isSafeInteger(settings.retentionDays) || settings.retentionDays < 0) {
     return "历史保留天数必须是非负整数。";
+  }
+  if (!["system", "light", "dark"].includes(settings.themeMode)) {
+    return "主题只能选择跟随系统、浅色或深色。";
   }
   return null;
 }

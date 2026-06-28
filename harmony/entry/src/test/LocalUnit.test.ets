@@ -35,6 +35,7 @@ import {
   InboundClipboardEventKind,
   OriginSeqAllocator,
   SyncPauseReason,
+  ThemeMode,
   buildLocalClipboardItemDraft,
   deduplicateClipboardItem,
   defaultAppSettings,
@@ -233,7 +234,8 @@ export default function localUnitTest() {
         autoWriteEnabled: false,
         historyEnabled: true,
         historyLimit: 10,
-        retentionDays: 7
+        retentionDays: 7,
+        themeMode: ThemeMode.SYSTEM
       }).error).assertEqual(DomainValidationError.INVALID_HISTORY_LIMIT);
     });
 
@@ -245,7 +247,8 @@ export default function localUnitTest() {
         autoWriteEnabled: false,
         historyEnabled: true,
         historyLimit: 50,
-        retentionDays: 7
+        retentionDays: 7,
+        themeMode: ThemeMode.SYSTEM
       };
       const receiveDisabled: AppSettings = {
         syncEnabled: true,
@@ -253,7 +256,8 @@ export default function localUnitTest() {
         autoWriteEnabled: true,
         historyEnabled: true,
         historyLimit: 50,
-        retentionDays: 7
+        retentionDays: 7,
+        themeMode: ThemeMode.SYSTEM
       };
       const writeDisabled: AppSettings = {
         syncEnabled: true,
@@ -261,7 +265,8 @@ export default function localUnitTest() {
         autoWriteEnabled: false,
         historyEnabled: true,
         historyLimit: 50,
-        retentionDays: 7
+        retentionDays: 7,
+        themeMode: ThemeMode.SYSTEM
       };
 
       expect(localClipboardSyncPolicy(syncDisabled).persistLocally).assertEqual(true);
@@ -474,7 +479,8 @@ export default function localUnitTest() {
         autoWriteEnabled: false,
         historyEnabled: true,
         historyLimit: 10,
-        retentionDays: 7
+        retentionDays: 7,
+        themeMode: ThemeMode.SYSTEM
       }, 1700000000400)).assertEqual(null);
       expect(settings.loadAppSettings().args[0]).assertEqual('appSettings');
     });
@@ -503,7 +509,8 @@ export default function localUnitTest() {
         autoWriteEnabled: false,
         historyEnabled: true,
         historyLimit: 0,
-        retentionDays: 7
+        retentionDays: 7,
+        themeMode: ThemeMode.SYSTEM
       }, 1700604800000);
       expect(zeroHistory === null).assertEqual(false);
       if (zeroHistory === null) {
@@ -520,7 +527,8 @@ export default function localUnitTest() {
         autoWriteEnabled: false,
         historyEnabled: true,
         historyLimit: 10,
-        retentionDays: 7
+        retentionDays: 7,
+        themeMode: ThemeMode.SYSTEM
       }, 1700604800000);
       expect(invalid).assertEqual(null);
     });

@@ -1,5 +1,5 @@
-import { common } from '@kit.AbilityKit';
-import { AppSettings, defaultAppSettings } from '../models/DomainModels';
+import { common, ConfigurationConstant } from '@kit.AbilityKit';
+import { AppSettings, ThemeMode, defaultAppSettings } from '../models/DomainModels';
 import {
   SettingsStore,
   SettingsStoreSnapshot,
@@ -20,6 +20,7 @@ export struct SettingsPage {
   @State private historyEnabled: boolean = true;
   @State private historyLimit: number = 50;
   @State private retentionDays: number = 7;
+  @State private themeMode: ThemeMode = ThemeMode.SYSTEM;
 
   aboutToAppear(): void {
     if (this.settingsStore === null) {
@@ -40,6 +41,7 @@ export struct SettingsPage {
         this.Header()
         this.SyncPolicyCard()
         this.HistoryPolicyCard()
+        this.AppearanceCard()
         this.PrivacyCard()
       }
       .width('100%')
@@ -152,6 +154,35 @@ export struct SettingsPage {
   }
 
   @Builder
+  private AppearanceCard() {
+    Column({ space: 12 }) {
+      Text('外观')
+        .fontSize(EggClipTypography.bodySize)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(EggClipColors.textPrimary)
+        .width('100%')
+
+      Text('主题设置保存在本机，只影响当前应用界面。')
+        .fontSize(EggClipTypography.captionSize)
+        .fontColor(EggClipColors.textSecondary)
+        .lineHeight(20)
+        .width('100%')
+
+      Row({ space: 8 }) {
+        this.ThemeModeButton(ThemeMode.SYSTEM, '跟随')
+        this.ThemeModeButton(ThemeMode.LIGHT, '浅色')
+        this.ThemeModeButton(ThemeMode.DARK, '深色')
+      }
+      .width('100%')
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(EggClipSpacing.cardPadding)
+    .backgroundColor(EggClipColors.cardBackground)
+    .borderRadius(EggClipSpacing.radiusMedium)
+  }
+
+  @Builder
   private PrivacyCard() {
     Column({ space: 8 }) {
       Text('隐私说明')
@@ -196,6 +227,22 @@ export struct SettingsPage {
         .onClick(action)
     }
     .width('100%')
+  }
+
+  @Builder
+  private ThemeModeButton(mode: ThemeMode, label: string) {
+    Button(label)
+      .layoutWeight(1)
+      .height(36)
+      .enabled(this.storeState !== SettingsStoreState.SAVING)
+      .fontColor(this.themeMode === mode ? EggClipColors.onPrimary : EggClipColors.textSecondary)
+      .backgroundColor(this.themeMode === mode ? EggClipColors.primary : EggClipColors.controlBackground)
+      .borderRadius(18)
+      .onClick(() => {
+        this.themeMode = mode;
+        this.applyThemeMode(mode);
+        this.saveCurrentSettings();
+      })
   }
 
   @Builder
@@ -256,7 +303,8 @@ export struct SettingsPage {
       autoWriteEnabled: this.autoWriteEnabled,
       historyEnabled: this.historyEnabled,
       historyLimit: this.historyLimit,
-      retentionDays: this.retentionDays
+      retentionDays: this.retentionDays,
+      themeMode: this.themeMode
     };
     this.storeState = SettingsStoreState.SAVING;
     this.statusText = '正在保存设置';
@@ -280,5 +328,24 @@ export struct SettingsPage {
     this.historyEnabled = settings.historyEnabled;
     this.historyLimit = settings.historyLimit;
     this.retentionDays = settings.retentionDays;
+    this.themeMode = settings.themeMode;
+    this.applyThemeMode(settings.themeMode);
+  }
+
+  private applyThemeMode(mode: ThemeMode): void {
+    const hostContext = this.getUIContext().getHostContext();
+    if (hostContext === undefined) {
+      return;
+    }
+    const abilityContext = hostContext as common.UIAbilityContext;
+    if (mode === ThemeMode.DARK) {
+      abilityContext.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
+      return;
+    }
+    if (mode === ThemeMode.LIGHT) {
+      abilityContext.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT);
+      return;
+    }
+    abilityContext.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
   }
 }

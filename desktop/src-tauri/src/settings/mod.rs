@@ -94,6 +94,7 @@ mod tests {
             history_enabled: true,
             history_limit: 20,
             retention_days: 14,
+            ..AppSettings::default()
         };
 
         let saved = save_app_settings_to_path(&path, settings.clone(), 1_700_000_000_000)

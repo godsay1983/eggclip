@@ -95,6 +95,7 @@ export function cloneSettings(settings: AppSettings): AppSettings {
     autoWriteEnabled: settings.autoWriteEnabled,
     historyEnabled: settings.historyEnabled,
     historyLimit: settings.historyLimit,
-    retentionDays: settings.retentionDays
+    retentionDays: settings.retentionDays,
+    themeMode: settings.themeMode
   };
 }

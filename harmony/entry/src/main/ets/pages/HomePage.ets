@@ -66,9 +66,6 @@ export struct HomePage {
     Scroll() {
       Column({ space: EggClipSpacing.sectionGap }) {
         this.Header()
-        this.ConnectionCard()
-        this.DiscoveryCard()
-        this.ManualTransportCard()
         this.LatestClipboardCard()
         this.HistoryPlaceholder()
       }
@@ -87,50 +84,38 @@ export struct HomePage {
 
   @Builder
   private Header() {
-    Column({ space: 14 }) {
-      Row() {
-        Column({ space: 4 }) {
+    Row({ space: 12 }) {
+      Image($r('app.media.startIcon'))
+        .width(54)
+        .height(54)
+        .objectFit(ImageFit.Contain)
+
+      Column({ space: 4 }) {
+        Row({ space: 8 }) {
           Text('蛋定 Clip')
             .fontSize(EggClipTypography.titleSize)
             .fontWeight(FontWeight.Bold)
             .fontColor(EggClipColors.textPrimary)
 
-          Text('只在局域网内同步纯文本剪贴板')
+          Text('Beta')
             .fontSize(EggClipTypography.captionSize)
-            .fontColor(EggClipColors.textSecondary)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(EggClipColors.onPrimary)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .backgroundColor(EggClipColors.primary)
+            .borderRadius(16)
         }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
+        .width('100%')
 
-        Text('Beta')
+        Text('剪贴板收发')
           .fontSize(EggClipTypography.captionSize)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(EggClipColors.onPrimary)
-          .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-          .backgroundColor(EggClipColors.primary)
-          .borderRadius(16)
+          .fontColor(EggClipColors.textSecondary)
       }
-      .width('100%')
-
-      Row({ space: 8 }) {
-        this.FeaturePill('局域网')
-        this.FeaturePill('无账号')
-        this.FeaturePill('手动授权读取')
-      }
-      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
     }
-    .alignItems(HorizontalAlign.Start)
+    .alignItems(VerticalAlign.Center)
     .width('100%')
-  }
-
-  @Builder
-  private FeaturePill(label: string) {
-    Text(label)
-      .fontSize(11)
-      .fontColor(EggClipColors.textSecondary)
-      .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-      .backgroundColor(EggClipColors.controlBackground)
-      .borderRadius(14)
   }
 
   @Builder

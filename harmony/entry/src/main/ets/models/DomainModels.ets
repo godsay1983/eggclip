@@ -52,6 +52,12 @@ export enum SyncPauseReason {
   AUTO_WRITE_DISABLED = 'autoWriteDisabled'
 }
 
+export enum ThemeMode {
+  SYSTEM = 'system',
+  LIGHT = 'light',
+  DARK = 'dark'
+}
+
 export interface LocalClipboardSyncPolicy {
   persistLocally: boolean;
   broadcastAfterCommit: boolean;
@@ -111,6 +117,7 @@ export interface AppSettings {
   historyEnabled: boolean;
   historyLimit: number;
   retentionDays: number;
+  themeMode: ThemeMode;
 }
 
 export interface ValidationResult {
@@ -143,7 +150,8 @@ export function defaultAppSettings(): AppSettings {
     autoWriteEnabled: false,
     historyEnabled: true,
     historyLimit: DEFAULT_HISTORY_LIMIT,
-    retentionDays: DEFAULT_RETENTION_DAYS
+    retentionDays: DEFAULT_RETENTION_DAYS,
+    themeMode: ThemeMode.SYSTEM
   };
 }
 
@@ -154,6 +162,10 @@ export function validateAppSettings(settings: AppSettings): ValidationResult {
   }
   if (!isNonNegativeSafeInteger(settings.retentionDays)) {
     return { ok: false, error: DomainValidationError.INVALID_FIELD, field: 'retentionDays' };
+  }
+  if (settings.themeMode !== ThemeMode.SYSTEM && settings.themeMode !== ThemeMode.LIGHT &&
+    settings.themeMode !== ThemeMode.DARK) {
+    return { ok: false, error: DomainValidationError.INVALID_FIELD, field: 'themeMode' };
   }
   return { ok: true };
 }

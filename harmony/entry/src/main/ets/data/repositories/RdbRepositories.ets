@@ -11,6 +11,7 @@ import {
   Space,
   SpaceState,
   SyncHead,
+  defaultAppSettings,
   deduplicateClipboardItem,
   validateAppSettings
 } from '../../models/DomainModels';
@@ -281,7 +282,17 @@ export class SettingsRdbRepository {
         return null;
       }
       const value = getString(resultSet, 'value');
-      const settings = JSON.parse(value) as AppSettings;
+      const parsed = JSON.parse(value) as AppSettings;
+      const defaults = defaultAppSettings();
+      const settings: AppSettings = {
+        syncEnabled: parsed.syncEnabled ?? defaults.syncEnabled,
+        autoReceiveEnabled: parsed.autoReceiveEnabled ?? defaults.autoReceiveEnabled,
+        autoWriteEnabled: parsed.autoWriteEnabled ?? defaults.autoWriteEnabled,
+        historyEnabled: parsed.historyEnabled ?? defaults.historyEnabled,
+        historyLimit: parsed.historyLimit ?? defaults.historyLimit,
+        retentionDays: parsed.retentionDays ?? defaults.retentionDays,
+        themeMode: parsed.themeMode ?? defaults.themeMode
+      };
       if (!validateAppSettings(settings).ok) {
         throw new Error('Invalid app settings metadata');
       }

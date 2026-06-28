@@ -73,13 +73,14 @@ footer,
 }
 
 .brand-mark {
-  display: grid;
   width: 52px;
   height: 52px;
-  place-items: center;
+  display: block;
+  flex: 0 0 auto;
+  object-fit: contain;
   border-radius: 19px;
   background: linear-gradient(145deg, #fff8da, var(--control));
-  font-size: 28px;
+  padding: 4px;
   box-shadow: inset 0 0 0 1px rgba(167, 122, 0, 0.12);
 }
 
@@ -412,6 +413,19 @@ footer {
   margin-top: 4px;
 }
 
+.settings-popover .status-card,
+.settings-popover .poc-connect-card,
+.settings-popover .device-section {
+  margin-top: 12px;
+  box-shadow: none;
+}
+
+.settings-divider {
+  height: 1px;
+  margin: 14px 0 2px;
+  background: var(--line);
+}
+
 .settings-note {
   margin: 0 0 12px;
   padding: 10px 12px;
@@ -549,8 +563,60 @@ footer {
   font-size: 12px;
 }
 
+:root[data-theme="dark"] {
+  color: #f7f0e4;
+  background: #1c1914;
+  --page: #1c1914;
+  --card: rgba(41, 37, 30, 0.9);
+  --card-strong: #29251e;
+  --control: #393329;
+  --primary: #e7be32;
+  --primary-deep: #e7be32;
+  --primary-soft: rgba(231, 190, 50, 0.14);
+  --text: #f7f0e4;
+  --muted: #bdb3a2;
+  --line: rgba(255, 244, 221, 0.09);
+  --online: #78c091;
+  --offline: #786f62;
+}
+
+:root[data-theme="dark"] body {
+  background:
+    radial-gradient(circle at 85% 0%, rgba(231, 190, 50, 0.13), transparent 34%),
+    radial-gradient(circle at 8% 92%, rgba(231, 190, 50, 0.1), transparent 30%),
+    var(--page);
+}
+
+:root[data-theme="dark"] .panel-shell {
+  border-color: rgba(231, 190, 50, 0.4);
+  background: rgba(28, 25, 20, 0.95);
+}
+
+:root[data-theme="dark"] .settings-popover {
+  border-color: rgba(231, 190, 50, 0.18);
+  background: rgba(41, 37, 30, 0.98);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+}
+
+:root[data-theme="dark"] .brand-mark {
+  background: linear-gradient(145deg, #4a3b1b, var(--control));
+}
+
+:root[data-theme="dark"] .primary-action {
+  background: linear-gradient(180deg, #f4cc43, var(--primary));
+}
+
+:root[data-theme="dark"] .setting-grid label {
+  background: rgba(57, 51, 41, 0.62);
+}
+
+:root[data-theme="dark"] .status-label.online {
+  color: #b8f1c9;
+  background: rgba(120, 192, 145, 0.14);
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
     color: #f7f0e4;
     background: #1c1914;
     --page: #1c1914;
@@ -567,37 +633,37 @@ footer {
     --offline: #786f62;
   }
 
-  body {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) body {
     background:
       radial-gradient(circle at 85% 0%, rgba(231, 190, 50, 0.13), transparent 34%),
       radial-gradient(circle at 8% 92%, rgba(231, 190, 50, 0.1), transparent 30%),
       var(--page);
   }
 
-  .panel-shell {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .panel-shell {
     border-color: rgba(231, 190, 50, 0.4);
     background: rgba(28, 25, 20, 0.95);
   }
 
-  .settings-popover {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .settings-popover {
     border-color: rgba(231, 190, 50, 0.18);
     background: rgba(41, 37, 30, 0.98);
     box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
   }
 
-  .brand-mark {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .brand-mark {
     background: linear-gradient(145deg, #4a3b1b, var(--control));
   }
 
-  .primary-action {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .primary-action {
     background: linear-gradient(180deg, #f4cc43, var(--primary));
   }
 
-  .setting-grid label {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .setting-grid label {
     background: rgba(57, 51, 41, 0.62);
   }
 
-  .status-label.online {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .status-label.online {
     color: #b8f1c9;
     background: rgba(120, 192, 145, 0.14);
   }
