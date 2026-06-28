@@ -19,7 +19,7 @@ export class RdbCommandRunner {
     }
   }
 
-  private bindArgs(args: SqlValue[]): relationalStore.ValueType[] {
+  bindArgs(args: SqlValue[]): relationalStore.ValueType[] {
     const values: relationalStore.ValueType[] = [];
     for (const arg of args) {
       values.push(arg);

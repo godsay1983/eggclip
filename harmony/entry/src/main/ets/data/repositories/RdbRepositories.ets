@@ -1,0 +1,356 @@
+import { common } from '@kit.AbilityKit';
+import { relationalStore } from '@kit.ArkData';
+import {
+  AppSettings,
+  ClipboardItem,
+  ContentType,
+  Device,
+  DeviceConnectionState,
+  DeviceTrustState,
+  Space,
+  SpaceState,
+  SyncHead,
+  validateAppSettings
+} from '../../models/DomainModels';
+import { Database } from '../db/Database';
+import { RdbCommandRunner } from '../db/RdbCommandRunner';
+import {
+  ClipboardItemRecord,
+  ClipboardRepository,
+  DeviceRecord,
+  DeviceRepository,
+  SettingsRepository,
+  SpaceRecord,
+  SpaceRepository,
+  SyncHeadRecord,
+  SyncHeadRepository
+} from './RepositoryCommands';
+
+export class SpaceRdbRepository {
+  private readonly context: common.Context;
+  private readonly commands: SpaceRepository = new SpaceRepository();
+  private readonly runner: RdbCommandRunner = new RdbCommandRunner();
+
+  constructor(context: common.Context) {
+    this.context = context;
+  }
+
+  async upsert(record: SpaceRecord): Promise<void> {
+    const store = await Database.getStore(this.context);
+    await this.runner.execute(store, this.commands.upsert(record));
+  }
+
+  async get(spaceId: string): Promise<SpaceRecord | null> {
+    const store = await Database.getStore(this.context);
+    const resultSet = await store.querySql(
+      `SELECT space_id, display_name, encrypted_space_key_ref, key_version, state, created_at, updated_at
+        FROM spaces WHERE space_id = ? LIMIT 1`,
+      [spaceId]
+    );
+    try {
+      if (!resultSet.goToFirstRow()) {
+        return null;
+      }
+      return readSpaceRecord(resultSet);
+    } finally {
+      resultSet.close();
+    }
+  }
+}
+
+export class DeviceRdbRepository {
+  private readonly context: common.Context;
+  private readonly commands: DeviceRepository = new DeviceRepository();
+  private readonly runner: RdbCommandRunner = new RdbCommandRunner();
+
+  constructor(context: common.Context) {
+    this.context = context;
+  }
+
+  async upsert(record: DeviceRecord): Promise<void> {
+    const store = await Database.getStore(this.context);
+    await this.runner.execute(store, this.commands.upsert(record));
+  }
+
+  async get(deviceId: string): Promise<DeviceRecord | null> {
+    const store = await Database.getStore(this.context);
+    const resultSet = await store.querySql(
+      `SELECT device_id, space_id, display_name, identity_public_key, trust_state,
+        connection_state, paired_at, last_seen_at, revoked_at
+        FROM devices WHERE device_id = ? LIMIT 1`,
+      [deviceId]
+    );
+    try {
+      if (!resultSet.goToFirstRow()) {
+        return null;
+      }
+      return readDeviceRecord(resultSet);
+    } finally {
+      resultSet.close();
+    }
+  }
+
+  async listBySpace(spaceId: string): Promise<DeviceRecord[]> {
+    const store = await Database.getStore(this.context);
+    const command = this.commands.listBySpace(spaceId);
+    const resultSet = await store.querySql(command.sql, this.runner.bindArgs(command.args));
+    const records: DeviceRecord[] = [];
+    try {
+      if (!resultSet.goToFirstRow()) {
+        return records;
+      }
+      do {
+        records.push(readDeviceRecord(resultSet));
+      } while (resultSet.goToNextRow());
+      return records;
+    } finally {
+      resultSet.close();
+    }
+  }
+}
+
+export class ClipboardRdbRepository {
+  private readonly context: common.Context;
+  private readonly commands: ClipboardRepository = new ClipboardRepository();
+  private readonly runner: RdbCommandRunner = new RdbCommandRunner();
+
+  constructor(context: common.Context) {
+    this.context = context;
+  }
+
+  async insert(record: ClipboardItemRecord): Promise<void> {
+    const command = this.commands.insert(record);
+    if (command === null) {
+      throw new Error('Invalid clipboard item record');
+    }
+    const store = await Database.getStore(this.context);
+    await this.runner.execute(store, command);
+  }
+
+  async get(itemId: string): Promise<ClipboardItemRecord | null> {
+    const store = await Database.getStore(this.context);
+    const command = this.commands.get(itemId);
+    const resultSet = await store.querySql(command.sql, this.runner.bindArgs(command.args));
+    try {
+      if (!resultSet.goToFirstRow()) {
+        return null;
+      }
+      return readClipboardRecord(resultSet);
+    } finally {
+      resultSet.close();
+    }
+  }
+
+  async listRecent(spaceId: string, limit: number): Promise<ClipboardItemRecord[]> {
+    const store = await Database.getStore(this.context);
+    const command = this.commands.listRecent(spaceId, limit);
+    const resultSet = await store.querySql(command.sql, this.runner.bindArgs(command.args));
+    const records: ClipboardItemRecord[] = [];
+    try {
+      if (!resultSet.goToFirstRow()) {
+        return records;
+      }
+      do {
+        records.push(readClipboardRecord(resultSet));
+      } while (resultSet.goToNextRow());
+      return records;
+    } finally {
+      resultSet.close();
+    }
+  }
+
+  async markDeleted(itemId: string, deletedAt: number): Promise<void> {
+    const store = await Database.getStore(this.context);
+    await this.runner.execute(store, this.commands.markDeleted(itemId, deletedAt));
+  }
+
+  async clearHistory(spaceId: string, deletedAt: number): Promise<void> {
+    const store = await Database.getStore(this.context);
+    await this.runner.execute(store, this.commands.clearHistory(spaceId, deletedAt));
+  }
+
+  async applyRetention(spaceId: string, settings: AppSettings, nowMs: number): Promise<void> {
+    const commands = this.commands.retentionCommands(spaceId, settings, nowMs);
+    if (commands === null) {
+      throw new Error('Invalid app settings for retention');
+    }
+    const store = await Database.getStore(this.context);
+    await this.runner.executeTransaction(store, commands);
+  }
+}
+
+export class SyncHeadRdbRepository {
+  private readonly context: common.Context;
+  private readonly commands: SyncHeadRepository = new SyncHeadRepository();
+  private readonly runner: RdbCommandRunner = new RdbCommandRunner();
+
+  constructor(context: common.Context) {
+    this.context = context;
+  }
+
+  async upsert(record: SyncHeadRecord): Promise<void> {
+    const store = await Database.getStore(this.context);
+    await this.runner.execute(store, this.commands.upsert(record));
+  }
+
+  async listForPeer(spaceId: string, peerDeviceId: string): Promise<SyncHeadRecord[]> {
+    const store = await Database.getStore(this.context);
+    const resultSet = await store.querySql(
+      `SELECT space_id, peer_device_id, origin_device_id, highest_origin_seq, minimum_available, updated_at
+        FROM sync_heads WHERE space_id = ? AND peer_device_id = ?
+        ORDER BY origin_device_id`,
+      [spaceId, peerDeviceId]
+    );
+    const records: SyncHeadRecord[] = [];
+    try {
+      if (!resultSet.goToFirstRow()) {
+        return records;
+      }
+      do {
+        records.push(readSyncHeadRecord(resultSet));
+      } while (resultSet.goToNextRow());
+      return records;
+    } finally {
+      resultSet.close();
+    }
+  }
+}
+
+export class SettingsRdbRepository {
+  private readonly context: common.Context;
+  private readonly commands: SettingsRepository = new SettingsRepository();
+  private readonly runner: RdbCommandRunner = new RdbCommandRunner();
+
+  constructor(context: common.Context) {
+    this.context = context;
+  }
+
+  async saveAppSettings(settings: AppSettings, updatedAt: number): Promise<void> {
+    const command = this.commands.saveAppSettings(settings, updatedAt);
+    if (command === null) {
+      throw new Error('Invalid app settings');
+    }
+    const store = await Database.getStore(this.context);
+    await this.runner.execute(store, command);
+  }
+
+  async loadAppSettings(): Promise<AppSettings | null> {
+    const store = await Database.getStore(this.context);
+    const command = this.commands.loadAppSettings();
+    const resultSet = await store.querySql(command.sql, this.runner.bindArgs(command.args));
+    try {
+      if (!resultSet.goToFirstRow()) {
+        return null;
+      }
+      const value = getString(resultSet, 'value');
+      const settings = JSON.parse(value) as AppSettings;
+      if (!validateAppSettings(settings).ok) {
+        throw new Error('Invalid app settings metadata');
+      }
+      return settings;
+    } finally {
+      resultSet.close();
+    }
+  }
+}
+
+function readSpaceRecord(resultSet: relationalStore.ResultSet): SpaceRecord {
+  const encryptedSpaceKeyRef = getNullableString(resultSet, 'encrypted_space_key_ref');
+  const space: Space = {
+    spaceId: getString(resultSet, 'space_id'),
+    displayName: getString(resultSet, 'display_name'),
+    keyVersion: getNumber(resultSet, 'key_version'),
+    state: getString(resultSet, 'state') as SpaceState,
+    createdAt: getNumber(resultSet, 'created_at')
+  };
+  return {
+    space,
+    encryptedSpaceKeyRef: encryptedSpaceKeyRef ?? undefined,
+    updatedAt: getNumber(resultSet, 'updated_at')
+  };
+}
+
+function readDeviceRecord(resultSet: relationalStore.ResultSet): DeviceRecord {
+  const lastSeenAt = getNullableNumber(resultSet, 'last_seen_at');
+  const device: Device = {
+    deviceId: getString(resultSet, 'device_id'),
+    spaceId: getString(resultSet, 'space_id'),
+    displayName: getString(resultSet, 'display_name'),
+    identityPublicKeyRef: getString(resultSet, 'identity_public_key'),
+    trustState: getString(resultSet, 'trust_state') as DeviceTrustState,
+    connectionState: getString(resultSet, 'connection_state') as DeviceConnectionState,
+    lastSeenAt: lastSeenAt ?? undefined
+  };
+  return {
+    device,
+    pairedAt: getNullableNumber(resultSet, 'paired_at') ?? undefined,
+    revokedAt: getNullableNumber(resultSet, 'revoked_at') ?? undefined
+  };
+}
+
+function readClipboardRecord(resultSet: relationalStore.ResultSet): ClipboardItemRecord {
+  const item: ClipboardItem = {
+    itemId: getString(resultSet, 'item_id'),
+    spaceId: getString(resultSet, 'space_id'),
+    originDeviceId: getString(resultSet, 'origin_device_id'),
+    originSeq: getNumber(resultSet, 'origin_seq'),
+    hlc: getString(resultSet, 'hlc'),
+    contentType: getString(resultSet, 'content_type') as ContentType,
+    contentLength: getNumber(resultSet, 'content_length'),
+    contentDigest: getString(resultSet, 'content_digest'),
+    createdAt: getNumber(resultSet, 'created_at')
+  };
+  return {
+    item,
+    encryptedContent: getBlob(resultSet, 'encrypted_content'),
+    receivedAt: getNumber(resultSet, 'received_at'),
+    expiresAt: getNumber(resultSet, 'expires_at'),
+    deletedAt: getNullableNumber(resultSet, 'deleted_at') ?? undefined
+  };
+}
+
+function readSyncHeadRecord(resultSet: relationalStore.ResultSet): SyncHeadRecord {
+  const head: SyncHead = {
+    spaceId: getString(resultSet, 'space_id'),
+    originDeviceId: getString(resultSet, 'origin_device_id'),
+    latestOriginSeq: getNumber(resultSet, 'highest_origin_seq'),
+    minimumAvailable: getNumber(resultSet, 'minimum_available'),
+    updatedAt: getNumber(resultSet, 'updated_at')
+  };
+  return {
+    head,
+    peerDeviceId: getString(resultSet, 'peer_device_id')
+  };
+}
+
+function getString(resultSet: relationalStore.ResultSet, columnName: string): string {
+  return resultSet.getString(resultSet.getColumnIndex(columnName));
+}
+
+function getNullableString(resultSet: relationalStore.ResultSet, columnName: string): string | null {
+  const columnIndex = resultSet.getColumnIndex(columnName);
+  if (resultSet.isColumnNull(columnIndex)) {
+    return null;
+  }
+  return resultSet.getString(columnIndex);
+}
+
+function getNumber(resultSet: relationalStore.ResultSet, columnName: string): number {
+  return resultSet.getLong(resultSet.getColumnIndex(columnName));
+}
+
+function getNullableNumber(resultSet: relationalStore.ResultSet, columnName: string): number | null {
+  const columnIndex = resultSet.getColumnIndex(columnName);
+  if (resultSet.isColumnNull(columnIndex)) {
+    return null;
+  }
+  return resultSet.getLong(columnIndex);
+}
+
+function getBlob(resultSet: relationalStore.ResultSet, columnName: string): Uint8Array {
+  const columnIndex = resultSet.getColumnIndex(columnName);
+  if (resultSet.isColumnNull(columnIndex)) {
+    return new Uint8Array();
+  }
+  return resultSet.getBlob(columnIndex);
+}

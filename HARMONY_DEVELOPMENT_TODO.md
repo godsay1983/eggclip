@@ -141,15 +141,16 @@ harmony/entry/src/main/ets/
 - [x] 创建 `schema_migrations`。
 - [x] 创建 `clipboard_items`、`devices`、`spaces`、`sync_heads` 和 `app_metadata`。
 - [x] 实现 transaction 和顺序 migration runner。
-- [ ] 实现 ClipboardRepository、DeviceRepository、SpaceRepository 和 SettingsRepository。
-  - [x] 建立 repository SQL command 层，覆盖 Clipboard、Device、Space、SyncHead 和 Settings，真实 `relationalStore` runner 待接入。
+- [x] 实现 ClipboardRepository、DeviceRepository、SpaceRepository 和 SettingsRepository。
+  - [x] 建立 repository SQL command 层，覆盖 Clipboard、Device、Space、SyncHead 和 Settings。
+  - [x] 接入真实 RDB repository 服务层，复用 command 层执行 Space、Device、Clipboard、SyncHead 和 Settings 读写。
 - [x] 生成并持久化随机 `deviceId` 和本机 `originSeq`。
   - [x] 建立本机 `deviceId` 与 `nextOriginSeq` 的 repository SQL command 层；随机生成与真实 `relationalStore` 持久化待接入。
   - [x] 建立本地剪贴板持久化命令计划：由 PasteButton 明文生成 `ClipboardItem`、写入 `encrypted_content`、推进 `originSeq`；真实 transaction 执行和广播接入待后续服务编排实现。
   - [x] 接入 `LocalIdentityRdbRepository`，使用真实 RDB 保存本机 `deviceId`，并以 transaction 分配/推进 `originSeq`。
-- [ ] 实现最近 50 条、最长 7 天 retention。
-  - [x] 建立 retention SQL command 层，覆盖过期清理、数量超限和清空历史；真实 `relationalStore` runner 待接入。
-- [ ] 支持历史数量 0、20、50、100。
+- [x] 实现最近 50 条、最长 7 天 retention。
+  - [x] 建立 retention SQL command 层并通过真实 RDB transaction runner 执行，覆盖过期清理、数量超限和清空历史。
+- [x] 支持历史数量 0、20、50、100。
   - [x] command 层已按 `AppSettings` 校验 0、20、50、100，非法历史数量拒绝生成清理命令。
 - [ ] 为新库、重复 migration 和旧版本升级添加测试。
 
