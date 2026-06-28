@@ -112,6 +112,10 @@ export async function clearClipboardHistory(): Promise<number> {
   return invoke<number>("clear_clipboard_history");
 }
 
+export async function deleteClipboardHistoryItem(itemId: string): Promise<boolean> {
+  return invoke<boolean>("delete_clipboard_history_item", { itemId });
+}
+
 export async function getClipboardHistoryUsed(): Promise<number> {
   return invoke<number>("get_clipboard_history_used");
 }

@@ -98,6 +98,7 @@
       limit: $settingsSnapshot.settings.historyLimit,
     }}
     onClear={() => shellSnapshot.clearHistory()}
+    onDelete={(itemId) => shellSnapshot.deleteHistoryItem(itemId)}
   />
 
   {#if settingsVisible}

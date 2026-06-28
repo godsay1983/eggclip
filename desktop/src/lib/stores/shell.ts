@@ -3,6 +3,7 @@ import {
   connectPocPeer,
   createInitialShellSnapshot,
   clearClipboardHistory,
+  deleteClipboardHistoryItem,
   disconnectAllPocPeers,
   getClipboardHistoryUsed,
   getPocTransportStatus,
@@ -319,6 +320,32 @@ export const shellSnapshot = {
           state: "authFailed",
           title: "清空历史失败",
           description: error instanceof Error ? error.message : "无法清空本机历史",
+        },
+      }));
+      throw error;
+    }
+  },
+  async deleteHistoryItem(itemId: string) {
+    try {
+      const deleted = await deleteClipboardHistoryItem(itemId);
+      await this.refreshHistorySummary();
+      snapshot.update((state) => ({
+        ...state,
+        connection: {
+          state: "online",
+          title: deleted ? "已删除历史记录" : "历史记录已不存在",
+          description: deleted
+            ? "已从本机历史中移除此记录；不会修改当前系统剪贴板"
+            : "该记录可能已被清空或删除",
+        },
+      }));
+    } catch (error) {
+      snapshot.update((state) => ({
+        ...state,
+        connection: {
+          state: "authFailed",
+          title: "删除历史记录失败",
+          description: error instanceof Error ? error.message : "无法删除本机历史记录",
         },
       }));
       throw error;

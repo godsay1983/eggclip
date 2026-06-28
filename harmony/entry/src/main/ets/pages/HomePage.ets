@@ -36,6 +36,7 @@ export struct HomePage {
   @State private historyLimit: number = 50;
   @State private historyItems: HistoryPreviewItem[] = [];
   @State private historyStatus: string = '正在读取本机历史摘要';
+  @State private deletingHistoryItemId: string = '';
 
   aboutToAppear(): void {
     pocConnectionStore.subscribe(this.connectionSnapshotListener);
@@ -240,12 +241,21 @@ export struct HomePage {
   @Builder
   private HistoryItem(item: HistoryPreviewItem) {
     Column({ space: 4 }) {
-      Row() {
-        Text(item.title)
-          .fontSize(EggClipTypography.captionSize)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(EggClipColors.textPrimary)
-          .layoutWeight(1)
+      Row({ space: 8 }) {
+        Column({ space: 4 }) {
+          Text(item.title)
+            .fontSize(EggClipTypography.captionSize)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(EggClipColors.textPrimary)
+
+          Text(item.preview)
+            .width('100%')
+            .fontSize(11)
+            .fontColor(EggClipColors.textSecondary)
+            .lineHeight(18)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
 
         Text(item.receivedAt)
           .fontSize(11)
@@ -253,16 +263,24 @@ export struct HomePage {
       }
       .width('100%')
 
-      Text(item.preview)
-        .width('100%')
-        .fontSize(11)
-        .fontColor(EggClipColors.textSecondary)
-        .lineHeight(18)
+      Row({ space: 8 }) {
+        Text(item.source)
+          .fontSize(10)
+          .fontColor(EggClipColors.textSecondary)
+          .layoutWeight(1)
 
-      Text(item.source)
-        .width('100%')
-        .fontSize(10)
-        .fontColor(EggClipColors.textSecondary)
+        Button(this.deletingHistoryItemId === item.id ? '删除中' : '删除')
+          .height(28)
+          .enabled(this.deletingHistoryItemId.length === 0)
+          .fontSize(11)
+          .fontColor(EggClipColors.textSecondary)
+          .backgroundColor(EggClipColors.cardBackground)
+          .borderRadius(14)
+          .onClick(() => {
+            this.deleteHistoryItem(item.id);
+          })
+      }
+      .width('100%')
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -318,6 +336,28 @@ export struct HomePage {
       .catch(() => {
         this.historyItems = [];
         this.historyStatus = '读取历史摘要失败';
+      });
+  }
+
+  private deleteHistoryItem(itemId: string): void {
+    if (this.historyStore === null || this.deletingHistoryItemId.length > 0) {
+      return;
+    }
+
+    this.deletingHistoryItemId = itemId;
+    this.historyStatus = '正在删除历史记录';
+    this.historyStore.deleteItem(itemId)
+      .then((snapshot: HistoryStoreSnapshot) => {
+        this.historyUsed = snapshot.used;
+        this.historyLimit = snapshot.limit;
+        this.historyItems = snapshot.items;
+        this.historyStatus = snapshot.errorMessage.length > 0 ? snapshot.errorMessage : '已删除历史记录';
+      })
+      .catch(() => {
+        this.historyStatus = '删除历史记录失败';
+      })
+      .finally(() => {
+        this.deletingHistoryItemId = '';
       });
   }
 }

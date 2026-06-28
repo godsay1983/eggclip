@@ -74,6 +74,19 @@ export class HistoryStore {
     }
     return this.snapshot();
   }
+
+  async deleteItem(itemId: string): Promise<HistoryStoreSnapshot> {
+    this.currentState = HistoryStoreState.LOADING;
+    this.currentErrorMessage = '';
+    try {
+      await this.clipboardRepository.markDeleted(itemId, Date.now());
+    } catch (_) {
+      this.currentState = HistoryStoreState.ERROR;
+      this.currentErrorMessage = '删除历史记录失败';
+      return this.snapshot();
+    }
+    return this.loadSummary();
+  }
 }
 
 export function createInitialHistorySnapshot(): HistoryStoreSnapshot {

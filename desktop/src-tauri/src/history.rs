@@ -2,6 +2,7 @@ use std::path::Path;
 
 use serde::Serialize;
 use tauri::AppHandle;
+use uuid::Uuid;
 
 use crate::{
     settings::{database_path, now_ms},
@@ -42,6 +43,12 @@ pub fn list_clipboard_history_preview(app: AppHandle) -> Result<Vec<HistoryItemS
     list_clipboard_history_preview_at_path(&path, HISTORY_PREVIEW_LIMIT)
 }
 
+#[tauri::command]
+pub fn delete_clipboard_history_item(app: AppHandle, item_id: String) -> Result<bool, String> {
+    let path = database_path(&app)?;
+    delete_clipboard_history_item_at_path(&path, &item_id, now_ms()?)
+}
+
 fn clear_clipboard_history_at_path(path: &Path, deleted_at: u64) -> Result<usize, String> {
     let connection = open_database(path).map_err(|error| format!("无法打开本地数据库：{error}"))?;
     ClipboardRepository::new(&connection)
@@ -65,6 +72,18 @@ fn list_clipboard_history_preview_at_path(
         .list_recent_all(limit)
         .map(|records| records.iter().map(to_history_item_summary).collect())
         .map_err(|error| format!("无法读取历史记录：{error}"))
+}
+
+fn delete_clipboard_history_item_at_path(
+    path: &Path,
+    item_id: &str,
+    deleted_at: u64,
+) -> Result<bool, String> {
+    let item_id = Uuid::parse_str(item_id).map_err(|_| "历史记录 ID 无效".to_string())?;
+    let connection = open_database(path).map_err(|error| format!("无法打开本地数据库：{error}"))?;
+    ClipboardRepository::new(&connection)
+        .mark_deleted(item_id, deleted_at)
+        .map_err(|error| format!("无法删除历史记录：{error}"))
 }
 
 fn to_history_item_summary(record: &ClipboardItemRecord) -> HistoryItemSummary {
@@ -104,6 +123,7 @@ mod tests {
         let space_id = Uuid::now_v7().to_string();
         let device_id = Uuid::now_v7().to_string();
         let item_id = Uuid::now_v7().to_string();
+        let second_item_id = Uuid::now_v7().to_string();
         let deleted_item_id = Uuid::now_v7().to_string();
         connection
             .execute(
@@ -135,7 +155,16 @@ mod tests {
                 "INSERT INTO clipboard_items(
                     item_id, space_id, origin_device_id, origin_seq, hlc, content_type,
                     content_length, content_digest, encrypted_content, created_at, received_at, expires_at, deleted_at
-                 ) VALUES(?1, ?2, ?3, 2, '0000018bcfe56801-0000', 'text/plain', 4, 'digest-b', X'74657374', 1700000000001, 1700000000001, 1700604800000, 1700000000100)",
+                 ) VALUES(?1, ?2, ?3, 2, '0000018bcfe56802-0000', 'text/plain', 8, 'digest-c', X'7465737432', 1700000000002, 1700000000002, 1700604800000, NULL)",
+                params![second_item_id, space_id, device_id],
+            )
+            .expect("second active item should insert");
+        connection
+            .execute(
+                "INSERT INTO clipboard_items(
+                    item_id, space_id, origin_device_id, origin_seq, hlc, content_type,
+                    content_length, content_digest, encrypted_content, created_at, received_at, expires_at, deleted_at
+                 ) VALUES(?1, ?2, ?3, 3, '0000018bcfe56801-0000', 'text/plain', 4, 'digest-b', X'74657374', 1700000000001, 1700000000001, 1700604800000, 1700000000100)",
                 params![deleted_item_id, space_id, device_id],
             )
             .expect("deleted item should insert");
@@ -143,14 +172,26 @@ mod tests {
 
         assert_eq!(
             get_clipboard_history_used_at_path(&path).expect("history count should load"),
-            1
+            2
         );
         let items =
             list_clipboard_history_preview_at_path(&path, 5).expect("history preview should load");
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].id, item_id);
-        assert_eq!(items[0].content_length, 4);
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].id, second_item_id);
+        assert_eq!(items[0].content_length, 8);
         assert!(items[0].preview.contains("密钥解密链路"));
+        assert!(
+            delete_clipboard_history_item_at_path(&path, &second_item_id, 1_700_000_001_500)
+                .expect("item should delete")
+        );
+        assert_eq!(
+            get_clipboard_history_used_at_path(&path).expect("history count should reload"),
+            1
+        );
+        assert!(
+            !delete_clipboard_history_item_at_path(&path, &second_item_id, 1_700_000_001_600)
+                .expect("deleted item should be idempotent")
+        );
         let cleared = clear_clipboard_history_at_path(&path, 1_700_000_002_000)
             .expect("history should clear");
         assert_eq!(

@@ -3,7 +3,9 @@
 
   export let history: HistorySummary = { used: 0, limit: 50, items: [] };
   export let onClear: () => Promise<void> | void = () => {};
+  export let onDelete: (itemId: string) => Promise<void> | void = () => {};
   let clearing = false;
+  let deletingItemId: string | null = null;
 
   async function clearHistory() {
     clearing = true;
@@ -11,6 +13,15 @@
       await onClear();
     } finally {
       clearing = false;
+    }
+  }
+
+  async function deleteItem(itemId: string) {
+    deletingItemId = itemId;
+    try {
+      await onDelete(itemId);
+    } finally {
+      deletingItemId = null;
     }
   }
 </script>
@@ -34,9 +45,19 @@
     <div class="history-list" aria-label="最近历史记录">
       {#each history.items as item (item.id)}
         <article class="history-item">
-          <div>
-            <strong>{item.title}</strong>
-            <p>{item.preview}</p>
+          <div class="history-item-copy">
+            <div>
+              <strong>{item.title}</strong>
+              <p>{item.preview}</p>
+            </div>
+            <button
+              class="text-button danger"
+              type="button"
+              disabled={deletingItemId === item.id}
+              on:click={() => deleteItem(item.id)}
+            >
+              {deletingItemId === item.id ? "删除中" : "删除"}
+            </button>
           </div>
           <span class="metadata">{item.source} · {item.receivedAt}</span>
         </article>

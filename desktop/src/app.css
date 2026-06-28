@@ -555,6 +555,13 @@ footer {
   background: var(--control);
 }
 
+.history-item-copy {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+
 .history-item strong {
   font-size: 13px;
 }
