@@ -69,7 +69,9 @@ export class SettingsStore {
     this.currentSettings = cloneSettings(settings);
     this.currentErrorMessage = '';
     try {
-      await this.repository.saveAppSettings(this.currentSettings, Date.now());
+      const nowMs = Date.now();
+      await this.repository.saveAppSettings(this.currentSettings, nowMs);
+      await this.clipboardRepository.applyRetentionAll(this.currentSettings, nowMs);
       this.currentState = SettingsStoreState.READY;
     } catch (_) {
       this.currentState = SettingsStoreState.ERROR;

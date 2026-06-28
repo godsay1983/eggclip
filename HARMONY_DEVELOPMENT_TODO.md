@@ -342,6 +342,7 @@ harmony/entry/src/main/ets/
 
 - [ ] 历史数量和最长保留时间设置。
   - [x] SettingsPage 已通过 `SettingsStore` 读写历史数量和保留天数。
+  - [x] 保存历史数量、保留天数或关闭历史时，会立即对已有本机历史执行 retention 清理。
 - [ ] 清空历史和重置本机身份入口。
   - [x] SettingsPage 已接入“清空本机历史”入口，通过 `SettingsStore` 调用 RDB repository 标记删除全部本机历史，不修改系统剪贴板。
   - [ ] 重置本机身份入口待身份密钥/HUKS 流程明确后接入。

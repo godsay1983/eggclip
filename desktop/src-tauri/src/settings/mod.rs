@@ -7,7 +7,10 @@ use std::{
 use tauri::{AppHandle, Manager};
 
 use crate::{
-    storage::{open_database, repositories::SettingsRepository},
+    storage::{
+        open_database,
+        repositories::{ClipboardRepository, SettingsRepository},
+    },
     sync::AppSettings,
 };
 
@@ -54,6 +57,9 @@ fn save_app_settings_to_path(
     SettingsRepository::new(&connection)
         .save_app_settings(&settings, updated_at)
         .map_err(|error| format!("无法保存设置：{error}"))?;
+    ClipboardRepository::new(&connection)
+        .apply_global_retention(&settings, updated_at)
+        .map_err(|error| format!("无法应用历史策略：{error}"))?;
     Ok(settings)
 }
 
@@ -67,6 +73,7 @@ pub(crate) fn now_ms() -> Result<u64, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusqlite::params;
     use uuid::Uuid;
 
     fn temp_database_path() -> PathBuf {
@@ -124,5 +131,74 @@ mod tests {
         let _ = fs::remove_file(path.with_extension("db-wal"));
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn saving_history_policy_applies_retention_to_existing_items() {
+        let path = temp_database_path();
+        let connection = open_database(&path).expect("database should open");
+        let space_id = Uuid::now_v7().to_string();
+        let device_id = Uuid::now_v7().to_string();
+        connection
+            .execute(
+                "INSERT INTO spaces(space_id, display_name, encrypted_space_key_ref, key_version, state, created_at, updated_at)
+                 VALUES(?1, '测试空间', NULL, 1, 'active', 1700000000000, 1700000000000)",
+                params![space_id],
+            )
+            .expect("space should insert");
+        connection
+            .execute(
+                "INSERT INTO devices(
+                    device_id, space_id, display_name, identity_public_key, trust_state,
+                    connection_state, paired_at, last_seen_at, revoked_at
+                 ) VALUES(?1, ?2, '本机', 'test-public-key', 'trusted', 'offline', 1700000000000, NULL, NULL)",
+                params![device_id, space_id],
+            )
+            .expect("device should insert");
+        for seq in 1..=3 {
+            let item_id = Uuid::now_v7().to_string();
+            let timestamp = 1_700_000_000_000_i64 + seq;
+            connection
+                .execute(
+                    "INSERT INTO clipboard_items(
+                        item_id, space_id, origin_device_id, origin_seq, hlc, content_type,
+                        content_length, content_digest, encrypted_content, created_at, received_at, expires_at, deleted_at
+                     ) VALUES(?1, ?2, ?3, ?4, ?5, 'text/plain', 4, ?6, X'74657374', ?7, ?7, 1700604800000, NULL)",
+                    params![
+                        item_id,
+                        space_id,
+                        device_id,
+                        seq,
+                        format!("0000018bcfe5680{seq}-0000"),
+                        format!("digest-{seq}"),
+                        timestamp,
+                    ],
+                )
+                .expect("item should insert");
+        }
+        drop(connection);
+
+        save_app_settings_to_path(
+            &path,
+            AppSettings {
+                history_limit: 0,
+                ..AppSettings::default()
+            },
+            1_700_000_010_000,
+        )
+        .expect("settings should save and apply retention");
+        let connection = open_database(&path).expect("database should reopen");
+        let active_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM clipboard_items WHERE deleted_at IS NULL",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count should load");
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(path.with_extension("db-shm"));
+        let _ = fs::remove_file(path.with_extension("db-wal"));
+
+        assert_eq!(active_count, 0);
     }
 }

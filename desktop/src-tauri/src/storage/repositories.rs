@@ -480,6 +480,43 @@ impl<'a> ClipboardRepository<'a> {
         })
     }
 
+    pub fn apply_global_retention(
+        &self,
+        settings: &AppSettings,
+        now_ms: u64,
+    ) -> rusqlite::Result<RetentionCleanupResult> {
+        settings
+            .validate()
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        if !settings.history_enabled || settings.history_limit == 0 {
+            let cleared = self.clear_all_history(now_ms)?;
+            return Ok(RetentionCleanupResult {
+                expired_items: 0,
+                overflow_items: cleared,
+            });
+        }
+
+        let expired_items = self.connection.execute(
+            "UPDATE clipboard_items SET deleted_at = ?1
+             WHERE deleted_at IS NULL AND expires_at <= ?1",
+            params![u64_to_i64(now_ms)?],
+        )?;
+        let overflow_items = self.connection.execute(
+            "UPDATE clipboard_items SET deleted_at = ?2
+             WHERE deleted_at IS NULL AND item_id IN (
+               SELECT item_id FROM clipboard_items
+               WHERE deleted_at IS NULL
+               ORDER BY hlc DESC, item_id DESC
+               LIMIT -1 OFFSET ?1
+             )",
+            params![i64::from(settings.history_limit), u64_to_i64(now_ms)?],
+        )?;
+        Ok(RetentionCleanupResult {
+            expired_items,
+            overflow_items,
+        })
+    }
+
     pub fn active_count(&self, space_id: Uuid) -> rusqlite::Result<usize> {
         let count: i64 = self.connection.query_row(
             "SELECT COUNT(*) FROM clipboard_items

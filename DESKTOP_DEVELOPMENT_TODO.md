@@ -141,6 +141,7 @@ desktop/
 - [x] 实现 `SpaceRepository`、`DeviceRepository`、`ClipboardRepository`、`SyncHeadRepository` 和 `SettingsRepository` 基础 CRUD，正文只保存为 `encrypted_content`。
 - [x] 实现最近 50 条、最长 7 天的 retention 清理。
 - [x] 支持历史数量 0、20、50、100。
+- [x] 保存历史数量、保留天数或关闭历史时，会立即对已有本机历史执行 retention 清理。
 - [x] 明确“清空历史”只保证逻辑删除和数据库清理，不承诺物理不可恢复擦除。
 
 ### Sync Engine

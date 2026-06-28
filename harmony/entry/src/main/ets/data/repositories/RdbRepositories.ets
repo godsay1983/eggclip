@@ -253,6 +253,15 @@ export class ClipboardRdbRepository {
     const store = await Database.getStore(this.context);
     await this.runner.executeTransaction(store, commands);
   }
+
+  async applyRetentionAll(settings: AppSettings, nowMs: number): Promise<void> {
+    const commands = this.commands.retentionAllCommands(settings, nowMs);
+    if (commands === null) {
+      throw new Error('Invalid app settings for retention');
+    }
+    const store = await Database.getStore(this.context);
+    await this.runner.executeTransaction(store, commands);
+  }
 }
 
 export class SyncHeadRdbRepository {
