@@ -133,6 +133,7 @@ harmony/entry/src/main/ets/
 
 - [x] 定义 `ClipboardItem`、`Device`、`Space`、`SyncHead`、`ConnectionState` 和 `AppSettings`。
 - [ ] 定义 `ClipboardStore`、`ConnectionStore`、`DeviceStore` 和 `SettingsStore`。
+  - [x] 新增 `SettingsStore`，集中处理设置加载、保存、默认值、校验和错误状态。
 - [ ] store 统一处理 loading、empty、ready、offline 和 error 状态。
 - [ ] 页面不直接操作 RDB 和网络 service。
 

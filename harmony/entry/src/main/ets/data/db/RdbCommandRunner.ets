@@ -13,9 +13,9 @@ export class RdbCommandRunner {
         await this.execute(store, command);
       }
       store.commit();
-    } catch (error) {
+    } catch (_) {
       store.rollBack();
-      throw error;
+      throw new Error('RDB command transaction failed');
     }
   }
 

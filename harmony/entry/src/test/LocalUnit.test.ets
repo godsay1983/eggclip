@@ -8,6 +8,11 @@ import {
 } from '../main/ets/services/transport/ProtocolTransportSession';
 import { WebSocketTransportService } from '../main/ets/services/transport/WebSocketTransportService';
 import {
+  SettingsStoreState,
+  cloneSettings,
+  createInitialSettingsSnapshot
+} from '../main/ets/store/SettingsStore';
+import {
   CryptoVectorErrorCode,
   CryptoVectorService,
   SessionDirection,
@@ -282,6 +287,22 @@ export default function localUnitTest() {
         .assertEqual(false);
       expect(inboundClipboardPolicy(InboundClipboardEventKind.ITEM_BATCH, defaults).writeSystemClipboard)
         .assertEqual(false);
+    });
+
+    it('createsSettingsStoreSnapshotsWithoutSharingMutableSettings', 0, () => {
+      const snapshot = createInitialSettingsSnapshot();
+      expect(snapshot.state).assertEqual(SettingsStoreState.IDLE);
+      expect(snapshot.settings.historyLimit).assertEqual(50);
+      expect(snapshot.settings.autoWriteEnabled).assertEqual(false);
+
+      const cloned = cloneSettings(snapshot.settings);
+      cloned.syncEnabled = false;
+      cloned.historyLimit = 20;
+
+      expect(snapshot.settings.syncEnabled).assertEqual(true);
+      expect(snapshot.settings.historyLimit).assertEqual(50);
+      expect(cloned.syncEnabled).assertEqual(false);
+      expect(cloned.historyLimit).assertEqual(20);
     });
 
     it('deduplicatesDomainClipboardItemsByItemIdOriginSeqAndDigest', 0, () => {

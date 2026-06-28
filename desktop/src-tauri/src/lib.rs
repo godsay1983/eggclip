@@ -5,6 +5,7 @@ pub mod clipboard;
 pub mod crypto;
 pub mod discovery;
 pub mod protocol;
+pub mod settings;
 pub mod storage;
 pub mod sync;
 pub mod transport;
@@ -65,6 +66,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             clipboard::read_clipboard_text,
             clipboard::write_clipboard_text,
+            settings::load_app_settings,
+            settings::save_app_settings,
             transport::connect_poc_peer,
             transport::disconnect_all_poc_peers,
             transport::get_poc_transport_status,

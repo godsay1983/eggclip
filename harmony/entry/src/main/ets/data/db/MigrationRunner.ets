@@ -28,9 +28,9 @@ export class MigrationRunner {
         [migration.version, migration.name, Date.now()]
       );
       store.commit();
-    } catch (error) {
+    } catch (_) {
       store.rollBack();
-      throw error;
+      throw new Error('RDB migration transaction failed');
     }
   }
 
