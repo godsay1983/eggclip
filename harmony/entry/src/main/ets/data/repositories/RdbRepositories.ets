@@ -208,6 +208,11 @@ export class ClipboardRdbRepository {
     await this.runner.execute(store, this.commands.clearHistory(spaceId, deletedAt));
   }
 
+  async clearAllHistory(deletedAt: number): Promise<void> {
+    const store = await Database.getStore(this.context);
+    await this.runner.execute(store, this.commands.clearAllHistory(deletedAt));
+  }
+
   async applyRetention(spaceId: string, settings: AppSettings, nowMs: number): Promise<void> {
     const commands = this.commands.retentionCommands(spaceId, settings, nowMs);
     if (commands === null) {

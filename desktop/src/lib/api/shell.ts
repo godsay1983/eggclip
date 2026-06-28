@@ -93,6 +93,10 @@ export async function writeSystemClipboardText(text: string): Promise<void> {
   await invoke("write_clipboard_text", { text });
 }
 
+export async function clearClipboardHistory(): Promise<number> {
+  return invoke<number>("clear_clipboard_history");
+}
+
 export async function sendPocClipboardText(text: string): Promise<number> {
   return invoke<number>("send_poc_clipboard_text", { text });
 }

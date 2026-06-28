@@ -2,6 +2,7 @@ import { derived, writable } from "svelte/store";
 import {
   connectPocPeer,
   createInitialShellSnapshot,
+  clearClipboardHistory,
   disconnectAllPocPeers,
   getPocTransportStatus,
   onLocalClipboardText,
@@ -264,6 +265,36 @@ export const shellSnapshot = {
       return;
     }
     await writeSystemClipboardText(text);
+  },
+  async clearHistory() {
+    try {
+      const cleared = await clearClipboardHistory();
+      snapshot.update((state) => ({
+        ...state,
+        history: {
+          ...state.history,
+          used: 0,
+        },
+        connection: {
+          state: "online",
+          title: "已清空本机历史",
+          description:
+            cleared > 0
+              ? `已从本机历史中移除 ${cleared} 条记录；不会清空系统剪贴板`
+              : "当前没有可清空的本机历史记录",
+        },
+      }));
+    } catch (error) {
+      snapshot.update((state) => ({
+        ...state,
+        connection: {
+          state: "authFailed",
+          title: "清空历史失败",
+          description: error instanceof Error ? error.message : "无法清空本机历史",
+        },
+      }));
+      throw error;
+    }
   },
   async sendCurrentToPocPeer() {
     let text = "";

@@ -21,6 +21,7 @@ export struct SettingsPage {
   @State private historyLimit: number = 50;
   @State private retentionDays: number = 7;
   @State private themeMode: ThemeMode = ThemeMode.SYSTEM;
+  @State private historyActionStatus: string = '清空历史只影响本机历史，不会修改系统剪贴板';
 
   aboutToAppear(): void {
     if (this.settingsStore === null) {
@@ -145,6 +146,23 @@ export struct SettingsPage {
         this.RetentionButton(30)
       }
       .width('100%')
+
+      Button(this.storeState === SettingsStoreState.SAVING ? '处理中' : '清空本机历史')
+        .width('100%')
+        .height(40)
+        .enabled(this.storeState !== SettingsStoreState.SAVING)
+        .fontColor(EggClipColors.textSecondary)
+        .backgroundColor(EggClipColors.controlBackground)
+        .borderRadius(20)
+        .onClick(() => {
+          this.clearLocalHistory();
+        })
+
+      Text(this.historyActionStatus)
+        .fontSize(EggClipTypography.captionSize)
+        .fontColor(EggClipColors.textSecondary)
+        .lineHeight(20)
+        .width('100%')
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -316,6 +334,30 @@ export struct SettingsPage {
       .catch(() => {
         this.storeState = SettingsStoreState.ERROR;
         this.statusText = '保存设置失败';
+      });
+  }
+
+  private clearLocalHistory(): void {
+    if (this.settingsStore === null) {
+      this.historyActionStatus = '设置服务未初始化，无法清空历史';
+      return;
+    }
+    this.storeState = SettingsStoreState.SAVING;
+    this.historyActionStatus = '正在清空本机历史';
+    this.settingsStore.clearLocalHistory()
+      .then((snapshot: SettingsStoreSnapshot) => {
+        this.applySnapshot(snapshot);
+        this.historyActionStatus = snapshot.state === SettingsStoreState.ERROR
+          ? snapshot.errorMessage
+          : '已清空本机历史；系统剪贴板不受影响';
+        this.statusText = snapshot.state === SettingsStoreState.ERROR
+          ? snapshot.errorMessage
+          : '本机历史已清空';
+      })
+      .catch(() => {
+        this.storeState = SettingsStoreState.ERROR;
+        this.historyActionStatus = '清空历史失败';
+        this.statusText = '清空历史失败';
       });
   }
 

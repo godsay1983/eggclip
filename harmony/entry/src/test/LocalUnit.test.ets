@@ -456,6 +456,10 @@ export default function localUnitTest() {
       expect(insertItem.args[8] instanceof Uint8Array).assertEqual(true);
       expect(clipboard.listRecent(spaceId, 50).args[1]).assertEqual(50);
       expect(clipboard.markDeleted(builtItem.itemId, 1700000000200).args[0]).assertEqual(1700000000200);
+      const clearAll = clipboard.clearAllHistory(1700000000250);
+      expect(clearAll.sql.indexOf('WHERE deleted_at IS NULL') >= 0).assertEqual(true);
+      expect(clearAll.sql.indexOf('space_id = ?')).assertEqual(-1);
+      expect(clearAll.args[0]).assertEqual(1700000000250);
 
       const syncHead = heads.upsert({
         peerDeviceId,

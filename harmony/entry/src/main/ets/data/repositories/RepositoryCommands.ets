@@ -127,6 +127,14 @@ export class ClipboardRepository {
     };
   }
 
+  clearAllHistory(deletedAt: number): RepositoryCommand {
+    return {
+      sql: `UPDATE clipboard_items SET deleted_at = ?
+        WHERE deleted_at IS NULL`,
+      args: [deletedAt]
+    };
+  }
+
   markExpired(spaceId: string, nowMs: number): RepositoryCommand {
     return {
       sql: `UPDATE clipboard_items SET deleted_at = ?

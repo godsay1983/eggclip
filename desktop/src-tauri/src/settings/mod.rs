@@ -25,7 +25,7 @@ pub fn save_app_settings(app: AppHandle, settings: AppSettings) -> Result<AppSet
     save_app_settings_to_path(&path, settings, now_ms()?)
 }
 
-fn database_path(app: &AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn database_path(app: &AppHandle) -> Result<PathBuf, String> {
     let directory = app
         .path()
         .app_data_dir()
@@ -57,7 +57,7 @@ fn save_app_settings_to_path(
     Ok(settings)
 }
 
-fn now_ms() -> Result<u64, String> {
+pub(crate) fn now_ms() -> Result<u64, String> {
     let duration = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|error| format!("系统时间不可用：{error}"))?;

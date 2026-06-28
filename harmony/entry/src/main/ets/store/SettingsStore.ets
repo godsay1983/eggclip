@@ -4,7 +4,10 @@ import {
   defaultAppSettings,
   validateAppSettings
 } from '../models/DomainModels';
-import { SettingsRdbRepository } from '../data/repositories/RdbRepositories';
+import {
+  ClipboardRdbRepository,
+  SettingsRdbRepository
+} from '../data/repositories/RdbRepositories';
 
 export enum SettingsStoreState {
   IDLE = 'idle',
@@ -22,12 +25,14 @@ export interface SettingsStoreSnapshot {
 
 export class SettingsStore {
   private readonly repository: SettingsRdbRepository;
+  private readonly clipboardRepository: ClipboardRdbRepository;
   private currentState: SettingsStoreState = SettingsStoreState.IDLE;
   private currentSettings: AppSettings = defaultAppSettings();
   private currentErrorMessage: string = '';
 
   constructor(context: common.Context) {
     this.repository = new SettingsRdbRepository(context);
+    this.clipboardRepository = new ClipboardRdbRepository(context);
   }
 
   snapshot(): SettingsStoreSnapshot {
@@ -77,6 +82,19 @@ export class SettingsStore {
     const next = cloneSettings(this.currentSettings);
     next.syncEnabled = syncEnabled;
     return this.save(next);
+  }
+
+  async clearLocalHistory(): Promise<SettingsStoreSnapshot> {
+    this.currentState = SettingsStoreState.SAVING;
+    this.currentErrorMessage = '';
+    try {
+      await this.clipboardRepository.clearAllHistory(Date.now());
+      this.currentState = SettingsStoreState.READY;
+    } catch (_) {
+      this.currentState = SettingsStoreState.ERROR;
+      this.currentErrorMessage = '清空历史失败';
+    }
+    return this.snapshot();
   }
 }
 

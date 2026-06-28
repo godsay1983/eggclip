@@ -91,7 +91,7 @@
     onSendPoc={() => shellSnapshot.sendCurrentToPocPeer()}
   />
 
-  <HistoryList history={$shellSnapshot.history} />
+  <HistoryList history={$shellSnapshot.history} onClear={() => shellSnapshot.clearHistory()} />
 
   {#if settingsVisible}
     <section class="settings-popover" aria-label="设置">

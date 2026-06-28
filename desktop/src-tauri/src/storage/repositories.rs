@@ -415,6 +415,14 @@ impl<'a> ClipboardRepository<'a> {
         )
     }
 
+    pub fn clear_all_history(&self, deleted_at: u64) -> rusqlite::Result<usize> {
+        self.connection.execute(
+            "UPDATE clipboard_items SET deleted_at = ?1
+             WHERE deleted_at IS NULL",
+            params![u64_to_i64(deleted_at)?],
+        )
+    }
+
     pub fn apply_retention(
         &self,
         space_id: Uuid,
