@@ -8,3 +8,4 @@ This directory contains ArkData RDB setup, migrations and repository command bui
 - `repositories/RepositoryCommands.ets` only builds SQL commands and validates domain inputs; it does not own UI or network policy.
 - `repositories/RdbRepositories.ets` exposes real RDB repositories for Space, Device, Clipboard, SyncHead and Settings records.
 - `repositories/LocalIdentityRdbRepository.ets` persists the local `deviceId` and monotonic `originSeq` in `app_metadata`.
+- `../services/sync/LocalClipboardPersistenceService.ets` composes identity, local item command planning and RDB transaction execution for PasteButton-originated text.

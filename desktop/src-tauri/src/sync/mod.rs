@@ -380,10 +380,50 @@ pub fn build_local_clipboard_item(
     })
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InboundClipboardEventKind {
+    ItemLive,
+    ItemBatch,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InboundClipboardPolicy {
+    pub write_system_clipboard: bool,
+    pub update_history: bool,
+}
+
+pub fn inbound_clipboard_policy(kind: InboundClipboardEventKind) -> InboundClipboardPolicy {
+    match kind {
+        InboundClipboardEventKind::ItemLive => InboundClipboardPolicy {
+            write_system_clipboard: true,
+            update_history: true,
+        },
+        InboundClipboardEventKind::ItemBatch => InboundClipboardPolicy {
+            write_system_clipboard: false,
+            update_history: true,
+        },
+    }
+}
+
+/// Authenticated inbound sync events pass through this policy boundary before
+/// touching the OS clipboard. Historical ITEM_BATCH data must only update local
+/// history and sync cursors, never the current system clipboard.
+pub fn apply_authenticated_inbound_item(
+    app: &AppHandle,
+    item: &ClipboardText,
+    kind: InboundClipboardEventKind,
+) -> Result<InboundClipboardPolicy, String> {
+    let policy = inbound_clipboard_policy(kind);
+    if policy.write_system_clipboard {
+        clipboard::write_remote_clipboard_text(app, item)?;
+    }
+    Ok(policy)
+}
+
 /// Only authenticated online ITEM_LIVE events may enter this policy boundary.
 /// The unauthenticated POC transport and historical/batch events must never call it.
 pub fn apply_authenticated_live_item(app: &AppHandle, item: &ClipboardText) -> Result<(), String> {
-    clipboard::write_remote_clipboard_text(app, item)
+    apply_authenticated_inbound_item(app, item, InboundClipboardEventKind::ItemLive).map(|_| ())
 }
 
 #[cfg(test)]
@@ -529,6 +569,24 @@ mod tests {
         assert_eq!(
             invalid.validate(),
             Err(SyncModelError::InvalidHistoryLimit(10))
+        );
+    }
+
+    #[test]
+    fn inbound_clipboard_policy_writes_only_live_events() {
+        assert_eq!(
+            inbound_clipboard_policy(InboundClipboardEventKind::ItemLive),
+            InboundClipboardPolicy {
+                write_system_clipboard: true,
+                update_history: true,
+            }
+        );
+        assert_eq!(
+            inbound_clipboard_policy(InboundClipboardEventKind::ItemBatch),
+            InboundClipboardPolicy {
+                write_system_clipboard: false,
+                update_history: true,
+            }
         );
     }
 }
