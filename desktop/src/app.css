@@ -229,6 +229,21 @@ footer {
   background: rgba(78, 159, 109, 0.16);
 }
 
+.status-label.connecting {
+  color: #8a6411;
+  background: rgba(244, 196, 48, 0.2);
+}
+
+.status-label.auth-failed {
+  color: #a33d31;
+  background: rgba(214, 92, 74, 0.14);
+}
+
+.status-label.paused {
+  color: var(--muted);
+  background: var(--control);
+}
+
 .status-dot {
   width: 8px;
   height: 8px;
@@ -524,6 +539,40 @@ footer {
   color: var(--muted);
   background: var(--control);
   font-size: 12px;
+}
+
+.device-chip.online {
+  color: #1f6b42;
+  background: rgba(78, 159, 109, 0.14);
+}
+
+.device-chip.connecting {
+  color: #8a6411;
+  background: rgba(244, 196, 48, 0.18);
+}
+
+.device-chip.auth-failed {
+  color: #a33d31;
+  background: rgba(214, 92, 74, 0.14);
+}
+
+.device-chip.paused {
+  color: var(--muted);
+  background: rgba(126, 118, 101, 0.12);
+}
+
+.device-name {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-state {
+  padding-left: 6px;
+  border-left: 1px solid var(--line);
+  font-size: 11px;
+  opacity: 0.82;
 }
 
 .device-empty {

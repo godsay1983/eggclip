@@ -100,22 +100,32 @@ export struct DevicesPage {
   @Builder
   private ConnectionCard() {
     Column({ space: 14 }) {
-      Row({ space: 12 }) {
-        StatusDot({ state: this.connectionState })
+      Row() {
+        Row({ space: 12 }) {
+          StatusDot({ state: this.connectionState })
 
-        Column({ space: 4 }) {
-          Text(this.connectionTitle)
-            .fontSize(20)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(EggClipColors.textPrimary)
+          Column({ space: 4 }) {
+            Text(this.connectionTitle)
+              .fontSize(20)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(EggClipColors.textPrimary)
 
-          Text(this.connectionDescription)
-            .fontSize(EggClipTypography.captionSize)
-            .fontColor(EggClipColors.textSecondary)
-            .lineHeight(20)
+            Text(this.connectionDescription)
+              .fontSize(EggClipTypography.captionSize)
+              .fontColor(EggClipColors.textSecondary)
+              .lineHeight(20)
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
         }
-        .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
+
+        Text(this.connectionStateLabel())
+          .fontSize(11)
+          .fontColor(this.connectionStateColor())
+          .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+          .backgroundColor(EggClipColors.controlBackground)
+          .borderRadius(14)
       }
       .width('100%')
 
@@ -410,5 +420,34 @@ export struct DevicesPage {
 
   private onAppForegroundChanged(): void {
     pocConnectionStore.handleForegroundChanged(this.appInForeground);
+  }
+
+  private connectionStateLabel(): string {
+    if (this.connectionState === ConnectionState.ONLINE) {
+      return '在线';
+    }
+    if (this.connectionState === ConnectionState.CONNECTING) {
+      return '连接中';
+    }
+    if (this.connectionState === ConnectionState.AUTH_FAILED) {
+      return '认证失败';
+    }
+    if (this.connectionState === ConnectionState.PAUSED) {
+      return '已暂停';
+    }
+    return '离线';
+  }
+
+  private connectionStateColor(): ResourceColor {
+    if (this.connectionState === ConnectionState.ONLINE) {
+      return EggClipColors.statusOnline;
+    }
+    if (this.connectionState === ConnectionState.CONNECTING) {
+      return EggClipColors.primary;
+    }
+    if (this.connectionState === ConnectionState.AUTH_FAILED) {
+      return Color.Red;
+    }
+    return EggClipColors.textSecondary;
   }
 }

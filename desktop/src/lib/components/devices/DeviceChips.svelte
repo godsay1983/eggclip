@@ -3,6 +3,22 @@
   import type { DeviceSummary } from "$lib/types/shell";
 
   export let devices: DeviceSummary[] = [];
+
+  function statusLabel(state: DeviceSummary["state"]) {
+    if (state === "online") {
+      return "在线";
+    }
+    if (state === "connecting") {
+      return "连接中";
+    }
+    if (state === "authFailed") {
+      return "认证失败";
+    }
+    if (state === "paused") {
+      return "已暂停";
+    }
+    return "离线";
+  }
 </script>
 
 <section class="device-section">
@@ -21,9 +37,17 @@
       </div>
     {:else}
       {#each devices as device (device.id)}
-        <span class="device-chip">
+        <span
+          class:online={device.state === "online"}
+          class:connecting={device.state === "connecting"}
+          class:auth-failed={device.state === "authFailed"}
+          class:paused={device.state === "paused"}
+          class="device-chip"
+          title={`${device.name}：${statusLabel(device.state)}`}
+        >
           <StatusDot state={device.state} />
-          {device.name}
+          <span class="device-name">{device.name}</span>
+          <span class="device-state">{statusLabel(device.state)}</span>
         </span>
       {/each}
     {/if}

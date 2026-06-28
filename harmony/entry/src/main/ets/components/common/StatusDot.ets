@@ -14,6 +14,14 @@ export struct StatusDot {
       return EggClipColors.primary;
     }
 
+    if (this.state === ConnectionState.AUTH_FAILED) {
+      return Color.Red;
+    }
+
+    if (this.state === ConnectionState.PAUSED) {
+      return Color.Gray;
+    }
+
     return EggClipColors.textSecondary;
   }
 

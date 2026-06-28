@@ -5,6 +5,17 @@
   export let state: ConnectionState = "offline";
   export let title = "等待配对设备";
   export let description = "桌面端将在局域网中自动发现可信设备";
+
+  $: statusLabel =
+    state === "online"
+      ? "在线"
+      : state === "connecting"
+        ? "连接中"
+        : state === "authFailed"
+          ? "认证失败"
+          : state === "paused"
+            ? "已暂停"
+            : "离线";
 </script>
 
 <section class="status-card" aria-label="连接状态">
@@ -15,7 +26,13 @@
     <strong>{title}</strong>
     <p>{description}</p>
   </div>
-  <span class:online={state === "online"} class="status-label">
-    {state === "online" ? "在线" : state === "connecting" ? "连接中" : state === "paused" ? "已暂停" : "离线"}
+  <span
+    class:online={state === "online"}
+    class:connecting={state === "connecting"}
+    class:auth-failed={state === "authFailed"}
+    class:paused={state === "paused"}
+    class="status-label"
+  >
+    {statusLabel}
   </span>
 </section>
