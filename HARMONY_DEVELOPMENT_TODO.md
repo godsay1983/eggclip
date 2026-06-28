@@ -162,6 +162,7 @@ harmony/entry/src/main/ets/
 - [ ] PairingPage：扫码/邀请导入和人工确认。
 - [ ] DevicesPage：设备状态、重命名、移除。
 - [ ] SettingsPage：历史、隐私、主题和诊断。
+  - [x] 接入可见设置页和底部 Tabs，支持读取/保存自动同步、自动接收、自动写入、历史数量和保留天数；主题和诊断待补。
 - [ ] 手机使用单栏；平板使用设备/历史与内容预览双栏。
 - [ ] 复用 EggDoneHarmony 的视觉 token 思路，不复制 Todo 组件和业务状态。
 
@@ -318,6 +319,7 @@ harmony/entry/src/main/ets/
 ### 设置和隐私
 
 - [ ] 历史数量和最长保留时间设置。
+  - [x] SettingsPage 已通过 `SettingsStore` 读写历史数量和保留天数。
 - [ ] 清空历史和重置本机身份入口。
 - [ ] 亮色、暗色和跟随系统主题。
 - [ ] 局域网诊断：mDNS、候选地址、WebSocket 状态和错误码。

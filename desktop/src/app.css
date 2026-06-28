@@ -136,6 +136,7 @@ footer {
 .status-card,
 .clipboard-card,
 .poc-connect-card,
+.settings-section,
 .device-section,
 .history-section {
   border: 1px solid var(--line);
@@ -308,9 +309,52 @@ footer {
 }
 
 .device-section,
-.history-section {
+.history-section,
+.settings-section {
   padding: 16px;
   border-radius: 20px;
+}
+
+.settings-section .metadata {
+  margin-top: 4px;
+}
+
+.setting-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.setting-grid label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.setting-grid input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+}
+
+.setting-grid input[type="number"],
+.setting-grid select {
+  width: 124px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  outline: none;
+  color: var(--text);
+  background: var(--card-strong);
+}
+
+.setting-grid input[type="number"]:focus,
+.setting-grid select:focus {
+  border-color: var(--primary-deep);
 }
 
 .text-button {
