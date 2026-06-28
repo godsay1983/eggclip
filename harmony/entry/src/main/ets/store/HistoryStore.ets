@@ -1,12 +1,16 @@
 import { common } from '@kit.AbilityKit';
+import { util } from '@kit.ArkTS';
 import { defaultAppSettings } from '../models/DomainModels';
 import {
   ClipboardRdbRepository,
   SettingsRdbRepository
 } from '../data/repositories/RdbRepositories';
 import { ClipboardItemRecord } from '../data/repositories/RepositoryCommands';
+import { LocalClipboardPersistenceService } from '../services/sync/LocalClipboardPersistenceService';
 
 const HISTORY_PREVIEW_LIMIT: number = 5;
+const LOCAL_HISTORY_SPACE_ID: string = '018ff6ef-c394-7d08-8b99-4b7d10f2767a';
+const LOCAL_HISTORY_ENCRYPTED_PLACEHOLDER: Uint8Array = asciiBytes('eggclip-local-history-metadata-only-v1');
 
 export enum HistoryStoreState {
   IDLE = 'idle',
@@ -34,6 +38,7 @@ export interface HistoryPreviewItem {
 export class HistoryStore {
   private readonly clipboardRepository: ClipboardRdbRepository;
   private readonly settingsRepository: SettingsRdbRepository;
+  private readonly persistenceService: LocalClipboardPersistenceService;
   private currentState: HistoryStoreState = HistoryStoreState.IDLE;
   private currentUsed: number = 0;
   private currentLimit: number = defaultAppSettings().historyLimit;
@@ -43,6 +48,7 @@ export class HistoryStore {
   constructor(context: common.Context) {
     this.clipboardRepository = new ClipboardRdbRepository(context);
     this.settingsRepository = new SettingsRdbRepository(context);
+    this.persistenceService = new LocalClipboardPersistenceService(context);
   }
 
   snapshot(): HistoryStoreSnapshot {
@@ -87,6 +93,30 @@ export class HistoryStore {
     }
     return this.loadSummary();
   }
+
+  async captureLocalText(text: string): Promise<HistoryStoreSnapshot> {
+    this.currentState = HistoryStoreState.LOADING;
+    this.currentErrorMessage = '';
+    try {
+      const settings = await this.settingsRepository.loadAppSettings() ?? defaultAppSettings();
+      if (!settings.historyEnabled || settings.historyLimit === 0) {
+        return this.loadSummary();
+      }
+      await this.persistenceService.persist({
+        spaceId: LOCAL_HISTORY_SPACE_ID,
+        text,
+        contentDigest: localHistoryDigest(),
+        encryptedContent: LOCAL_HISTORY_ENCRYPTED_PLACEHOLDER,
+        settings,
+        nowMs: Date.now()
+      });
+    } catch (_) {
+      this.currentState = HistoryStoreState.ERROR;
+      this.currentErrorMessage = '保存本机历史失败';
+      return this.snapshot();
+    }
+    return this.loadSummary();
+  }
 }
 
 export function createInitialHistorySnapshot(): HistoryStoreSnapshot {
@@ -119,4 +149,16 @@ function formatTime(milliseconds: number): string {
 
 function padTime(value: number): string {
   return value < 10 ? `0${value}` : `${value}`;
+}
+
+function localHistoryDigest(): string {
+  return util.generateRandomUUID(false).toLowerCase().split('-').join('');
+}
+
+function asciiBytes(value: string): Uint8Array {
+  const bytes = new Uint8Array(value.length);
+  for (let index = 0; index < value.length; index += 1) {
+    bytes[index] = value.charCodeAt(index) & 0xff;
+  }
+  return bytes;
 }

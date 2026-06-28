@@ -150,6 +150,7 @@ harmony/entry/src/main/ets/
   - [x] 建立本地剪贴板持久化命令计划：由 PasteButton 明文生成 `ClipboardItem`、写入 `encrypted_content`、推进 `originSeq`；真实 transaction 执行和广播接入待后续服务编排实现。
   - [x] 接入 `LocalIdentityRdbRepository`，使用真实 RDB 保存本机 `deviceId`，并以 transaction 分配/推进 `originSeq`。
   - [x] 接入 `LocalClipboardPersistenceService`，将 PasteButton 明文、digest 和 encrypted blob 编排为真实 RDB transaction；事务成功后返回广播调度/跳过状态，真实 WebSocket 发送待后续接入。
+  - [x] 首页 PasteButton 读取成功后已调用本机历史持久化服务，并刷新最近历史数量和元数据列表；当前 digest 为本地过渡值，正式 HMAC 待 CryptoFramework/HUKS 接入。
 - [x] 实现最近 50 条、最长 7 天 retention。
   - [x] 建立 retention SQL command 层并通过真实 RDB transaction runner 执行，覆盖过期清理、数量超限和清空历史。
 - [x] 支持历史数量 0、20、50、100。
@@ -297,7 +298,8 @@ harmony/entry/src/main/ets/
 
 ### HarmonyOS → Desktop
 
-- [ ] PasteButton 授权读取成功后创建本地不可变 item。
+- [x] PasteButton 授权读取成功后创建本地不可变 item。
+  - [x] 读取成功会先写入本机 RDB 历史并刷新首页最近记录；正文仍不在 UI 展示。
 - [ ] 本地持久化成功后发送 `ITEM_LIVE`。
 - [ ] 网络失败时保留待同步记录，不能假装发送成功。
 - [ ] 显示已发送、待同步和失败状态。
@@ -319,6 +321,7 @@ harmony/entry/src/main/ets/
   - [x] 设置页已接入清空本机历史；首页真实历史列表、复制、删除单条和详情展开待接入。
   - [x] 首页已展示本机历史数量摘要和最近 5 条元数据；正文预览、复制和详情展开待接入。
   - [x] 首页最近历史已接入单条删除，删除后通过 `HistoryStore` 刷新数量和列表；不修改系统剪贴板。
+  - [x] PasteButton 读取成功后写入本机历史，首页最近历史立即刷新。
 - [ ] 长文本默认折叠，显示字符数和大小。
 - [ ] 在线、连接中、离线、认证失败和暂停状态使用不同反馈。
 - [ ] 首次使用、无设备、无历史和网络失败空状态完整。

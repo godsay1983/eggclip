@@ -67,6 +67,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             clipboard::read_clipboard_text,
             clipboard::write_clipboard_text,
+            history::capture_clipboard_history_text,
             history::clear_clipboard_history,
             history::delete_clipboard_history_item,
             history::get_clipboard_history_used,

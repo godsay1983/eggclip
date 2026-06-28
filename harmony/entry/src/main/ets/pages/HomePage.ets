@@ -150,6 +150,7 @@ export struct HomePage {
               .then((readResult) => {
                 this.pasteStatus = readResult.message;
                 if (readResult.ok) {
+                  this.captureLocalHistoryText(readResult.text);
                   this.sendPocClipboardText(readResult.text);
                 }
               })
@@ -301,6 +302,25 @@ export struct HomePage {
       })
       .catch(() => {
         this.pasteStatus = '发送到桌面端失败';
+      });
+  }
+
+  private captureLocalHistoryText(text: string): void {
+    if (this.historyStore === null) {
+      this.historyStatus = '无法获取页面上下文，未保存本机历史';
+      return;
+    }
+
+    this.historyStatus = '正在保存本机历史';
+    this.historyStore.captureLocalText(text)
+      .then((snapshot: HistoryStoreSnapshot) => {
+        this.historyUsed = snapshot.used;
+        this.historyLimit = snapshot.limit;
+        this.historyItems = snapshot.items;
+        this.historyStatus = snapshot.errorMessage.length > 0 ? snapshot.errorMessage : '已保存到本机历史';
+      })
+      .catch(() => {
+        this.historyStatus = '保存本机历史失败';
       });
   }
 

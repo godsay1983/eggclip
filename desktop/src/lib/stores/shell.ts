@@ -2,6 +2,7 @@ import { derived, writable } from "svelte/store";
 import {
   connectPocPeer,
   createInitialShellSnapshot,
+  captureClipboardHistoryText,
   clearClipboardHistory,
   deleteClipboardHistoryItem,
   disconnectAllPocPeers,
@@ -26,6 +27,31 @@ let monitorStarted = false;
 let pocEventsStarted = false;
 let pocTransportStarted = false;
 const pocPeers = new Set<string>();
+
+async function refreshHistorySummaryState() {
+  const [used, items] = await Promise.all([
+    getClipboardHistoryUsed(),
+    listClipboardHistoryPreview(),
+  ]);
+  snapshot.update((state) => ({
+    ...state,
+    history: {
+      ...state.history,
+      used,
+      items,
+    },
+  }));
+}
+
+async function captureHistoryText(text: string) {
+  if (text.length === 0) {
+    return;
+  }
+  const captured = await captureClipboardHistoryText(text);
+  if (captured) {
+    await refreshHistorySummaryState();
+  }
+}
 
 function setCurrentClipboard(
   current: ClipboardPreview,
@@ -216,8 +242,18 @@ export const shellSnapshot = {
         setCurrentClipboard(
           current,
           "已监听到本机剪贴板",
-          "本机文本变化只更新面板，需由用户点击发送到 Harmony",
+          "本机文本变化已写入本机历史，需由用户点击发送到 Harmony",
         );
+        void captureHistoryText(current.text).catch((error) => {
+          snapshot.update((state) => ({
+            ...state,
+            connection: {
+              state: "authFailed",
+              title: "保存本机历史失败",
+              description: error instanceof Error ? error.message : "无法保存本机剪贴板历史",
+            },
+          }));
+        });
       });
     } catch (error) {
       monitorStarted = false;
@@ -245,8 +281,9 @@ export const shellSnapshot = {
       setCurrentClipboard(
         current,
         "已读取本机剪贴板",
-        "当前内容只显示在本机面板，尚未同步到其他设备",
+        "当前内容已写入本机历史，尚未同步到其他设备",
       );
+      await captureHistoryText(current.text);
     } catch (error) {
       snapshot.update((state) => ({
         ...state,
@@ -271,18 +308,7 @@ export const shellSnapshot = {
   },
   async refreshHistorySummary() {
     try {
-      const [used, items] = await Promise.all([
-        getClipboardHistoryUsed(),
-        listClipboardHistoryPreview(),
-      ]);
-      snapshot.update((state) => ({
-        ...state,
-        history: {
-          ...state.history,
-          used,
-          items,
-        },
-      }));
+      await refreshHistorySummaryState();
     } catch (error) {
       snapshot.update((state) => ({
         ...state,

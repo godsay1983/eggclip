@@ -76,7 +76,10 @@ export class LocalIdentityRdbRepository {
       return current;
     } catch (error) {
       store.rollBack();
-      throw error;
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Allocate local origin sequence failed');
     }
   }
 
