@@ -106,101 +106,144 @@ struct Index {
   private TabIcon(index: number, selected: boolean) {
     Stack() {
       if (index === 0) {
-        Column({ space: 2 }) {
-          Row() {}
-            .width(18)
-            .height(6)
-            .backgroundColor(selected ? EggClipColors.onPrimary : EggClipColors.textPrimary)
-            .borderRadius(3)
-          Row() {}
-            .width(14)
-            .height(10)
-            .backgroundColor(selected ? EggClipColors.onPrimary : EggClipColors.textPrimary)
-            .borderRadius(4)
-        }
-        .alignItems(HorizontalAlign.Center)
+        this.HomeGlyph(selected)
       } else if (index === 1) {
-        Row({ space: 3 }) {
-          Column({ space: 3 }) {
-            Row() {}
-              .width(8)
-              .height(8)
-              .backgroundColor(selected ? EggClipColors.onPrimary : EggClipColors.textPrimary)
-              .borderRadius(3)
-            Row() {}
-              .width(8)
-              .height(8)
-              .backgroundColor(selected ? EggClipColors.onPrimary : EggClipColors.textPrimary)
-              .borderRadius(3)
-          }
-          Column({ space: 3 }) {
-            Row() {}
-              .width(8)
-              .height(8)
-              .backgroundColor(selected ? EggClipColors.onPrimary : EggClipColors.textPrimary)
-              .borderRadius(3)
-            Row() {}
-              .width(8)
-              .height(8)
-              .backgroundColor(selected ? EggClipColors.onPrimary : EggClipColors.textPrimary)
-              .borderRadius(3)
-          }
-        }
+        this.DevicesGlyph(selected)
       } else {
-        Column({ space: 4 }) {
-          this.SettingsSliderLine(selected, 0)
-          this.SettingsSliderLine(selected, 1)
-          this.SettingsSliderLine(selected, 2)
-        }
+        this.SettingsGlyph(selected)
       }
     }
-    .width(26)
-    .height(26)
+    .width(30)
+    .height(30)
     .alignContent(Alignment.Center)
     .backgroundColor(selected ? EggClipColors.primary : EggClipColors.controlBackground)
-    .borderRadius(9)
+    .borderRadius(12)
   }
 
   @Builder
-  private SettingsSliderLine(selected: boolean, knobIndex: number) {
-    Row({ space: 1 }) {
-      if (knobIndex === 0) {
-        this.SettingsKnob(selected)
-      } else {
-        this.SettingsLineSegment(selected, 5)
+  private HomeGlyph(selected: boolean) {
+    Stack() {
+      Row() {}
+        .width(10)
+        .height(3)
+        .backgroundColor(selected ? EggClipColors.onPrimary : EggClipColors.textPrimary)
+        .borderRadius(2)
+        .rotate({ angle: -38 })
+        .offset({ x: -4, y: -5 })
+
+      Row() {}
+        .width(10)
+        .height(3)
+        .backgroundColor(selected ? EggClipColors.onPrimary : EggClipColors.textPrimary)
+        .borderRadius(2)
+        .rotate({ angle: 38 })
+        .offset({ x: 4, y: -5 })
+
+      Row() {
+        Row() {}
+          .width(4)
+          .height(7)
+          .backgroundColor(selected ? EggClipColors.onPrimary : EggClipColors.textPrimary)
+          .borderRadius(2)
+          .margin({ top: 7 })
       }
-      if (knobIndex === 1) {
-        this.SettingsKnob(selected)
-      } else {
-        this.SettingsLineSegment(selected, 5)
-      }
-      if (knobIndex === 2) {
-        this.SettingsKnob(selected)
-      } else {
-        this.SettingsLineSegment(selected, 5)
-      }
+      .width(16)
+      .height(15)
+      .justifyContent(FlexAlign.Center)
+      .border({
+        width: 2,
+        color: selected ? EggClipColors.onPrimary : EggClipColors.textPrimary
+      })
+      .borderRadius(5)
+      .offset({ x: 0, y: 4 })
     }
-    .width(20)
-    .height(5)
-    .alignItems(VerticalAlign.Center)
+    .width(22)
+    .height(22)
+    .alignContent(Alignment.Center)
   }
 
   @Builder
-  private SettingsLineSegment(selected: boolean, width: number) {
+  private DevicesGlyph(selected: boolean) {
+    Stack() {
+      Row() {}
+        .width(13)
+        .height(17)
+        .border({
+          width: 2,
+          color: selected ? EggClipColors.onPrimary : EggClipColors.textPrimary
+        })
+        .borderRadius(5)
+        .offset({ x: -4, y: -3 })
+
+      Row() {}
+        .width(13)
+        .height(17)
+        .backgroundColor(selected ? EggClipColors.primary : EggClipColors.controlBackground)
+        .border({
+          width: 2,
+          color: selected ? EggClipColors.onPrimary : EggClipColors.textPrimary
+        })
+        .borderRadius(5)
+        .offset({ x: 5, y: 4 })
+
+      Row() {}
+        .width(5)
+        .height(2)
+        .backgroundColor(selected ? EggClipColors.onPrimary : EggClipColors.textPrimary)
+        .borderRadius(1)
+        .offset({ x: 5, y: 10 })
+    }
+    .width(24)
+    .height(24)
+    .alignContent(Alignment.Center)
+  }
+
+  @Builder
+  private SettingsGlyph(selected: boolean) {
+    Stack() {
+      this.SettingsTooth(selected, 4, 7, 0, -10, 0)
+      this.SettingsTooth(selected, 4, 7, 0, 10, 0)
+      this.SettingsTooth(selected, 7, 4, -10, 0, 0)
+      this.SettingsTooth(selected, 7, 4, 10, 0, 0)
+      this.SettingsTooth(selected, 4, 7, -7, -7, -45)
+      this.SettingsTooth(selected, 4, 7, 7, -7, 45)
+      this.SettingsTooth(selected, 4, 7, -7, 7, 45)
+      this.SettingsTooth(selected, 4, 7, 7, 7, -45)
+
+      Row() {}
+        .width(17)
+        .height(17)
+        .backgroundColor(selected ? EggClipColors.primary : EggClipColors.controlBackground)
+        .border({
+          width: 2,
+          color: selected ? EggClipColors.onPrimary : EggClipColors.textPrimary
+        })
+        .borderRadius(9)
+
+      Row() {}
+        .width(6)
+        .height(6)
+        .backgroundColor(selected ? EggClipColors.primary : EggClipColors.controlBackground)
+        .border({
+          width: 2,
+          color: selected ? EggClipColors.onPrimary : EggClipColors.textPrimary
+        })
+        .borderRadius(3)
+    }
+    .width(24)
+    .height(24)
+    .alignContent(Alignment.Center)
+  }
+
+  @Builder
+  private SettingsTooth(selected: boolean, width: number, height: number, x: number, y: number, angle: number) {
     Row() {}
       .width(width)
-      .height(3)
+      .height(height)
       .backgroundColor(selected ? EggClipColors.onPrimary : EggClipColors.textPrimary)
       .borderRadius(2)
-  }
-
-  @Builder
-  private SettingsKnob(selected: boolean) {
-    Row() {}
-      .width(5)
-      .height(5)
-      .backgroundColor(selected ? EggClipColors.onPrimary : EggClipColors.textPrimary)
-      .borderRadius(3)
+      .rotate({ angle })
+      .offset({ x, y })
   }
 
   private applyThemeMode(context: common.UIAbilityContext, mode: ThemeMode): void {
