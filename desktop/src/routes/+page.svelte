@@ -56,6 +56,7 @@
       class="icon-button"
       type="button"
       aria-label="打开设置"
+      aria-expanded={settingsVisible}
       on:click={() => {
         settingsVisible = !settingsVisible;
       }}>⚙</button
@@ -82,14 +83,14 @@
   <HistoryList history={$shellSnapshot.history} />
 
   {#if settingsVisible}
-    <section class="settings-section" aria-label="设置">
+    <section class="settings-popover" aria-label="设置">
       <div class="section-heading compact">
         <div>
           <h2>设置</h2>
           <p class="metadata">
             {$settingsSnapshot.state === "error"
               ? $settingsSnapshot.errorMessage
-              : "本机设置会保存到本地数据库，不上传云端"}
+              : "保存到本机数据库，不上传云端"}
           </p>
         </div>
         <button

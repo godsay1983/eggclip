@@ -43,6 +43,7 @@ button {
 }
 
 .panel-shell {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -136,7 +137,6 @@ footer {
 .status-card,
 .clipboard-card,
 .poc-connect-card,
-.settings-section,
 .device-section,
 .history-section {
   border: 1px solid var(--line);
@@ -309,13 +309,27 @@ footer {
 }
 
 .device-section,
-.history-section,
-.settings-section {
+.history-section {
   padding: 16px;
   border-radius: 20px;
 }
 
-.settings-section .metadata {
+.settings-popover {
+  position: absolute;
+  top: 78px;
+  right: 24px;
+  z-index: 10;
+  width: min(356px, calc(100% - 48px));
+  max-height: calc(100% - 118px);
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid rgba(167, 122, 0, 0.18);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 48px rgba(78, 56, 11, 0.18);
+}
+
+.settings-popover .metadata {
   margin-top: 4px;
 }
 
@@ -434,6 +448,12 @@ footer {
   .panel-shell {
     border-color: rgba(231, 190, 50, 0.4);
     background: rgba(28, 25, 20, 0.95);
+  }
+
+  .settings-popover {
+    border-color: rgba(231, 190, 50, 0.18);
+    background: rgba(41, 37, 30, 0.98);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
   }
 }
 

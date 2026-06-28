@@ -73,7 +73,12 @@ export struct HomePage {
         this.HistoryPlaceholder()
       }
       .width('100%')
-      .padding(EggClipSpacing.pagePadding)
+      .padding({
+        left: EggClipSpacing.pagePadding,
+        right: EggClipSpacing.pagePadding,
+        top: EggClipSpacing.pagePadding,
+        bottom: 112
+      })
     }
     .width('100%')
     .height('100%')
@@ -95,13 +100,6 @@ export struct HomePage {
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
-
-      Text('设置')
-        .fontSize(EggClipTypography.bodySize)
-        .fontColor(EggClipColors.textSecondary)
-        .padding({ left: 14, right: 14, top: 8, bottom: 8 })
-        .backgroundColor(EggClipColors.controlBackground)
-        .borderRadius(18)
     }
     .width('100%')
   }

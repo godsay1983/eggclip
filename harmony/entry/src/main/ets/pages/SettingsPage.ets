@@ -43,7 +43,12 @@ export struct SettingsPage {
         this.PrivacyCard()
       }
       .width('100%')
-      .padding(EggClipSpacing.pagePadding)
+      .padding({
+        left: EggClipSpacing.pagePadding,
+        right: EggClipSpacing.pagePadding,
+        top: EggClipSpacing.pagePadding,
+        bottom: 112
+      })
     }
     .width('100%')
     .height('100%')

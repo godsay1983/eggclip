@@ -297,7 +297,7 @@ desktop/
 - [ ] 显示公钥短指纹和最后在线时间。
 - [ ] 支持设备重命名、移除和空间密钥轮换。
 - [ ] 支持开机启动、自动同步、自动接收、自动写入和历史策略。
-  - [x] 建立 `AppSettings` 的 Tauri command、TypeScript API 和 Svelte store 基础，并在主面板接入自动同步、自动接收、自动写入和历史策略基础 UI。
+  - [x] 建立 `AppSettings` 的 Tauri command、TypeScript API 和 Svelte store 基础，并通过右上角设置按钮弹出层接入自动同步、自动接收、自动写入和历史策略基础 UI。
 - [ ] 支持暂停 5 分钟、暂停至手动恢复和托盘快速切换。
 - [ ] 提供诊断页：本机地址、端口、mDNS、监听状态和防火墙提示，不显示秘密。
 
