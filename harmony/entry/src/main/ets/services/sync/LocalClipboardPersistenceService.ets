@@ -1,6 +1,11 @@
 import { common } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
-import { AppSettings } from '../../models/DomainModels';
+import {
+  AppSettings,
+  LocalClipboardSyncPolicy,
+  SyncPauseReason,
+  localClipboardSyncPolicy
+} from '../../models/DomainModels';
 import { Database } from '../../data/db/Database';
 import { RdbCommandRunner } from '../../data/db/RdbCommandRunner';
 import {
@@ -18,8 +23,16 @@ export interface PersistLocalClipboardInput {
   nowMs: number;
 }
 
+export enum LocalClipboardBroadcastStatus {
+  SCHEDULED = 'scheduled',
+  SKIPPED = 'skipped'
+}
+
 export interface PersistLocalClipboardResult {
   record: ClipboardItemRecord;
+  policy: LocalClipboardSyncPolicy;
+  broadcastStatus: LocalClipboardBroadcastStatus;
+  blockedReason?: SyncPauseReason;
 }
 
 export class LocalClipboardPersistenceService {
@@ -53,8 +66,14 @@ export class LocalClipboardPersistenceService {
     }
 
     await this.runner.executeTransaction(store, plan.commands);
+    const policy = localClipboardSyncPolicy(input.settings);
     return {
-      record: plan.record
+      record: plan.record,
+      policy,
+      broadcastStatus: policy.broadcastAfterCommit ?
+        LocalClipboardBroadcastStatus.SCHEDULED :
+        LocalClipboardBroadcastStatus.SKIPPED,
+      blockedReason: policy.blockedReason
     };
   }
 }

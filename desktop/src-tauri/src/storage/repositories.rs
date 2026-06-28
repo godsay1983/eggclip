@@ -2,9 +2,10 @@ use rusqlite::{params, types::Type, Connection, OptionalExtension};
 use uuid::Uuid;
 
 use crate::sync::{
-    build_local_clipboard_item, deduplicate_clipboard_item, new_uuid_v7, AppSettings,
-    ClipboardDedupDecision, ClipboardItem, ContentType, Device, DeviceConnectionState,
-    DeviceTrustState, HlcTimestamp, LocalClipboardItemInput, Space, SpaceState, SyncHead,
+    broadcast_local_clipboard_after_commit, build_local_clipboard_item, deduplicate_clipboard_item,
+    new_uuid_v7, AppSettings, ClipboardDedupDecision, ClipboardItem, ContentType, Device,
+    DeviceConnectionState, DeviceTrustState, HlcTimestamp, LocalClipboardBroadcastOutcome,
+    LocalClipboardBroadcaster, LocalClipboardItemInput, Space, SpaceState, SyncHead,
     SyncModelError,
 };
 
@@ -62,6 +63,12 @@ pub struct LocalClipboardPersistInput<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalClipboardPersistResult {
     pub record: ClipboardItemRecord,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalClipboardPersistAndBroadcastResult {
+    pub record: ClipboardItemRecord,
+    pub broadcast_outcome: LocalClipboardBroadcastOutcome,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -139,6 +146,29 @@ pub fn persist_local_clipboard_text(
     transaction.commit()?;
 
     Ok(LocalClipboardPersistResult { record })
+}
+
+/// Persists local clipboard content first, then attempts best-effort live broadcast.
+///
+/// The broadcaster is invoked only after the SQLite transaction has committed.
+/// Its failure is reported as status and never rolls back the local immutable item.
+pub fn persist_local_clipboard_text_then_broadcast<B>(
+    connection: &mut Connection,
+    input: LocalClipboardPersistInput<'_>,
+    broadcaster: &mut B,
+) -> rusqlite::Result<LocalClipboardPersistAndBroadcastResult>
+where
+    B: LocalClipboardBroadcaster<ClipboardItemRecord>,
+{
+    let settings = input.settings.clone();
+    let result = persist_local_clipboard_text(connection, input)?;
+    let broadcast_outcome =
+        broadcast_local_clipboard_after_commit(&result.record, &settings, broadcaster);
+
+    Ok(LocalClipboardPersistAndBroadcastResult {
+        record: result.record,
+        broadcast_outcome,
+    })
 }
 
 pub struct SpaceRepository<'a> {
@@ -876,8 +906,30 @@ mod tests {
     use super::*;
     use crate::{
         storage::open_in_memory_database,
-        sync::{build_local_clipboard_item, HlcTimestamp, LocalClipboardItemInput},
+        sync::{
+            build_local_clipboard_item, HlcTimestamp, LocalClipboardBroadcastError,
+            LocalClipboardItemInput, SyncPauseReason,
+        },
     };
+
+    struct RecordingBroadcaster {
+        attempts: usize,
+        fail: bool,
+    }
+
+    impl LocalClipboardBroadcaster<ClipboardItemRecord> for RecordingBroadcaster {
+        fn broadcast_live_item(
+            &mut self,
+            _item: &ClipboardItemRecord,
+        ) -> Result<(), LocalClipboardBroadcastError> {
+            self.attempts += 1;
+            if self.fail {
+                Err(LocalClipboardBroadcastError)
+            } else {
+                Ok(())
+            }
+        }
+    }
 
     fn seed_space_and_devices(connection: &Connection) -> rusqlite::Result<(Uuid, Uuid, Uuid)> {
         let space_id = Uuid::now_v7();
@@ -1379,5 +1431,105 @@ mod tests {
         assert_eq!(item_count, 0);
         let identity = LocalIdentityRepository::new(&mut connection);
         assert_eq!(identity.peek_next_origin_seq(), Ok(INITIAL_ORIGIN_SEQ));
+    }
+
+    #[test]
+    fn persist_local_clipboard_text_then_broadcast_keeps_record_when_broadcast_fails() {
+        let mut connection = open_in_memory_database().expect("database should initialize");
+        let now_ms = 1_700_000_000_000;
+        let local_device_id = {
+            let mut identity = LocalIdentityRepository::new(&mut connection);
+            identity
+                .get_or_create_device_id(now_ms)
+                .expect("local device id should be created")
+        };
+        let space_id = Uuid::now_v7();
+        let peer_device_id = Uuid::now_v7();
+        seed_space_with_devices(&connection, space_id, local_device_id, peer_device_id)
+            .expect("space and devices should seed");
+        let mut broadcaster = RecordingBroadcaster {
+            attempts: 0,
+            fail: true,
+        };
+
+        let result = persist_local_clipboard_text_then_broadcast(
+            &mut connection,
+            LocalClipboardPersistInput {
+                space_id,
+                text: "广播失败也保留本地历史".to_string(),
+                encrypted_content: vec![0x10, 0x20],
+                hmac_key: b"space-key-for-tests",
+                settings: AppSettings::default(),
+                now_ms,
+            },
+            &mut broadcaster,
+        )
+        .expect("local transaction should commit before broadcast");
+
+        assert_eq!(broadcaster.attempts, 1);
+        assert_eq!(
+            result.broadcast_outcome,
+            LocalClipboardBroadcastOutcome::Failed
+        );
+
+        let stored = ClipboardRepository::new(&connection)
+            .get(result.record.item.item_id)
+            .expect("stored item should be readable")
+            .expect("stored item should remain committed");
+        assert_eq!(
+            stored.item.content_digest,
+            result.record.item.content_digest
+        );
+        let identity = LocalIdentityRepository::new(&mut connection);
+        assert_eq!(identity.peek_next_origin_seq(), Ok(2));
+    }
+
+    #[test]
+    fn persist_local_clipboard_text_then_broadcast_skips_network_when_sync_is_disabled() {
+        let mut connection = open_in_memory_database().expect("database should initialize");
+        let now_ms = 1_700_000_000_000;
+        let local_device_id = {
+            let mut identity = LocalIdentityRepository::new(&mut connection);
+            identity
+                .get_or_create_device_id(now_ms)
+                .expect("local device id should be created")
+        };
+        let space_id = Uuid::now_v7();
+        let peer_device_id = Uuid::now_v7();
+        seed_space_with_devices(&connection, space_id, local_device_id, peer_device_id)
+            .expect("space and devices should seed");
+        let mut broadcaster = RecordingBroadcaster {
+            attempts: 0,
+            fail: false,
+        };
+
+        let result = persist_local_clipboard_text_then_broadcast(
+            &mut connection,
+            LocalClipboardPersistInput {
+                space_id,
+                text: "同步关闭只保留本地".to_string(),
+                encrypted_content: vec![0x30, 0x40],
+                hmac_key: b"space-key-for-tests",
+                settings: AppSettings {
+                    sync_enabled: false,
+                    ..AppSettings::default()
+                },
+                now_ms,
+            },
+            &mut broadcaster,
+        )
+        .expect("local transaction should still commit when sync is disabled");
+
+        assert_eq!(broadcaster.attempts, 0);
+        assert_eq!(
+            result.broadcast_outcome,
+            LocalClipboardBroadcastOutcome::Skipped {
+                reason: Some(SyncPauseReason::SyncDisabled),
+            }
+        );
+        assert!(ClipboardRepository::new(&connection)
+            .get(result.record.item.item_id)
+            .expect("stored item should be readable")
+            .is_some());
     }
 }

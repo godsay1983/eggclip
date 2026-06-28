@@ -144,8 +144,9 @@ desktop/
 ### Sync Engine
 
 - [x] 将本地复制转换为不可变 `ClipboardItem`。
-- [ ] 本地事务成功后再异步广播，网络失败不回滚本地记录。
+- [x] 本地事务成功后再异步广播，网络失败不回滚本地记录。
   - [x] 已完成本地事务持久化边界：生成 `ClipboardItem`、写入 `encrypted_content`、递增 `originSeq` 同事务提交；网络广播接入待后续实现。
+  - [x] 增加事务后广播器边界和失败回归测试：广播失败只返回状态，不回滚已提交的本地记录。
 - [x] 区分 `ITEM_LIVE` 和 `ITEM_BATCH`。
 - [x] 只有 `ITEM_LIVE` 可以触发桌面自动写入。
 - [x] `ITEM_BATCH` 只更新历史和同步游标。

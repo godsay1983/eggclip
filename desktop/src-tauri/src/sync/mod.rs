@@ -429,6 +429,20 @@ pub struct LocalClipboardSyncPolicy {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LocalClipboardBroadcastError;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocalClipboardBroadcastOutcome {
+    Sent,
+    Failed,
+    Skipped { reason: Option<SyncPauseReason> },
+}
+
+pub trait LocalClipboardBroadcaster<T: ?Sized> {
+    fn broadcast_live_item(&mut self, item: &T) -> Result<(), LocalClipboardBroadcastError>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InboundClipboardPolicy {
     pub write_system_clipboard: bool,
     pub update_history: bool,
@@ -440,6 +454,27 @@ pub fn local_clipboard_sync_policy(settings: &AppSettings) -> LocalClipboardSync
         persist_locally: true,
         broadcast_after_commit: settings.sync_enabled,
         blocked_reason: (!settings.sync_enabled).then_some(SyncPauseReason::SyncDisabled),
+    }
+}
+
+pub fn broadcast_local_clipboard_after_commit<T: ?Sized, B>(
+    committed_item: &T,
+    settings: &AppSettings,
+    broadcaster: &mut B,
+) -> LocalClipboardBroadcastOutcome
+where
+    B: LocalClipboardBroadcaster<T>,
+{
+    let policy = local_clipboard_sync_policy(settings);
+    if !policy.broadcast_after_commit {
+        return LocalClipboardBroadcastOutcome::Skipped {
+            reason: policy.blocked_reason,
+        };
+    }
+
+    match broadcaster.broadcast_live_item(committed_item) {
+        Ok(()) => LocalClipboardBroadcastOutcome::Sent,
+        Err(LocalClipboardBroadcastError) => LocalClipboardBroadcastOutcome::Failed,
     }
 }
 
@@ -744,6 +779,74 @@ mod tests {
                 blocked_reason: None,
             }
         );
+    }
+
+    #[test]
+    fn local_clipboard_broadcast_runs_only_after_policy_allows_it() {
+        struct FakeBroadcaster {
+            attempts: usize,
+            fail: bool,
+        }
+
+        impl LocalClipboardBroadcaster<ClipboardItem> for FakeBroadcaster {
+            fn broadcast_live_item(
+                &mut self,
+                _item: &ClipboardItem,
+            ) -> Result<(), LocalClipboardBroadcastError> {
+                self.attempts += 1;
+                if self.fail {
+                    Err(LocalClipboardBroadcastError)
+                } else {
+                    Ok(())
+                }
+            }
+        }
+
+        let item = build_local_clipboard_item(
+            LocalClipboardItemInput {
+                item_id: uuid_from_ms(1_700_000_000_010),
+                space_id: uuid_from_ms(1_700_000_000_000),
+                origin_device_id: uuid_from_ms(1_700_000_000_001),
+                origin_seq: 7,
+                hlc: HlcTimestamp::new(1_700_000_000_100, 0),
+                created_at: 1_700_000_000_100,
+                hmac_key: b"space-key-for-tests",
+            },
+            "本地复制".to_string(),
+        )
+        .expect("valid item should be built");
+
+        let mut ok = FakeBroadcaster {
+            attempts: 0,
+            fail: false,
+        };
+        assert_eq!(
+            broadcast_local_clipboard_after_commit(&item, &AppSettings::default(), &mut ok),
+            LocalClipboardBroadcastOutcome::Sent
+        );
+        assert_eq!(ok.attempts, 1);
+
+        let mut failing = FakeBroadcaster {
+            attempts: 0,
+            fail: true,
+        };
+        assert_eq!(
+            broadcast_local_clipboard_after_commit(&item, &AppSettings::default(), &mut failing),
+            LocalClipboardBroadcastOutcome::Failed
+        );
+        assert_eq!(failing.attempts, 1);
+
+        let sync_disabled = AppSettings {
+            sync_enabled: false,
+            ..AppSettings::default()
+        };
+        assert_eq!(
+            broadcast_local_clipboard_after_commit(&item, &sync_disabled, &mut failing),
+            LocalClipboardBroadcastOutcome::Skipped {
+                reason: Some(SyncPauseReason::SyncDisabled),
+            }
+        );
+        assert_eq!(failing.attempts, 1);
     }
 
     #[test]

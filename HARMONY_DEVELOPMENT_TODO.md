@@ -148,7 +148,7 @@ harmony/entry/src/main/ets/
   - [x] 建立本机 `deviceId` 与 `nextOriginSeq` 的 repository SQL command 层；随机生成与真实 `relationalStore` 持久化待接入。
   - [x] 建立本地剪贴板持久化命令计划：由 PasteButton 明文生成 `ClipboardItem`、写入 `encrypted_content`、推进 `originSeq`；真实 transaction 执行和广播接入待后续服务编排实现。
   - [x] 接入 `LocalIdentityRdbRepository`，使用真实 RDB 保存本机 `deviceId`，并以 transaction 分配/推进 `originSeq`。
-  - [x] 接入 `LocalClipboardPersistenceService`，将 PasteButton 明文、digest 和 encrypted blob 编排为真实 RDB transaction；网络广播待后续接入。
+  - [x] 接入 `LocalClipboardPersistenceService`，将 PasteButton 明文、digest 和 encrypted blob 编排为真实 RDB transaction；事务成功后返回广播调度/跳过状态，真实 WebSocket 发送待后续接入。
 - [x] 实现最近 50 条、最长 7 天 retention。
   - [x] 建立 retention SQL command 层并通过真实 RDB transaction runner 执行，覆盖过期清理、数量超限和清空历史。
 - [x] 支持历史数量 0、20、50、100。
