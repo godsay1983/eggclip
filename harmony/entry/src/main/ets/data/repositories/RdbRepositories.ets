@@ -180,6 +180,20 @@ export class ClipboardRdbRepository {
     }
   }
 
+  async countAllActive(): Promise<number> {
+    const store = await Database.getStore(this.context);
+    const command = this.commands.countAllActive();
+    const resultSet = await store.querySql(command.sql, this.runner.bindArgs(command.args));
+    try {
+      if (!resultSet.goToFirstRow()) {
+        return 0;
+      }
+      return getNumber(resultSet, 'active_count');
+    } finally {
+      resultSet.close();
+    }
+  }
+
   async getByOriginSequence(originDeviceId: string, originSeq: number): Promise<ClipboardItemRecord | null> {
     const store = await Database.getStore(this.context);
     const resultSet = await store.querySql(

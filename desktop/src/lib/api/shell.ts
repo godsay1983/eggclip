@@ -97,6 +97,10 @@ export async function clearClipboardHistory(): Promise<number> {
   return invoke<number>("clear_clipboard_history");
 }
 
+export async function getClipboardHistoryUsed(): Promise<number> {
+  return invoke<number>("get_clipboard_history_used");
+}
+
 export async function sendPocClipboardText(text: string): Promise<number> {
   return invoke<number>("send_poc_clipboard_text", { text });
 }

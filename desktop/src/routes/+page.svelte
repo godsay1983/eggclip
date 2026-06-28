@@ -17,6 +17,7 @@
       .startPocEventListeners()
       .then(() => shellSnapshot.startPocTransport());
     void shellSnapshot.startClipboardMonitor();
+    void shellSnapshot.refreshHistorySummary();
     void settingsSnapshot.load();
   });
 
@@ -91,7 +92,13 @@
     onSendPoc={() => shellSnapshot.sendCurrentToPocPeer()}
   />
 
-  <HistoryList history={$shellSnapshot.history} onClear={() => shellSnapshot.clearHistory()} />
+  <HistoryList
+    history={{
+      ...$shellSnapshot.history,
+      limit: $settingsSnapshot.settings.historyLimit,
+    }}
+    onClear={() => shellSnapshot.clearHistory()}
+  />
 
   {#if settingsVisible}
     <section class="settings-popover" aria-label="设置">

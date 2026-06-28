@@ -474,6 +474,15 @@ impl<'a> ClipboardRepository<'a> {
         )?;
         i64_to_usize(count, 0)
     }
+
+    pub fn active_count_all(&self) -> rusqlite::Result<usize> {
+        let count: i64 = self.connection.query_row(
+            "SELECT COUNT(*) FROM clipboard_items WHERE deleted_at IS NULL",
+            [],
+            |row| row.get(0),
+        )?;
+        i64_to_usize(count, 0)
+    }
 }
 
 pub struct SyncHeadRepository<'a> {

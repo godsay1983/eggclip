@@ -4,6 +4,7 @@ import {
   createInitialShellSnapshot,
   clearClipboardHistory,
   disconnectAllPocPeers,
+  getClipboardHistoryUsed,
   getPocTransportStatus,
   onLocalClipboardText,
   onPocClipboardText,
@@ -265,6 +266,27 @@ export const shellSnapshot = {
       return;
     }
     await writeSystemClipboardText(text);
+  },
+  async refreshHistorySummary() {
+    try {
+      const used = await getClipboardHistoryUsed();
+      snapshot.update((state) => ({
+        ...state,
+        history: {
+          ...state.history,
+          used,
+        },
+      }));
+    } catch (error) {
+      snapshot.update((state) => ({
+        ...state,
+        connection: {
+          state: "authFailed",
+          title: "读取历史数量失败",
+          description: error instanceof Error ? error.message : "无法读取本机历史数量",
+        },
+      }));
+    }
   },
   async clearHistory() {
     try {

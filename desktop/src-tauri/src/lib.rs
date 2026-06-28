@@ -68,6 +68,7 @@ pub fn run() {
             clipboard::read_clipboard_text,
             clipboard::write_clipboard_text,
             history::clear_clipboard_history,
+            history::get_clipboard_history_used,
             settings::load_app_settings,
             settings::save_app_settings,
             transport::connect_poc_peer,

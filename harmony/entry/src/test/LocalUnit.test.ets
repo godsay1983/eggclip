@@ -460,6 +460,10 @@ export default function localUnitTest() {
       expect(clearAll.sql.indexOf('WHERE deleted_at IS NULL') >= 0).assertEqual(true);
       expect(clearAll.sql.indexOf('space_id = ?')).assertEqual(-1);
       expect(clearAll.args[0]).assertEqual(1700000000250);
+      const countAll = clipboard.countAllActive();
+      expect(countAll.sql.indexOf('COUNT(*) AS active_count') >= 0).assertEqual(true);
+      expect(countAll.sql.indexOf('deleted_at IS NULL') >= 0).assertEqual(true);
+      expect(countAll.args.length).assertEqual(0);
 
       const syncHead = heads.upsert({
         peerDeviceId,

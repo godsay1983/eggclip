@@ -1,18 +1,21 @@
+import { common } from '@kit.AbilityKit';
 import { ClipboardBridgeService } from '../services/clipboard/ClipboardBridgeService';
-import { createInitialHomeShellState } from '../store/HomeStore';
+import {
+  HistoryStore,
+  HistoryStoreSnapshot
+} from '../store/HistoryStore';
 import {
   PocConnectionSnapshot,
   pocConnectionStore
 } from '../store/PocConnectionStore';
-import { HomeShellState } from '../models/ShellModels';
 import { EggClipColors } from '../theme/Colors';
 import { EggClipSpacing } from '../theme/Spacing';
 import { EggClipTypography } from '../theme/Typography';
 
 @Component
 export struct HomePage {
-  private readonly state: HomeShellState = createInitialHomeShellState();
   private readonly clipboardBridge: ClipboardBridgeService = new ClipboardBridgeService();
+  private historyStore: HistoryStore | null = null;
   private readonly connectionSnapshotListener = (snapshot: PocConnectionSnapshot): void => {
     this.latestReceivedText = snapshot.latestReceivedText;
     this.latestReceivedPreview = snapshot.latestReceivedPreview;
@@ -28,9 +31,19 @@ export struct HomePage {
   @State private latestReceivedText: string = '';
   @State private latestReceivedPreview: string = '';
   @State private latestReceivedSource: string = '暂无内容';
+  @State private historyUsed: number = 0;
+  @State private historyLimit: number = 50;
+  @State private historyStatus: string = '正在读取本机历史摘要';
 
   aboutToAppear(): void {
     pocConnectionStore.subscribe(this.connectionSnapshotListener);
+    if (this.historyStore === null) {
+      const hostContext = this.getUIContext().getHostContext();
+      if (hostContext !== undefined) {
+        this.historyStore = new HistoryStore(hostContext as common.UIAbilityContext);
+      }
+    }
+    this.loadHistorySummary();
   }
 
   aboutToDisappear(): void {
@@ -192,11 +205,16 @@ export struct HomePage {
           .fontWeight(FontWeight.Bold)
           .fontColor(EggClipColors.textPrimary)
 
-        Text(`历史开启后保存最近 ${this.state.history.limit} 条，最长保留 7 天；离线补齐只进历史，不覆盖当前剪贴板。`)
+        Text(`当前本机历史 ${this.historyUsed} / ${this.historyLimit}；离线补齐只进历史，不覆盖当前剪贴板。`)
           .width('100%')
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
           .lineHeight(20)
+
+        Text(this.historyStatus)
+          .width('100%')
+          .fontSize(11)
+          .fontColor(EggClipColors.textSecondary)
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
@@ -236,6 +254,23 @@ export struct HomePage {
       })
       .catch(() => {
         this.copyStatus = '写入本机剪贴板失败，请稍后重试';
+      });
+  }
+
+  private loadHistorySummary(): void {
+    if (this.historyStore === null) {
+      this.historyStatus = '无法获取页面上下文，历史摘要不可用';
+      return;
+    }
+    this.historyStatus = '正在读取本机历史摘要';
+    this.historyStore.loadSummary()
+      .then((snapshot: HistoryStoreSnapshot) => {
+        this.historyUsed = snapshot.used;
+        this.historyLimit = snapshot.limit;
+        this.historyStatus = snapshot.errorMessage.length > 0 ? snapshot.errorMessage : '只显示数量，不展示历史正文';
+      })
+      .catch(() => {
+        this.historyStatus = '读取历史摘要失败';
       });
   }
 }

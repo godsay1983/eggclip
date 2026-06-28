@@ -111,6 +111,13 @@ export class ClipboardRepository {
     };
   }
 
+  countAllActive(): RepositoryCommand {
+    return {
+      sql: 'SELECT COUNT(*) AS active_count FROM clipboard_items WHERE deleted_at IS NULL',
+      args: []
+    };
+  }
+
   markDeleted(itemId: string, deletedAt: number): RepositoryCommand {
     return {
       sql: `UPDATE clipboard_items SET deleted_at = ?

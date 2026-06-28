@@ -13,11 +13,24 @@ pub fn clear_clipboard_history(app: AppHandle) -> Result<usize, String> {
     clear_clipboard_history_at_path(&path, now_ms()?)
 }
 
+#[tauri::command]
+pub fn get_clipboard_history_used(app: AppHandle) -> Result<usize, String> {
+    let path = database_path(&app)?;
+    get_clipboard_history_used_at_path(&path)
+}
+
 fn clear_clipboard_history_at_path(path: &Path, deleted_at: u64) -> Result<usize, String> {
     let connection = open_database(path).map_err(|error| format!("无法打开本地数据库：{error}"))?;
     ClipboardRepository::new(&connection)
         .clear_all_history(deleted_at)
         .map_err(|error| format!("无法清空历史：{error}"))
+}
+
+fn get_clipboard_history_used_at_path(path: &Path) -> Result<usize, String> {
+    let connection = open_database(path).map_err(|error| format!("无法打开本地数据库：{error}"))?;
+    ClipboardRepository::new(&connection)
+        .active_count_all()
+        .map_err(|error| format!("无法读取历史数量：{error}"))
 }
 
 #[cfg(test)]
@@ -81,8 +94,16 @@ mod tests {
             .expect("deleted item should insert");
         drop(connection);
 
+        assert_eq!(
+            get_clipboard_history_used_at_path(&path).expect("history count should load"),
+            1
+        );
         let cleared = clear_clipboard_history_at_path(&path, 1_700_000_002_000)
             .expect("history should clear");
+        assert_eq!(
+            get_clipboard_history_used_at_path(&path).expect("history count should reload"),
+            0
+        );
         let connection = open_database(&path).expect("database should reopen");
         let active_count: i64 = connection
             .query_row(
