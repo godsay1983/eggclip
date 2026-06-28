@@ -3,6 +3,7 @@ import { relationalStore } from '@kit.ArkData';
 import {
   AppSettings,
   ClipboardItem,
+  ClipboardDedupDecision,
   ContentType,
   Device,
   DeviceConnectionState,
@@ -10,6 +11,7 @@ import {
   Space,
   SpaceState,
   SyncHead,
+  deduplicateClipboardItem,
   validateAppSettings
 } from '../../models/DomainModels';
 import { Database } from '../db/Database';
@@ -127,6 +129,24 @@ export class ClipboardRdbRepository {
     await this.runner.execute(store, command);
   }
 
+  async insertDeduplicated(record: ClipboardItemRecord): Promise<ClipboardDedupDecision> {
+    const existingByItemId = await this.get(record.item.itemId);
+    if (existingByItemId !== null) {
+      return deduplicateClipboardItem(existingByItemId.item, record.item);
+    }
+
+    const existingByOrigin = await this.getByOriginSequence(
+      record.item.originDeviceId,
+      record.item.originSeq
+    );
+    if (existingByOrigin !== null) {
+      return deduplicateClipboardItem(existingByOrigin.item, record.item);
+    }
+
+    await this.insert(record);
+    return ClipboardDedupDecision.NEW;
+  }
+
   async get(itemId: string): Promise<ClipboardItemRecord | null> {
     const store = await Database.getStore(this.context);
     const command = this.commands.get(itemId);
@@ -154,6 +174,24 @@ export class ClipboardRdbRepository {
         records.push(readClipboardRecord(resultSet));
       } while (resultSet.goToNextRow());
       return records;
+    } finally {
+      resultSet.close();
+    }
+  }
+
+  async getByOriginSequence(originDeviceId: string, originSeq: number): Promise<ClipboardItemRecord | null> {
+    const store = await Database.getStore(this.context);
+    const resultSet = await store.querySql(
+      `SELECT item_id, space_id, origin_device_id, origin_seq, hlc, content_type,
+        content_length, content_digest, encrypted_content, created_at, received_at, expires_at, deleted_at
+        FROM clipboard_items WHERE origin_device_id = ? AND origin_seq = ? LIMIT 1`,
+      [originDeviceId, originSeq]
+    );
+    try {
+      if (!resultSet.goToFirstRow()) {
+        return null;
+      }
+      return readClipboardRecord(resultSet);
     } finally {
       resultSet.close();
     }

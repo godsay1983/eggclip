@@ -2,9 +2,10 @@ use rusqlite::{params, types::Type, Connection, OptionalExtension};
 use uuid::Uuid;
 
 use crate::sync::{
-    build_local_clipboard_item, new_uuid_v7, AppSettings, ClipboardItem, ContentType, Device,
-    DeviceConnectionState, DeviceTrustState, HlcTimestamp, LocalClipboardItemInput, Space,
-    SpaceState, SyncHead, SyncModelError,
+    build_local_clipboard_item, deduplicate_clipboard_item, new_uuid_v7, AppSettings,
+    ClipboardDedupDecision, ClipboardItem, ContentType, Device, DeviceConnectionState,
+    DeviceTrustState, HlcTimestamp, LocalClipboardItemInput, Space, SpaceState, SyncHead,
+    SyncModelError,
 };
 
 pub const LOCAL_DEVICE_ID_KEY: &str = "localDeviceId";
@@ -39,6 +40,13 @@ pub struct ClipboardItemRecord {
 pub struct SyncHeadRecord {
     pub head: SyncHead,
     pub peer_device_id: Uuid,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClipboardInsertOutcome {
+    Inserted,
+    Duplicate,
+    Conflict,
 }
 
 #[derive(Debug, Clone)]
@@ -274,6 +282,42 @@ impl<'a> ClipboardRepository<'a> {
         Ok(affected == 1)
     }
 
+    pub fn insert_deduplicated(
+        &self,
+        record: &ClipboardItemRecord,
+    ) -> rusqlite::Result<ClipboardInsertOutcome> {
+        if let Some(existing) = self.get(record.item.item_id)? {
+            return Ok(dedup_decision_to_insert_outcome(
+                deduplicate_clipboard_item(&existing.item, &record.item),
+            ));
+        }
+        if let Some(existing) =
+            self.get_by_origin_sequence(record.item.origin_device_id, record.item.origin_seq)?
+        {
+            return Ok(dedup_decision_to_insert_outcome(
+                deduplicate_clipboard_item(&existing.item, &record.item),
+            ));
+        }
+
+        if self.insert(record)? {
+            return Ok(ClipboardInsertOutcome::Inserted);
+        }
+
+        if let Some(existing) = self.get(record.item.item_id)? {
+            return Ok(dedup_decision_to_insert_outcome(
+                deduplicate_clipboard_item(&existing.item, &record.item),
+            ));
+        }
+        if let Some(existing) =
+            self.get_by_origin_sequence(record.item.origin_device_id, record.item.origin_seq)?
+        {
+            return Ok(dedup_decision_to_insert_outcome(
+                deduplicate_clipboard_item(&existing.item, &record.item),
+            ));
+        }
+        Ok(ClipboardInsertOutcome::Duplicate)
+    }
+
     pub fn get(&self, item_id: Uuid) -> rusqlite::Result<Option<ClipboardItemRecord>> {
         self.connection
             .query_row(
@@ -281,6 +325,22 @@ impl<'a> ClipboardRepository<'a> {
                   content_length, content_digest, encrypted_content, created_at, received_at, expires_at, deleted_at
                  FROM clipboard_items WHERE item_id = ?1",
                 params![item_id.to_string()],
+                row_to_clipboard_record,
+            )
+            .optional()
+    }
+
+    pub fn get_by_origin_sequence(
+        &self,
+        origin_device_id: Uuid,
+        origin_seq: u64,
+    ) -> rusqlite::Result<Option<ClipboardItemRecord>> {
+        self.connection
+            .query_row(
+                "SELECT item_id, space_id, origin_device_id, origin_seq, hlc, content_type,
+                  content_length, content_digest, encrypted_content, created_at, received_at, expires_at, deleted_at
+                 FROM clipboard_items WHERE origin_device_id = ?1 AND origin_seq = ?2",
+                params![origin_device_id.to_string(), u64_to_i64(origin_seq)?],
                 row_to_clipboard_record,
             )
             .optional()
@@ -619,6 +679,14 @@ fn allocate_origin_seq_in_transaction(
         ],
     )?;
     Ok(current)
+}
+
+fn dedup_decision_to_insert_outcome(decision: ClipboardDedupDecision) -> ClipboardInsertOutcome {
+    match decision {
+        ClipboardDedupDecision::New => ClipboardInsertOutcome::Inserted,
+        ClipboardDedupDecision::Duplicate => ClipboardInsertOutcome::Duplicate,
+        ClipboardDedupDecision::Conflict => ClipboardInsertOutcome::Conflict,
+    }
 }
 
 fn row_to_space_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<SpaceRecord> {
@@ -984,6 +1052,80 @@ mod tests {
             .expect("item query should succeed")
             .expect("item should still exist logically");
         assert_eq!(stored.deleted_at, Some(1_700_000_001_000));
+    }
+
+    #[test]
+    fn clipboard_repository_reports_duplicate_and_conflicting_items() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let (space_id, local_device_id, _) =
+            seed_space_and_devices(&connection).expect("seed should succeed");
+        let clipboard = ClipboardRepository::new(&connection);
+
+        let item = build_local_clipboard_item(
+            LocalClipboardItemInput {
+                item_id: Uuid::now_v7(),
+                space_id,
+                origin_device_id: local_device_id,
+                origin_seq: 1,
+                hlc: HlcTimestamp::new(1_700_000_000_100, 0),
+                created_at: 1_700_000_000_100,
+                hmac_key: b"space-key-for-tests",
+            },
+            "dedup".to_string(),
+        )
+        .expect("item should build");
+        let record = ClipboardItemRecord {
+            item: item.clone(),
+            encrypted_content: vec![1],
+            received_at: 1_700_000_000_100,
+            expires_at: 1_700_604_800_100,
+            deleted_at: None,
+        };
+        assert_eq!(
+            clipboard.insert_deduplicated(&record),
+            Ok(ClipboardInsertOutcome::Inserted)
+        );
+        assert_eq!(
+            clipboard.insert_deduplicated(&record),
+            Ok(ClipboardInsertOutcome::Duplicate)
+        );
+
+        let same_origin_same_digest = ClipboardItemRecord {
+            item: ClipboardItem {
+                item_id: Uuid::now_v7(),
+                ..item.clone()
+            },
+            encrypted_content: vec![2],
+            ..record.clone()
+        };
+        assert_eq!(
+            clipboard.insert_deduplicated(&same_origin_same_digest),
+            Ok(ClipboardInsertOutcome::Duplicate)
+        );
+
+        let conflicting_item = build_local_clipboard_item(
+            LocalClipboardItemInput {
+                item_id: Uuid::now_v7(),
+                space_id,
+                origin_device_id: local_device_id,
+                origin_seq: 1,
+                hlc: HlcTimestamp::new(1_700_000_000_101, 0),
+                created_at: 1_700_000_000_101,
+                hmac_key: b"space-key-for-tests",
+            },
+            "conflict".to_string(),
+        )
+        .expect("conflicting item should build");
+        assert_eq!(
+            clipboard.insert_deduplicated(&ClipboardItemRecord {
+                item: conflicting_item,
+                encrypted_content: vec![3],
+                received_at: 1_700_000_000_101,
+                expires_at: 1_700_604_800_101,
+                deleted_at: None,
+            }),
+            Ok(ClipboardInsertOutcome::Conflict)
+        );
     }
 
     #[test]

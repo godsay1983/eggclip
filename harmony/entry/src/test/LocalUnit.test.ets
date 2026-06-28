@@ -23,10 +23,12 @@ import {
 } from '../main/ets/models/PocModels';
 import {
   ContentType as DomainContentType,
+  ClipboardDedupDecision,
   DomainValidationError,
   HlcTimestamp,
   OriginSeqAllocator,
   buildLocalClipboardItemDraft,
+  deduplicateClipboardItem,
   defaultAppSettings,
   validateAppSettings
 } from '../main/ets/models/DomainModels';
@@ -223,6 +225,66 @@ export default function localUnitTest() {
         historyLimit: 10,
         retentionDays: 7
       }).error).assertEqual(DomainValidationError.INVALID_HISTORY_LIMIT);
+    });
+
+    it('deduplicatesDomainClipboardItemsByItemIdOriginSeqAndDigest', 0, () => {
+      const base = buildLocalClipboardItemDraft({
+        itemId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
+        spaceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
+        originDeviceId: '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        originSeq: 42,
+        hlc: new HlcTimestamp(1700000000100, 0),
+        createdAt: 1700000000100,
+        contentDigest: 'VCKcnWkMQkRIXGbdZ29X9i2PfEJai3L2lV1hCUApXkw'
+      }, '蛋定 Clip');
+      const conflict = buildLocalClipboardItemDraft({
+        itemId: '018ff6f1-c394-7d08-8b99-4b7d10f2767a',
+        spaceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
+        originDeviceId: '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        originSeq: 42,
+        hlc: new HlcTimestamp(1700000000101, 0),
+        createdAt: 1700000000101,
+        contentDigest: 'q2WZ8A9TeXn4YosU3cNLuYx9R2DpBvK5JmHFgEaC710'
+      }, '不同内容');
+      if (base.item === undefined || conflict.item === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+
+      expect(deduplicateClipboardItem(base.item, base.item))
+        .assertEqual(ClipboardDedupDecision.DUPLICATE);
+      const sameOriginSameDigest = buildLocalClipboardItemDraft({
+        itemId: '018ff6f2-c394-7d08-8b99-4b7d10f2767a',
+        spaceId: base.item.spaceId,
+        originDeviceId: base.item.originDeviceId,
+        originSeq: base.item.originSeq,
+        hlc: new HlcTimestamp(1700000000102, 0),
+        createdAt: 1700000000102,
+        contentDigest: base.item.contentDigest
+      }, '蛋定 Clip');
+      if (sameOriginSameDigest.item === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      expect(deduplicateClipboardItem(base.item, sameOriginSameDigest.item))
+        .assertEqual(ClipboardDedupDecision.DUPLICATE);
+      expect(deduplicateClipboardItem(base.item, conflict.item))
+        .assertEqual(ClipboardDedupDecision.CONFLICT);
+      const newItem = buildLocalClipboardItemDraft({
+        itemId: '018ff6f3-c394-7d08-8b99-4b7d10f2767a',
+        spaceId: base.item.spaceId,
+        originDeviceId: base.item.originDeviceId,
+        originSeq: 43,
+        hlc: new HlcTimestamp(1700000000103, 0),
+        createdAt: 1700000000103,
+        contentDigest: base.item.contentDigest
+      }, '蛋定 Clip');
+      if (newItem.item === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      expect(deduplicateClipboardItem(base.item, newItem.item))
+        .assertEqual(ClipboardDedupDecision.NEW);
     });
 
     it('definesRdbSchemaMigrationPlanForLocalSyncTables', 0, () => {

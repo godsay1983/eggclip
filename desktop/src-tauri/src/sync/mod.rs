@@ -381,6 +381,34 @@ pub fn build_local_clipboard_item(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClipboardDedupDecision {
+    New,
+    Duplicate,
+    Conflict,
+}
+
+pub fn deduplicate_clipboard_item(
+    existing: &ClipboardItem,
+    incoming: &ClipboardItem,
+) -> ClipboardDedupDecision {
+    let same_item_id = existing.item_id == incoming.item_id;
+    let same_origin_sequence = existing.origin_device_id == incoming.origin_device_id
+        && existing.origin_seq == incoming.origin_seq;
+    let same_digest = existing.content_digest == incoming.content_digest;
+
+    if same_item_id && same_origin_sequence && same_digest {
+        return ClipboardDedupDecision::Duplicate;
+    }
+    if same_item_id || same_origin_sequence {
+        if same_digest {
+            return ClipboardDedupDecision::Duplicate;
+        }
+        return ClipboardDedupDecision::Conflict;
+    }
+    ClipboardDedupDecision::New
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InboundClipboardEventKind {
     ItemLive,
     ItemBatch,
@@ -587,6 +615,67 @@ mod tests {
                 write_system_clipboard: false,
                 update_history: true,
             }
+        );
+    }
+
+    #[test]
+    fn clipboard_dedup_detects_duplicates_and_conflicts() {
+        let base = build_local_clipboard_item(
+            LocalClipboardItemInput {
+                item_id: uuid_from_ms(1_700_000_000_010),
+                space_id: uuid_from_ms(1_700_000_000_000),
+                origin_device_id: uuid_from_ms(1_700_000_000_001),
+                origin_seq: 7,
+                hlc: HlcTimestamp::new(1_700_000_000_100, 0),
+                created_at: 1_700_000_000_100,
+                hmac_key: b"space-key-for-tests",
+            },
+            "same".to_string(),
+        )
+        .expect("base item should build");
+        let exact_duplicate = base.clone();
+        let same_origin_same_digest = ClipboardItem {
+            item_id: uuid_from_ms(1_700_000_000_011),
+            ..base.clone()
+        };
+        let same_origin_conflict = build_local_clipboard_item(
+            LocalClipboardItemInput {
+                item_id: uuid_from_ms(1_700_000_000_012),
+                origin_seq: base.origin_seq,
+                ..LocalClipboardItemInput {
+                    item_id: base.item_id,
+                    space_id: base.space_id,
+                    origin_device_id: base.origin_device_id,
+                    origin_seq: base.origin_seq,
+                    hlc: base.hlc,
+                    created_at: base.created_at,
+                    hmac_key: b"space-key-for-tests",
+                }
+            },
+            "different".to_string(),
+        )
+        .expect("conflicting item should build");
+        let new_item = ClipboardItem {
+            item_id: uuid_from_ms(1_700_000_000_013),
+            origin_seq: 8,
+            ..base.clone()
+        };
+
+        assert_eq!(
+            deduplicate_clipboard_item(&base, &exact_duplicate),
+            ClipboardDedupDecision::Duplicate
+        );
+        assert_eq!(
+            deduplicate_clipboard_item(&base, &same_origin_same_digest),
+            ClipboardDedupDecision::Duplicate
+        );
+        assert_eq!(
+            deduplicate_clipboard_item(&base, &same_origin_conflict),
+            ClipboardDedupDecision::Conflict
+        );
+        assert_eq!(
+            deduplicate_clipboard_item(&base, &new_item),
+            ClipboardDedupDecision::New
         );
     }
 }

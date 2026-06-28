@@ -35,6 +35,12 @@ export enum SpaceState {
   ARCHIVED = 'archived'
 }
 
+export enum ClipboardDedupDecision {
+  NEW = 'new',
+  DUPLICATE = 'duplicate',
+  CONFLICT = 'conflict'
+}
+
 export interface ClipboardItem {
   itemId: string;
   spaceId: string;
@@ -240,6 +246,24 @@ export function buildLocalClipboardItemDraft(
       plaintext: text
     }
   };
+}
+
+export function deduplicateClipboardItem(existing: ClipboardItem, incoming: ClipboardItem): ClipboardDedupDecision {
+  const sameItemId = existing.itemId === incoming.itemId;
+  const sameOriginSequence = existing.originDeviceId === incoming.originDeviceId &&
+    existing.originSeq === incoming.originSeq;
+  const sameDigest = existing.contentDigest === incoming.contentDigest;
+
+  if (sameItemId && sameOriginSequence && sameDigest) {
+    return ClipboardDedupDecision.DUPLICATE;
+  }
+  if (sameItemId || sameOriginSequence) {
+    if (sameDigest) {
+      return ClipboardDedupDecision.DUPLICATE;
+    }
+    return ClipboardDedupDecision.CONFLICT;
+  }
+  return ClipboardDedupDecision.NEW;
 }
 
 export function validateClipboardItemFields(item: ClipboardItem): ValidationResult {
