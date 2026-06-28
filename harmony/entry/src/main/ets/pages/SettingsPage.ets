@@ -210,57 +210,112 @@ export struct SettingsPage {
 
   @Builder
   private SyncEnabledRow() {
-    this.BooleanSettingRow('自动同步', this.syncEnabled, () => {
-      this.syncEnabled = !this.syncEnabled;
-      this.saveCurrentSettings();
-    })
-  }
-
-  @Builder
-  private AutoReceiveEnabledRow() {
-    this.BooleanSettingRow('自动接收', this.autoReceiveEnabled, () => {
-      this.autoReceiveEnabled = !this.autoReceiveEnabled;
-      this.saveCurrentSettings();
-    })
-  }
-
-  @Builder
-  private AutoWriteEnabledRow() {
-    this.BooleanSettingRow('自动写入剪贴板', this.autoWriteEnabled, () => {
-      this.autoWriteEnabled = !this.autoWriteEnabled;
-      this.saveCurrentSettings();
-    })
-  }
-
-  @Builder
-  private HistoryEnabledRow() {
-    this.BooleanSettingRow('保存历史', this.historyEnabled, () => {
-      this.historyEnabled = !this.historyEnabled;
-      this.saveCurrentSettings();
-    })
-  }
-
-  @Builder
-  private BooleanSettingRow(label: string, enabled: boolean, action: () => void) {
     Row({ space: 10 }) {
       Column({ space: 2 }) {
-        Text(label)
+        Text('自动同步')
           .fontSize(EggClipTypography.bodySize)
           .fontColor(EggClipColors.textPrimary)
-        Text(enabled ? '已开启' : '已关闭')
+        Text(this.syncEnabled ? '已开启' : '已关闭')
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
-      Button(enabled ? '关闭' : '开启')
+      Button(this.syncEnabled ? '关闭' : '开启')
         .height(34)
         .enabled(this.storeState !== SettingsStoreState.SAVING)
-        .fontColor(enabled ? EggClipColors.textSecondary : EggClipColors.onPrimary)
-        .backgroundColor(enabled ? EggClipColors.controlBackground : EggClipColors.primary)
+        .fontColor(this.syncEnabled ? EggClipColors.textSecondary : EggClipColors.onPrimary)
+        .backgroundColor(this.syncEnabled ? EggClipColors.controlBackground : EggClipColors.primary)
         .borderRadius(17)
-        .onClick(action)
+        .onClick(() => {
+          this.syncEnabled = !this.syncEnabled;
+          this.saveCurrentSettings();
+        })
+    }
+    .width('100%')
+  }
+
+  @Builder
+  private AutoReceiveEnabledRow() {
+    Row({ space: 10 }) {
+      Column({ space: 2 }) {
+        Text('自动接收')
+          .fontSize(EggClipTypography.bodySize)
+          .fontColor(EggClipColors.textPrimary)
+        Text(this.autoReceiveEnabled ? '已开启' : '已关闭')
+          .fontSize(EggClipTypography.captionSize)
+          .fontColor(EggClipColors.textSecondary)
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      Button(this.autoReceiveEnabled ? '关闭' : '开启')
+        .height(34)
+        .enabled(this.storeState !== SettingsStoreState.SAVING)
+        .fontColor(this.autoReceiveEnabled ? EggClipColors.textSecondary : EggClipColors.onPrimary)
+        .backgroundColor(this.autoReceiveEnabled ? EggClipColors.controlBackground : EggClipColors.primary)
+        .borderRadius(17)
+        .onClick(() => {
+          this.autoReceiveEnabled = !this.autoReceiveEnabled;
+          this.saveCurrentSettings();
+        })
+    }
+    .width('100%')
+  }
+
+  @Builder
+  private AutoWriteEnabledRow() {
+    Row({ space: 10 }) {
+      Column({ space: 2 }) {
+        Text('自动写入剪贴板')
+          .fontSize(EggClipTypography.bodySize)
+          .fontColor(EggClipColors.textPrimary)
+        Text(this.autoWriteEnabled ? '已开启' : '已关闭')
+          .fontSize(EggClipTypography.captionSize)
+          .fontColor(EggClipColors.textSecondary)
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      Button(this.autoWriteEnabled ? '关闭' : '开启')
+        .height(34)
+        .enabled(this.storeState !== SettingsStoreState.SAVING)
+        .fontColor(this.autoWriteEnabled ? EggClipColors.textSecondary : EggClipColors.onPrimary)
+        .backgroundColor(this.autoWriteEnabled ? EggClipColors.controlBackground : EggClipColors.primary)
+        .borderRadius(17)
+        .onClick(() => {
+          this.autoWriteEnabled = !this.autoWriteEnabled;
+          this.saveCurrentSettings();
+        })
+    }
+    .width('100%')
+  }
+
+  @Builder
+  private HistoryEnabledRow() {
+    Row({ space: 10 }) {
+      Column({ space: 2 }) {
+        Text('保存历史')
+          .fontSize(EggClipTypography.bodySize)
+          .fontColor(EggClipColors.textPrimary)
+        Text(this.historyEnabled ? '已开启' : '已关闭')
+          .fontSize(EggClipTypography.captionSize)
+          .fontColor(EggClipColors.textSecondary)
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      Button(this.historyEnabled ? '关闭' : '开启')
+        .height(34)
+        .enabled(this.storeState !== SettingsStoreState.SAVING)
+        .fontColor(this.historyEnabled ? EggClipColors.textSecondary : EggClipColors.onPrimary)
+        .backgroundColor(this.historyEnabled ? EggClipColors.controlBackground : EggClipColors.primary)
+        .borderRadius(17)
+        .onClick(() => {
+          this.historyEnabled = !this.historyEnabled;
+          this.saveCurrentSettings();
+        })
     }
     .width('100%')
   }
