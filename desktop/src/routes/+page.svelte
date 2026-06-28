@@ -2,6 +2,7 @@
   import ClipboardCard from "$lib/components/clipboard/ClipboardCard.svelte";
   import HistoryList from "$lib/components/clipboard/HistoryList.svelte";
   import DeviceChips from "$lib/components/devices/DeviceChips.svelte";
+  import NetworkDiagnosticsCard from "$lib/components/devices/NetworkDiagnosticsCard.svelte";
   import PocConnectCard from "$lib/components/devices/PocConnectCard.svelte";
   import StatusCard from "$lib/components/common/StatusCard.svelte";
   import StatusDot from "$lib/components/common/StatusDot.svelte";
@@ -223,6 +224,11 @@
       />
 
       <PocConnectCard />
+
+      <NetworkDiagnosticsCard
+        transport={$shellSnapshot.pocTransport}
+        onRefresh={() => shellSnapshot.refreshPocTransportStatus()}
+      />
 
       <DeviceChips devices={$shellSnapshot.devices} />
     </section>

@@ -5,6 +5,7 @@ import {
   captureClipboardHistoryText,
   clearClipboardHistory,
   deleteClipboardHistoryItem,
+  describePocTransport,
   disconnectAllPocPeers,
   getClipboardHistoryUsed,
   getPocTransportStatus,
@@ -107,13 +108,14 @@ export const shellSnapshot = {
     }
     pocTransportStarted = true;
     try {
-      const description = await startPocTransport();
+      const transport = await startPocTransport();
       snapshot.update((state) => ({
         ...state,
+        pocTransport: transport,
         connection: {
           state: "connecting",
           title: "本机同步服务已启动",
-          description,
+          description: describePocTransport(transport),
         },
       }));
     } catch (error) {
@@ -199,12 +201,13 @@ export const shellSnapshot = {
     }
   },
   async refreshPocTransportStatus() {
-    const description = await getPocTransportStatus();
+    const transport = await getPocTransportStatus();
     snapshot.update((state) => ({
       ...state,
+      pocTransport: transport,
       connection: {
         ...state.connection,
-        description,
+        description: describePocTransport(transport),
       },
     }));
   },

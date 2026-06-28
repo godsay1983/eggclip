@@ -4,6 +4,7 @@ import type {
   ClipboardPreview,
   HistoryItemSummary,
   PocDiagnostics,
+  PocTransportSummary,
   ShellSnapshot,
 } from "$lib/types/shell";
 
@@ -92,6 +93,14 @@ export function createInitialShellSnapshot(): ShellSnapshot {
       rejectedFrames: 0,
       lastRejection: null,
     },
+    pocTransport: {
+      state: "stopped",
+      port: 0,
+      discoveryPublished: false,
+      networkAddresses: [],
+      connectedPeers: 0,
+      lastError: null,
+    },
     syncEnabled: true,
   };
 }
@@ -146,16 +155,16 @@ export async function disconnectAllPocPeers(): Promise<number> {
   return invoke<number>("disconnect_all_poc_peers");
 }
 
-export async function startPocTransport(): Promise<string> {
+export async function startPocTransport(): Promise<PocTransportSummary> {
   const status = await invoke<PocTransportStatus>("start_poc_transport", {
     port: null,
   });
-  return formatPocTransportStatus(status);
+  return toPocTransportSummary(status);
 }
 
-export async function getPocTransportStatus(): Promise<string> {
+export async function getPocTransportStatus(): Promise<PocTransportSummary> {
   const status = await invoke<PocTransportStatus>("get_poc_transport_status");
-  return formatPocTransportStatus(status);
+  return toPocTransportSummary(status);
 }
 
 export async function onLocalClipboardText(
@@ -219,7 +228,7 @@ export async function onPocDiagnostics(
   });
 }
 
-function formatPocTransportStatus(status: PocTransportStatus): string {
+export function describePocTransport(status: PocTransportSummary): string {
   if (status.state === "running") {
     const discovery = status.discoveryPublished
       ? "mDNS POC 服务已发布"
@@ -232,6 +241,21 @@ function formatPocTransportStatus(status: PocTransportStatus): string {
     return status.lastError ?? "WebSocket POC 服务启动失败";
   }
   return "WebSocket POC 尚未启动";
+}
+
+function toPocTransportSummary(status: PocTransportStatus): PocTransportSummary {
+  return {
+    state: status.state,
+    port: status.port,
+    discoveryPublished: status.discoveryPublished,
+    networkAddresses: status.networkAddresses.map((item) => ({
+      interfaceName: item.interfaceName,
+      address: item.address,
+      isTunnel: item.isTunnel,
+    })),
+    connectedPeers: status.connectedPeers,
+    lastError: status.lastError,
+  };
 }
 
 function formatPocNetworkAddresses(addresses: PocNetworkAddress[]): string {

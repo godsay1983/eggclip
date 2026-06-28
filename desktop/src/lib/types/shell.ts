@@ -50,6 +50,21 @@ export interface PocDiagnostics {
   lastRejection: PocRejectionReason | null;
 }
 
+export interface PocNetworkAddressSummary {
+  interfaceName: string;
+  address: string;
+  isTunnel: boolean;
+}
+
+export interface PocTransportSummary {
+  state: "running" | "stopped" | "failed";
+  port: number;
+  discoveryPublished: boolean;
+  networkAddresses: PocNetworkAddressSummary[];
+  connectedPeers: number;
+  lastError: string | null;
+}
+
 export interface ShellSnapshot {
   connection: {
     state: ConnectionState;
@@ -60,5 +75,6 @@ export interface ShellSnapshot {
   devices: DeviceSummary[];
   history: HistorySummary;
   pocDiagnostics: PocDiagnostics;
+  pocTransport: PocTransportSummary;
   syncEnabled: boolean;
 }

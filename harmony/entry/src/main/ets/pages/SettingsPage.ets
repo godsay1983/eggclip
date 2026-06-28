@@ -1,5 +1,10 @@
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { AppSettings, ThemeMode, defaultAppSettings } from '../models/DomainModels';
+import { PocLifecycleState } from '../models/PocModels';
+import {
+  PocConnectionSnapshot,
+  pocConnectionStore
+} from '../store/PocConnectionStore';
 import {
   SettingsStore,
   SettingsStoreSnapshot,
@@ -12,6 +17,16 @@ import { EggClipTypography } from '../theme/Typography';
 @Component
 export struct SettingsPage {
   private settingsStore: SettingsStore | null = null;
+  private readonly connectionSnapshotListener = (snapshot: PocConnectionSnapshot): void => {
+    this.discoveryState = snapshot.discoveryState;
+    this.discoveryStatus = snapshot.discoveryStatus;
+    this.discoveryCandidateCount = snapshot.discoveryCandidates.length;
+    this.transportState = snapshot.transportState;
+    this.transportStatus = snapshot.transportStatus;
+    this.transportDiagnostics = snapshot.transportDiagnostics;
+    this.connectionTitle = snapshot.connectionTitle;
+    this.connectionDescription = snapshot.connectionDescription;
+  };
   @State private storeState: SettingsStoreState = SettingsStoreState.IDLE;
   @State private statusText: string = '设置尚未加载';
   @State private syncEnabled: boolean = true;
@@ -22,6 +37,14 @@ export struct SettingsPage {
   @State private retentionDays: number = 7;
   @State private themeMode: ThemeMode = ThemeMode.SYSTEM;
   @State private historyActionStatus: string = '清空历史只影响本机历史，不会修改系统剪贴板';
+  @State private discoveryState: PocLifecycleState = PocLifecycleState.IDLE;
+  @State private discoveryStatus: string = '等待开始局域网发现';
+  @State private discoveryCandidateCount: number = 0;
+  @State private transportState: PocLifecycleState = PocLifecycleState.IDLE;
+  @State private transportStatus: string = '输入桌面端 IP 和端口后手动连接';
+  @State private transportDiagnostics: string = '帧诊断：接收 0 · 接受 0 · 拒绝 0';
+  @State private connectionTitle: string = '等待桌面端';
+  @State private connectionDescription: string = '正在等待 mDNS 候选，也可以使用手动 IP';
 
   aboutToAppear(): void {
     if (this.settingsStore === null) {
@@ -32,8 +55,14 @@ export struct SettingsPage {
         return;
       }
       this.settingsStore = new SettingsStore(hostContext as common.UIAbilityContext);
+      pocConnectionStore.initialize(hostContext as common.UIAbilityContext);
     }
+    pocConnectionStore.subscribe(this.connectionSnapshotListener);
     this.loadSettings();
+  }
+
+  aboutToDisappear(): void {
+    pocConnectionStore.unsubscribe(this.connectionSnapshotListener);
   }
 
   build() {
@@ -43,6 +72,7 @@ export struct SettingsPage {
         this.SyncPolicyCard()
         this.HistoryPolicyCard()
         this.AppearanceCard()
+        this.DiagnosticsCard()
         this.PrivacyCard()
       }
       .width('100%')
@@ -206,6 +236,63 @@ export struct SettingsPage {
     .padding(EggClipSpacing.cardPadding)
     .backgroundColor(EggClipColors.cardBackground)
     .borderRadius(EggClipSpacing.radiusMedium)
+  }
+
+  @Builder
+  private DiagnosticsCard() {
+    Column({ space: 10 }) {
+      Row() {
+        Text('局域网诊断')
+          .fontSize(EggClipTypography.bodySize)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(EggClipColors.textPrimary)
+          .layoutWeight(1)
+
+        Text(this.transportState)
+          .fontSize(EggClipTypography.captionSize)
+          .fontColor(this.transportState === PocLifecycleState.FAILED ? Color.Red : EggClipColors.textSecondary)
+      }
+      .width('100%')
+
+      Text(`${this.connectionTitle}：${this.connectionDescription}`)
+        .width('100%')
+        .fontSize(EggClipTypography.captionSize)
+        .fontColor(EggClipColors.textSecondary)
+        .lineHeight(20)
+
+      this.DiagnosticsRow('mDNS', `${this.discoveryState} · ${this.discoveryStatus}`)
+      this.DiagnosticsRow('候选地址', `${this.discoveryCandidateCount} 个`)
+      this.DiagnosticsRow('WebSocket', `${this.transportState} · ${this.transportStatus}`)
+      this.DiagnosticsRow('帧统计', this.transportDiagnostics)
+
+      Text('诊断只显示连接状态、候选数量和错误类型，不显示剪贴板正文、摘要、邀请或密钥。')
+        .width('100%')
+        .fontSize(11)
+        .fontColor(EggClipColors.textSecondary)
+        .lineHeight(18)
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(EggClipSpacing.cardPadding)
+    .backgroundColor(EggClipColors.cardBackground)
+    .borderRadius(EggClipSpacing.radiusMedium)
+  }
+
+  @Builder
+  private DiagnosticsRow(label: string, value: string) {
+    Row({ space: 10 }) {
+      Text(label)
+        .width(78)
+        .fontSize(EggClipTypography.captionSize)
+        .fontColor(EggClipColors.textPrimary)
+
+      Text(value)
+        .layoutWeight(1)
+        .fontSize(EggClipTypography.captionSize)
+        .fontColor(EggClipColors.textSecondary)
+        .lineHeight(18)
+    }
+    .width('100%')
   }
 
   @Builder
