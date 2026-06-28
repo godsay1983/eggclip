@@ -23,6 +23,8 @@ export interface PocConnectionSnapshot {
   latestReceivedText: string;
   latestReceivedPreview: string;
   latestReceivedSource: string;
+  latestReceivedAt: string;
+  latestReceivedByteLength: number;
 }
 
 export type PocConnectionSnapshotListener = (snapshot: PocConnectionSnapshot) => void;
@@ -46,6 +48,8 @@ class PocConnectionStore {
   private latestReceivedText: string = '';
   private latestReceivedPreview: string = '';
   private latestReceivedSource: string = '暂无内容';
+  private latestReceivedAt: string = '';
+  private latestReceivedByteLength: number = 0;
 
   initialize(context: common.UIAbilityContext): void {
     if (this.discovery === null) {
@@ -82,7 +86,9 @@ class PocConnectionStore {
       connectionDescription: this.connectionDescription,
       latestReceivedText: this.latestReceivedText,
       latestReceivedPreview: this.latestReceivedPreview,
-      latestReceivedSource: this.latestReceivedSource
+      latestReceivedSource: this.latestReceivedSource,
+      latestReceivedAt: this.latestReceivedAt,
+      latestReceivedByteLength: this.latestReceivedByteLength
     };
   }
 
@@ -181,7 +187,9 @@ class PocConnectionStore {
           this.latestReceivedText = decoded.text;
           this.latestReceivedPreview = this.trimPreview(decoded.text);
           this.latestReceivedSource = '桌面端';
-          this.transportStatus = `收到桌面端文本：${decoded.text.length} 字符`;
+          this.latestReceivedAt = this.formatTime(Date.now());
+          this.latestReceivedByteLength = decoded.byteLength;
+          this.transportStatus = `收到桌面端文本：${decoded.byteLength} 字节`;
           this.connectionState = ConnectionState.ONLINE;
           this.connectionTitle = '已收到桌面端文本';
           this.connectionDescription = '内容只进入预览，点击后才会复制到本机';
@@ -264,6 +272,15 @@ class PocConnectionStore {
       return text;
     }
     return `${text.slice(0, 90)}\n……\n${text.slice(-60)}`;
+  }
+
+  private formatTime(milliseconds: number): string {
+    const date = new Date(milliseconds);
+    return `${this.padTime(date.getHours())}:${this.padTime(date.getMinutes())}:${this.padTime(date.getSeconds())}`;
+  }
+
+  private padTime(value: number): string {
+    return value < 10 ? `0${value}` : `${value}`;
   }
 
   private refreshTransportDiagnostics(): void {

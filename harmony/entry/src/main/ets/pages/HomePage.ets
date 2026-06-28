@@ -18,10 +18,16 @@ export struct HomePage {
   private readonly clipboardBridge: ClipboardBridgeService = new ClipboardBridgeService();
   private historyStore: HistoryStore | null = null;
   private readonly connectionSnapshotListener = (snapshot: PocConnectionSnapshot): void => {
+    const previousReceivedText = this.latestReceivedText;
     this.latestReceivedText = snapshot.latestReceivedText;
     this.latestReceivedPreview = snapshot.latestReceivedPreview;
     this.latestReceivedSource = snapshot.latestReceivedSource;
+    this.latestReceivedAt = snapshot.latestReceivedAt;
+    this.latestReceivedByteLength = snapshot.latestReceivedByteLength;
     this.transportDiagnostics = snapshot.transportDiagnostics;
+    if (previousReceivedText !== snapshot.latestReceivedText) {
+      this.latestReceivedExpanded = false;
+    }
     if (snapshot.latestReceivedText.length > 0 && this.copyStatus === '收到桌面文本后可手动复制到本机') {
       this.copyStatus = '已收到桌面端文本，可点击复制到本机';
     }
@@ -32,6 +38,9 @@ export struct HomePage {
   @State private latestReceivedText: string = '';
   @State private latestReceivedPreview: string = '';
   @State private latestReceivedSource: string = '暂无内容';
+  @State private latestReceivedAt: string = '';
+  @State private latestReceivedByteLength: number = 0;
+  @State private latestReceivedExpanded: boolean = false;
   @State private historyUsed: number = 0;
   @State private historyLimit: number = 50;
   @State private historyItems: HistoryPreviewItem[] = [];
@@ -125,10 +134,33 @@ export struct HomePage {
       }
       .width('100%')
 
-      Text(this.latestReceivedPreview.length === 0 ? '桌面端发来的文本会先显示在这里，点击后才会复制到本机剪贴板。发送手机剪贴板必须点击系统 PasteButton。连接和发现入口已移到设备页。' : this.latestReceivedPreview)
+      Text(this.latestReceivedPreview.length === 0 ? '桌面端发来的文本会先显示在这里，点击后才会复制到本机剪贴板。发送手机剪贴板必须点击系统 PasteButton。连接和发现入口已移到设备页。' : this.latestReceivedTextForDisplay())
         .fontSize(EggClipTypography.bodySize)
         .fontColor(EggClipColors.textSecondary)
         .lineHeight(24)
+
+      if (this.latestReceivedText.length > 0) {
+        Row({ space: 8 }) {
+          Text(this.latestReceivedMetaText())
+            .fontSize(11)
+            .fontColor(EggClipColors.textSecondary)
+            .layoutWeight(1)
+
+          if (this.latestReceivedText.length > 180) {
+            Button(this.latestReceivedExpanded ? '收起' : '展开')
+              .height(28)
+              .fontSize(11)
+              .fontColor(EggClipColors.textSecondary)
+              .backgroundColor(EggClipColors.controlBackground)
+              .borderRadius(14)
+              .onClick(() => {
+                this.latestReceivedExpanded = !this.latestReceivedExpanded;
+              })
+          }
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+      }
 
       Column({ space: 6 }) {
         PasteButton({
@@ -303,6 +335,15 @@ export struct HomePage {
       .catch(() => {
         this.pasteStatus = '发送到桌面端失败';
       });
+  }
+
+  private latestReceivedTextForDisplay(): string {
+    return this.latestReceivedExpanded ? this.latestReceivedText : this.latestReceivedPreview;
+  }
+
+  private latestReceivedMetaText(): string {
+    const receivedAt = this.latestReceivedAt.length === 0 ? '未知时间' : this.latestReceivedAt;
+    return `来源：${this.latestReceivedSource} · ${receivedAt} · ${this.latestReceivedText.length} 字符 · ${this.latestReceivedByteLength} 字节`;
   }
 
   private captureLocalHistoryText(text: string): void {

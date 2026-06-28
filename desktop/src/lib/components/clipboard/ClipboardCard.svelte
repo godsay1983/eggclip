@@ -5,6 +5,17 @@
   export let onRead: () => void = () => {};
   export let onCopy: () => void = () => {};
   export let onSendPoc: () => void = () => {};
+
+  let expanded = false;
+  let currentId = "";
+
+  $: if ((current?.id ?? "") !== currentId) {
+    currentId = current?.id ?? "";
+    expanded = false;
+  }
+
+  $: isLongText = (current?.text.length ?? 0) > 180;
+  $: visibleText = current && expanded ? current.text : current?.preview;
 </script>
 
 <section class="clipboard-card">
@@ -17,8 +28,22 @@
   </div>
 
   {#if current}
-    <p class="clipboard-placeholder">{current.preview}</p>
-    <p class="metadata">来源：{current.source} · {current.receivedAt}</p>
+    <p class="clipboard-placeholder" class:expanded>{visibleText}</p>
+    <div class="clipboard-meta-row">
+      <p class="metadata">
+        来源：{current.source} · {current.receivedAt} · {current.text.length} 字符
+      </p>
+      {#if isLongText}
+        <button
+          class="text-button"
+          type="button"
+          aria-expanded={expanded}
+          on:click={() => {
+            expanded = !expanded;
+          }}>{expanded ? "收起" : "展开"}</button
+        >
+      {/if}
+    </div>
   {:else}
     <p class="clipboard-placeholder">
       完成配对后，在线实时内容会自动写入桌面剪贴板；离线补齐的历史只会显示在列表中。

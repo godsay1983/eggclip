@@ -31,6 +31,7 @@ export interface PocClipboardTextMessage {
 export interface PocClipboardTextDecodeResult {
   ok: boolean;
   text: string;
+  byteLength: number;
   reason: string;
 }
 
@@ -270,6 +271,7 @@ export class WebSocketTransportService {
       return {
         ok: true,
         text: parsed.text,
+        byteLength,
         reason: ''
       };
     } catch (_) {
@@ -342,6 +344,7 @@ export class WebSocketTransportService {
     return {
       ok: false,
       text: '',
+      byteLength: 0,
       reason
     };
   }

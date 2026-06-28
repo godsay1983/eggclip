@@ -349,6 +349,25 @@ footer {
   color: var(--muted);
   font-size: 14px;
   line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.clipboard-placeholder.expanded {
+  max-height: 260px;
+  overflow: auto;
+}
+
+.clipboard-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -6px 0 16px;
+}
+
+.clipboard-meta-row p {
+  min-width: 0;
 }
 
 .primary-action {
