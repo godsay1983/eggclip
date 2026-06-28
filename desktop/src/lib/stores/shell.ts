@@ -26,6 +26,7 @@ const snapshot = writable(createInitialShellSnapshot());
 let monitorStarted = false;
 let pocEventsStarted = false;
 let pocTransportStarted = false;
+let pocReceiveEnabled = true;
 const pocPeers = new Set<string>();
 
 async function refreshHistorySummaryState() {
@@ -97,6 +98,9 @@ function updatePocDevices(title: string, description: string) {
 
 export const shellSnapshot = {
   subscribe: snapshot.subscribe,
+  setPocReceivePolicy(syncEnabled: boolean, autoReceiveEnabled: boolean) {
+    pocReceiveEnabled = syncEnabled && autoReceiveEnabled;
+  },
   async startPocTransport() {
     if (pocTransportStarted) {
       return;
@@ -132,6 +136,17 @@ export const shellSnapshot = {
     try {
       await Promise.all([
         onPocClipboardText((current, peer) => {
+          if (!pocReceiveEnabled) {
+            snapshot.update((state) => ({
+              ...state,
+              connection: {
+                state: "paused",
+                title: "自动接收已暂停",
+                description: `已忽略来自 ${peer} 的临时文本；设置开启后才会进入面板预览`,
+              },
+            }));
+            return;
+          }
           setCurrentClipboard(
             current,
             "已收到远端文本",

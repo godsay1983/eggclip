@@ -53,6 +53,10 @@
   }
 
   $: applyTheme($settingsSnapshot.settings.themeMode);
+  $: shellSnapshot.setPocReceivePolicy(
+    $settingsSnapshot.settings.syncEnabled,
+    $settingsSnapshot.settings.autoReceiveEnabled,
+  );
 </script>
 
 <svelte:head>

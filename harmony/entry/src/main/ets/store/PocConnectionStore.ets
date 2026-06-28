@@ -1,12 +1,22 @@
 import { common } from '@kit.AbilityKit';
 import {
+  AppSettings,
+  InboundClipboardEventKind,
+  defaultAppSettings,
+  inboundClipboardPolicy
+} from '../models/DomainModels';
+import {
   ManualEndpoint,
   MdnsServiceCandidate,
   PocLifecycleState
 } from '../models/PocModels';
 import { ConnectionState } from '../models/ShellModels';
+import { SettingsRdbRepository } from '../data/repositories/RdbRepositories';
 import { MdnsDiscoveryService } from '../services/discovery/MdnsDiscoveryService';
-import { WebSocketTransportService } from '../services/transport/WebSocketTransportService';
+import {
+  PocClipboardTextDecodeResult,
+  WebSocketTransportService
+} from '../services/transport/WebSocketTransportService';
 
 export interface PocConnectionSnapshot {
   manualHost: string;
@@ -33,6 +43,7 @@ class PocConnectionStore {
   private readonly transport: WebSocketTransportService = new WebSocketTransportService();
   private readonly listeners: PocConnectionSnapshotListener[] = [];
   private discovery: MdnsDiscoveryService | null = null;
+  private settingsRepository: SettingsRdbRepository | null = null;
   private reconnectOnForeground: boolean = false;
   private manualHost: string = '127.0.0.1';
   private manualPort: string = '0';
@@ -54,6 +65,9 @@ class PocConnectionStore {
   initialize(context: common.UIAbilityContext): void {
     if (this.discovery === null) {
       this.discovery = new MdnsDiscoveryService(context);
+    }
+    if (this.settingsRepository === null) {
+      this.settingsRepository = new SettingsRdbRepository(context);
     }
   }
 
@@ -184,19 +198,11 @@ class PocConnectionStore {
         const decoded = this.transport.decodeClipboardTextMessage(message);
         this.refreshTransportDiagnostics();
         if (decoded.ok) {
-          this.latestReceivedText = decoded.text;
-          this.latestReceivedPreview = this.trimPreview(decoded.text);
-          this.latestReceivedSource = '桌面端';
-          this.latestReceivedAt = this.formatTime(Date.now());
-          this.latestReceivedByteLength = decoded.byteLength;
-          this.transportStatus = `收到桌面端文本：${decoded.byteLength} 字节`;
-          this.connectionState = ConnectionState.ONLINE;
-          this.connectionTitle = '已收到桌面端文本';
-          this.connectionDescription = '内容只进入预览，点击后才会复制到本机';
+          this.handleInboundClipboardText(decoded);
         } else {
           this.transportStatus = `${decoded.reason}，已忽略`;
+          this.emit();
         }
-        this.emit();
       }
     })
       .then((result) => {
@@ -265,6 +271,46 @@ class PocConnectionStore {
     for (let index = 0; index < this.listeners.length; index += 1) {
       this.listeners[index](current);
     }
+  }
+
+  private handleInboundClipboardText(decoded: PocClipboardTextDecodeResult): void {
+    this.loadSettings()
+      .then((settings: AppSettings) => {
+        const policy = inboundClipboardPolicy(InboundClipboardEventKind.ITEM_LIVE, settings);
+        if (!policy.updateHistory) {
+          this.transportStatus = '收到桌面端文本，但当前策略已暂停自动接收，已忽略';
+          this.connectionState = ConnectionState.PAUSED;
+          this.connectionTitle = '自动接收已暂停';
+          this.connectionDescription = '设置开启后，桌面端文本才会进入预览；不会写入本机剪贴板';
+          this.emit();
+          return;
+        }
+
+        this.latestReceivedText = decoded.text;
+        this.latestReceivedPreview = this.trimPreview(decoded.text);
+        this.latestReceivedSource = '桌面端';
+        this.latestReceivedAt = this.formatTime(Date.now());
+        this.latestReceivedByteLength = decoded.byteLength;
+        this.transportStatus = `收到桌面端文本：${decoded.byteLength} 字节`;
+        this.connectionState = ConnectionState.ONLINE;
+        this.connectionTitle = '已收到桌面端文本';
+        this.connectionDescription = '内容只进入预览，点击后才会复制到本机';
+        this.emit();
+      })
+      .catch(() => {
+        this.transportStatus = '收到桌面端文本，但读取接收策略失败，已忽略';
+        this.connectionState = ConnectionState.PAUSED;
+        this.connectionTitle = '接收策略不可用';
+        this.connectionDescription = '未确认本机设置前，不展示远端文本';
+        this.emit();
+      });
+  }
+
+  private async loadSettings(): Promise<AppSettings> {
+    if (this.settingsRepository === null) {
+      return defaultAppSettings();
+    }
+    return await this.settingsRepository.loadAppSettings() ?? defaultAppSettings();
   }
 
   private trimPreview(text: string): string {
