@@ -56,8 +56,8 @@
 <section class="poc-connect-card" aria-labelledby="poc-connect-title">
   <div class="section-heading compact">
     <div>
-      <span class="eyebrow">D1 手动互通</span>
-      <h2 id="poc-connect-title">连接另一桌面 POC</h2>
+      <span class="eyebrow">手动连接</span>
+      <h2 id="poc-connect-title">连接局域网设备</h2>
     </div>
   </div>
   <div class="endpoint-row">
@@ -70,14 +70,14 @@
       <input bind:value={port} inputmode="numeric" placeholder="例如 43210" autocomplete="off" />
     </label>
   </div>
-  <p>在另一实例状态卡中查看候选 IPv4 和 WebSocket POC 端口。</p>
+  <p>自动发现不可用时，可输入另一台设备显示的 IPv4 和端口。候选地址不代表设备已经可信。</p>
   <p class="poc-diagnostics">
     帧诊断：接收 {$shellSnapshot.pocDiagnostics.receivedFrames} · 接受
     {$shellSnapshot.pocDiagnostics.acceptedItems} · 拒绝 {$shellSnapshot.pocDiagnostics.rejectedFrames} ·
     上次拒绝 {rejectionLabel($shellSnapshot.pocDiagnostics.lastRejection)}
   </p>
   <div class="poc-action-row">
-    <button class="secondary-action" type="button" disabled={busy} onclick={disconnect}>断开全部</button>
+    <button class="secondary-action" type="button" disabled={busy} onclick={disconnect}>断开连接</button>
     <button class="primary-action" type="button" disabled={busy || !hasValidPort()} onclick={connect}>连接</button>
   </div>
 </section>

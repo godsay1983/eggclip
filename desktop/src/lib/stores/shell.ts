@@ -52,13 +52,13 @@ function updatePocDevices(title: string, description: string) {
       peers.length > 0
         ? peers.map((peer) => ({
             id: `poc-${peer}`,
-            name: `POC ${peer}`,
+            name: peer,
             state: "online" as const,
           }))
         : [
             {
               id: "placeholder",
-              name: "等待 POC 设备连接",
+              name: "等待可信设备",
               state: "offline" as const,
             },
           ],
@@ -78,7 +78,7 @@ export const shellSnapshot = {
         ...state,
         connection: {
           state: "connecting",
-          title: "WebSocket POC 服务已启动",
+          title: "本机同步服务已启动",
           description,
         },
       }));
@@ -88,8 +88,8 @@ export const shellSnapshot = {
         ...state,
         connection: {
           state: "authFailed",
-          title: "WebSocket POC 服务启动失败",
-          description: error instanceof Error ? error.message : "无法启动本地 POC 服务",
+          title: "本机同步服务启动失败",
+          description: error instanceof Error ? error.message : "无法启动本机同步服务",
         },
       }));
     }
@@ -104,8 +104,8 @@ export const shellSnapshot = {
         onPocClipboardText((current, peer) => {
           setCurrentClipboard(
             current,
-            "已收到远端 POC 文本",
-            `来自 ${peer}；POC 尚未认证，只进入面板预览，请由用户点击复制`,
+            "已收到远端文本",
+            `来自 ${peer}；当前实验连接尚未认证，只进入面板预览，请由用户点击复制`,
           );
         }),
         onPocDiagnostics((pocDiagnostics) => {
@@ -117,17 +117,17 @@ export const shellSnapshot = {
         onPocPeerConnected((peer) => {
           pocPeers.add(peer);
           updatePocDevices(
-            "远端 POC 已连接",
-            `当前有 ${pocPeers.size} 个未认证 POC 连接，仅允许用户触发收发`,
+            "远端设备已连接",
+            `当前有 ${pocPeers.size} 个实验连接，仅允许用户触发收发`,
           );
         }),
         onPocPeerDisconnected((peer) => {
           pocPeers.delete(peer);
           updatePocDevices(
-            pocPeers.size > 0 ? "远端 POC 已连接" : "等待 POC 连接",
+            pocPeers.size > 0 ? "远端设备已连接" : "等待设备连接",
             pocPeers.size > 0
-              ? `当前还有 ${pocPeers.size} 个未认证 POC 连接`
-              : "WebSocket POC 继续监听，可通过 mDNS 或手动 IP 连接",
+              ? `当前还有 ${pocPeers.size} 个实验连接`
+              : "同步服务继续监听，可通过 mDNS 或手动 IP 连接",
           );
         }),
         onPocDiscoveryError((message) => {
@@ -135,7 +135,7 @@ export const shellSnapshot = {
             ...state,
             connection: {
               state: "offline",
-              title: "mDNS POC 发布失败",
+              title: "mDNS 发布失败",
               description: `${message}；WebSocket 和手动 IP 仍可使用`,
             },
           }));
@@ -147,8 +147,8 @@ export const shellSnapshot = {
         ...state,
         connection: {
           state: "authFailed",
-          title: "WebSocket POC 事件监听失败",
-          description: error instanceof Error ? error.message : "无法监听 POC 文本事件",
+          title: "同步事件监听失败",
+          description: error instanceof Error ? error.message : "无法监听同步文本事件",
         },
       }));
     }
@@ -168,7 +168,7 @@ export const shellSnapshot = {
       ...state,
       connection: {
         state: "connecting",
-        title: "正在连接桌面 POC",
+        title: "正在连接远端设备",
         description: `${host.trim()}:${port}`,
       },
     }));
@@ -178,7 +178,7 @@ export const shellSnapshot = {
         ...state,
         connection: {
           state: "connecting",
-          title: "桌面 POC 握手已完成",
+          title: "远端连接已建立",
           description: `已连接 ${endpoint}；等待连接事件确认`,
         },
       }));
@@ -187,8 +187,8 @@ export const shellSnapshot = {
         ...state,
         connection: {
           state: "authFailed",
-          title: "连接桌面 POC 失败",
-          description: error instanceof Error ? error.message : "无法连接目标桌面 POC",
+          title: "连接远端设备失败",
+          description: error instanceof Error ? error.message : "无法连接目标设备",
         },
       }));
       throw error;
@@ -198,8 +198,8 @@ export const shellSnapshot = {
     const disconnected = await disconnectAllPocPeers();
     pocPeers.clear();
     updatePocDevices(
-      "已断开 POC 连接",
-      disconnected > 0 ? `已断开 ${disconnected} 个临时连接` : "当前没有已连接的 POC",
+      "已断开远端连接",
+      disconnected > 0 ? `已断开 ${disconnected} 个临时连接` : "当前没有已连接设备",
     );
   },
   async startClipboardMonitor() {
@@ -212,7 +212,7 @@ export const shellSnapshot = {
         setCurrentClipboard(
           current,
           "已监听到本机剪贴板",
-          "这是 D1 POC：本机文本变化只更新面板，需由用户点击发送给 Harmony POC",
+          "本机文本变化只更新面板，需由用户点击发送到 Harmony",
         );
       });
     } catch (error) {
@@ -233,7 +233,7 @@ export const shellSnapshot = {
       connection: {
         state: "connecting",
         title: "正在读取本机剪贴板",
-        description: "这是 D1 POC：先验证纯文本读取和大小边界",
+        description: "只读取纯文本，并执行大小边界检查",
       },
     }));
     try {
@@ -281,11 +281,11 @@ export const shellSnapshot = {
         ...state,
         connection: {
           state: sentCount > 0 ? "online" : "offline",
-          title: sentCount > 0 ? "已发送到远端 POC" : "没有已连接的 POC",
+          title: sentCount > 0 ? "已发送到远端设备" : "没有已连接设备",
           description:
             sentCount > 0
-              ? `已向 ${sentCount} 个 POC 连接发送当前文本`
-              : "请先在 Harmony 端或另一桌面实例建立 POC 连接",
+              ? `已向 ${sentCount} 个连接发送当前文本`
+              : "请先在 Harmony 端或另一桌面实例建立连接",
         },
       }));
     } catch (error) {
@@ -293,7 +293,7 @@ export const shellSnapshot = {
         ...state,
         connection: {
           state: "authFailed",
-          title: "发送到 Harmony POC 失败",
+          title: "发送到 Harmony 失败",
           description: error instanceof Error ? error.message : "无法发送当前文本",
         },
       }));

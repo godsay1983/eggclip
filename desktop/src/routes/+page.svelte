@@ -49,8 +49,16 @@
   <header class="brand-row">
     <div class="brand-mark" aria-hidden="true">🥚</div>
     <div class="brand-copy">
-      <h1>蛋定 Clip</h1>
-      <p>局域网剪贴板同步</p>
+      <div class="title-line">
+        <h1>蛋定 Clip</h1>
+        <span class="beta-badge">Beta</span>
+      </div>
+      <p>只在局域网内同步纯文本剪贴板</p>
+      <div class="brand-pills" aria-label="产品边界">
+        <span>局域网</span>
+        <span>无账号</span>
+        <span>最近 50 条</span>
+      </div>
     </div>
     <button
       class="icon-button"
@@ -99,6 +107,10 @@
           on:click={() => settingsSnapshot.load()}>重新读取</button
         >
       </div>
+
+      <p class="settings-note">
+        设置只保存在本机；HarmonyOS 读取剪贴板仍必须由系统 PasteButton 触发。
+      </p>
 
       <div class="setting-grid">
         <label>
@@ -172,7 +184,7 @@
   {/if}
 
   <footer>
-    <span>一步一点，不着急</span>
+    <span>本机常驻 · 局域网同步</span>
     <button
       class="sync-toggle"
       type="button"

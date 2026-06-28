@@ -22,17 +22,17 @@ struct Index {
       TabContent() {
         HomePage()
       }
-      .tabBar(this.TabBarItem('⌂', '首页', 0))
+      .tabBar(this.TabBarItem('首', '首页', 0))
 
       TabContent() {
         DevicesPage()
       }
-      .tabBar(this.TabBarItem('▣', '设备', 1))
+      .tabBar(this.TabBarItem('备', '设备', 1))
 
       TabContent() {
         SettingsPage()
       }
-      .tabBar(this.TabBarItem('⚙', '设置', 2))
+      .tabBar(this.TabBarItem('设', '设置', 2))
     }
     .barOverlap(true)
     .barPosition(BarPosition.End)
@@ -64,13 +64,18 @@ struct Index {
   }
 
   @Builder
-  private TabBarItem(icon: string, label: string, index: number) {
+  private TabBarItem(mark: string, label: string, index: number) {
     Column({ space: 2 }) {
-      Text(icon)
-        .fontSize(22)
+      Text(mark)
+        .width(24)
+        .height(24)
+        .textAlign(TextAlign.Center)
+        .fontSize(13)
         .fontWeight(FontWeight.Bold)
-        .fontColor(this.selectedIndex === index ? EggClipColors.primary : EggClipColors.textPrimary)
-        .lineHeight(22)
+        .fontColor(this.selectedIndex === index ? EggClipColors.onPrimary : EggClipColors.textPrimary)
+        .lineHeight(24)
+        .backgroundColor(this.selectedIndex === index ? EggClipColors.primary : EggClipColors.controlBackground)
+        .borderRadius(8)
 
       Text(label)
         .fontSize(11)

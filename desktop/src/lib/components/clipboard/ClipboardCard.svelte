@@ -31,7 +31,7 @@
       复制此内容
     </button>
     <button class="secondary-action" type="button" disabled={!current} on:click={onSendPoc}>
-      发送到 Harmony POC
+      发送到 Harmony
     </button>
   </div>
 </section>

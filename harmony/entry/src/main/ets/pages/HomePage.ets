@@ -67,7 +67,7 @@ export struct HomePage {
       Column({ space: EggClipSpacing.sectionGap }) {
         this.Header()
         this.ConnectionCard()
-        this.PocStatusCard()
+        this.DiscoveryCard()
         this.ManualTransportCard()
         this.LatestClipboardCard()
         this.HistoryPlaceholder()
@@ -87,82 +87,125 @@ export struct HomePage {
 
   @Builder
   private Header() {
-    Row() {
-      Column({ space: 4 }) {
-        Text('蛋定 Clip')
-          .fontSize(EggClipTypography.titleSize)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(EggClipColors.textPrimary)
+    Column({ space: 14 }) {
+      Row() {
+        Column({ space: 4 }) {
+          Text('蛋定 Clip')
+            .fontSize(EggClipTypography.titleSize)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(EggClipColors.textPrimary)
 
-        Text('局域网剪贴板同步')
+          Text('只在局域网内同步纯文本剪贴板')
+            .fontSize(EggClipTypography.captionSize)
+            .fontColor(EggClipColors.textSecondary)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+
+        Text('Beta')
           .fontSize(EggClipTypography.captionSize)
-          .fontColor(EggClipColors.textSecondary)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(EggClipColors.onPrimary)
+          .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+          .backgroundColor(EggClipColors.primary)
+          .borderRadius(16)
       }
-      .alignItems(HorizontalAlign.Start)
-      .layoutWeight(1)
+      .width('100%')
+
+      Row({ space: 8 }) {
+        this.FeaturePill('局域网')
+        this.FeaturePill('无账号')
+        this.FeaturePill('手动授权读取')
+      }
+      .width('100%')
     }
+    .alignItems(HorizontalAlign.Start)
     .width('100%')
+  }
+
+  @Builder
+  private FeaturePill(label: string) {
+    Text(label)
+      .fontSize(11)
+      .fontColor(EggClipColors.textSecondary)
+      .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+      .backgroundColor(EggClipColors.controlBackground)
+      .borderRadius(14)
   }
 
   @Builder
   private ConnectionCard() {
-    Row({ space: 10 }) {
-      StatusDot({ state: this.connectionState })
+    Column({ space: 14 }) {
+      Row({ space: 12 }) {
+        StatusDot({ state: this.connectionState })
 
-      Column({ space: 3 }) {
-        Text(this.connectionTitle)
-          .fontSize(EggClipTypography.bodySize)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(EggClipColors.textPrimary)
+        Column({ space: 4 }) {
+          Text(this.connectionTitle)
+            .fontSize(20)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(EggClipColors.textPrimary)
 
-        Text(this.connectionDescription)
-          .fontSize(EggClipTypography.captionSize)
-          .fontColor(EggClipColors.textSecondary)
+          Text(this.connectionDescription)
+            .fontSize(EggClipTypography.captionSize)
+            .fontColor(EggClipColors.textSecondary)
+            .lineHeight(20)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
       }
-      .alignItems(HorizontalAlign.Start)
-      .layoutWeight(1)
+      .width('100%')
+
+      Row({ space: 8 }) {
+        Button(this.discoveryState === PocLifecycleState.RUNNING ? '重新发现' : '开始发现')
+          .layoutWeight(1)
+          .height(42)
+          .fontColor(EggClipColors.onPrimary)
+          .backgroundColor(EggClipColors.primary)
+          .borderRadius(21)
+          .onClick(() => {
+            this.startDiscovery();
+          })
+
+        Button('断开')
+          .width(92)
+          .height(42)
+          .fontColor(EggClipColors.textSecondary)
+          .backgroundColor(EggClipColors.controlBackground)
+          .borderRadius(21)
+          .onClick(() => {
+            this.disconnectManualEndpoint();
+          })
+      }
+      .width('100%')
     }
     .width('100%')
+    .alignItems(HorizontalAlign.Start)
     .padding(EggClipSpacing.cardPadding)
     .backgroundColor(EggClipColors.cardBackground)
-    .borderRadius(EggClipSpacing.radiusMedium)
+    .borderRadius(EggClipSpacing.radiusLarge)
   }
 
   @Builder
-  private PocStatusCard() {
+  private DiscoveryCard() {
     Column({ space: 10 }) {
       Row() {
-        Text('POC 状态')
+        Text('自动发现')
           .fontSize(EggClipTypography.bodySize)
           .fontWeight(FontWeight.Bold)
           .fontColor(EggClipColors.textPrimary)
           .layoutWeight(1)
 
-        Text('H1')
+        Text(this.discoveryState)
           .fontSize(EggClipTypography.captionSize)
-          .fontColor(EggClipColors.textSecondary)
+          .fontColor(this.discoveryState === PocLifecycleState.FAILED ? Color.Red : EggClipColors.textSecondary)
       }
       .width('100%')
-
-      Text(`mDNS: ${EGGCLIP_MDNS_SERVICE_TYPE}`)
-        .width('100%')
-        .fontSize(EggClipTypography.captionSize)
-        .fontColor(EggClipColors.textSecondary)
-
-      Text(`发现服务：${this.discoveryState} · WebSocket：${this.transportState}`)
-        .width('100%')
-        .fontSize(EggClipTypography.captionSize)
-        .fontColor(EggClipColors.textSecondary)
 
       Text(this.discoveryStatus)
         .width('100%')
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
-
-      Text(this.transportDiagnostics)
-        .width('100%')
-        .fontSize(EggClipTypography.captionSize)
-        .fontColor(EggClipColors.primary)
+        .lineHeight(20)
 
       Row({ space: 8 }) {
         Button('开始发现')
@@ -188,10 +231,11 @@ export struct HomePage {
       .width('100%')
 
       if (this.discoveryCandidates.length === 0) {
-        Text('暂未发现桌面端；手动 IP 连接始终可用。')
+        Text('暂未发现桌面端。模拟器网络受 VPN/TUN、桥接和防火墙影响时，可以使用下方手动连接。')
           .width('100%')
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
+          .lineHeight(20)
       } else {
         ForEach(this.discoveryCandidates, (candidate: MdnsServiceCandidate) => {
           Row({ space: 8 }) {
@@ -199,7 +243,7 @@ export struct HomePage {
               Text(`${candidate.host}:${candidate.port}`)
                 .fontSize(EggClipTypography.captionSize)
                 .fontColor(EggClipColors.textPrimary)
-              Text(`协议版本 ${candidate.protocolVersion === 0 ? 'POC' : candidate.protocolVersion}`)
+              Text(`协议版本 ${candidate.protocolVersion === 0 ? '实验版' : candidate.protocolVersion}`)
                 .fontSize(EggClipTypography.captionSize)
                 .fontColor(EggClipColors.textSecondary)
             }
@@ -221,6 +265,11 @@ export struct HomePage {
           .borderRadius(14)
         }, (candidate: MdnsServiceCandidate) => candidate.instanceId)
       }
+
+      Text(`服务 ${EGGCLIP_MDNS_SERVICE_TYPE} · WebSocket ${this.transportState}`)
+        .width('100%')
+        .fontSize(11)
+        .fontColor(EggClipColors.textSecondary)
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -231,7 +280,7 @@ export struct HomePage {
 
   @Builder
   private ManualTransportCard() {
-    Column({ space: 10 }) {
+    Column({ space: 12 }) {
       Row() {
         Text('手动连接')
           .fontSize(EggClipTypography.bodySize)
@@ -244,6 +293,12 @@ export struct HomePage {
           .fontColor(EggClipColors.textSecondary)
       }
       .width('100%')
+
+      Text('当自动发现不可用时，输入桌面端显示的 IP 和端口。连接成功后仍会走协议校验流程。')
+        .width('100%')
+        .fontSize(EggClipTypography.captionSize)
+        .fontColor(EggClipColors.textSecondary)
+        .lineHeight(20)
 
       Row({ space: 8 }) {
         TextInput({ text: this.manualHost, placeholder: '桌面端 IP' })
@@ -267,7 +322,7 @@ export struct HomePage {
       }
       .width('100%')
 
-      Button('连接桌面 POC')
+      Button('连接桌面端')
         .width('100%')
         .height(44)
         .fontColor(EggClipColors.onPrimary)
@@ -277,7 +332,7 @@ export struct HomePage {
           this.connectManualEndpoint();
         })
 
-      Button('断开 POC 连接')
+      Button('断开连接')
         .width('100%')
         .height(40)
         .fontColor(EggClipColors.textSecondary)
@@ -291,6 +346,7 @@ export struct HomePage {
         .width('100%')
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
+        .lineHeight(20)
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -303,7 +359,7 @@ export struct HomePage {
   private LatestClipboardCard() {
     Column({ space: 14 }) {
       Row() {
-        Text('最新收到')
+        Text('剪贴板收发')
           .fontSize(EggClipTypography.bodySize)
           .fontWeight(FontWeight.Bold)
           .fontColor(EggClipColors.textPrimary)
@@ -315,7 +371,7 @@ export struct HomePage {
       }
       .width('100%')
 
-      Text(this.latestReceivedPreview.length === 0 ? '完成配对后，桌面端的最新文本会显示在这里。历史补同步不会覆盖本机剪贴板。' : this.latestReceivedPreview)
+      Text(this.latestReceivedPreview.length === 0 ? '桌面端发来的文本会先显示在这里，点击后才会复制到本机剪贴板。发送手机剪贴板必须点击系统 PasteButton。' : this.latestReceivedPreview)
         .fontSize(EggClipTypography.bodySize)
         .fontColor(EggClipColors.textSecondary)
         .lineHeight(24)
@@ -371,6 +427,11 @@ export struct HomePage {
         .width('100%')
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
+
+      Text(this.transportDiagnostics)
+        .width('100%')
+        .fontSize(11)
+        .fontColor(EggClipColors.textSecondary)
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -381,19 +442,29 @@ export struct HomePage {
 
   @Builder
   private HistoryPlaceholder() {
-    Column({ space: 8 }) {
-      Text('最近记录')
-        .width('100%')
-        .fontSize(EggClipTypography.bodySize)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(EggClipColors.textPrimary)
+    Row({ space: 12 }) {
+      Text('☰')
+        .fontSize(22)
+        .fontColor(EggClipColors.primary)
 
-      Text(`这里会保存最近 ${this.state.history.limit} 条记录，最长保留 7 天。`)
-        .width('100%')
-        .fontSize(EggClipTypography.captionSize)
-        .fontColor(EggClipColors.textSecondary)
+      Column({ space: 6 }) {
+        Text('最近记录')
+          .width('100%')
+          .fontSize(EggClipTypography.bodySize)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(EggClipColors.textPrimary)
+
+        Text(`历史开启后保存最近 ${this.state.history.limit} 条，最长保留 7 天；离线补齐只进历史，不覆盖当前剪贴板。`)
+          .width('100%')
+          .fontSize(EggClipTypography.captionSize)
+          .fontColor(EggClipColors.textSecondary)
+          .lineHeight(20)
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
     }
     .width('100%')
+    .alignItems(VerticalAlign.Top)
     .padding(EggClipSpacing.cardPadding)
     .backgroundColor(EggClipColors.cardBackground)
     .borderRadius(EggClipSpacing.radiusMedium)
@@ -405,18 +476,18 @@ export struct HomePage {
       host: this.manualHost,
       port
     };
-    this.transportStatus = '正在连接桌面 POC';
+    this.transportStatus = '正在连接桌面端';
     this.transportState = PocLifecycleState.STARTING;
     this.connectionState = ConnectionState.CONNECTING;
-    this.connectionTitle = '正在连接桌面 POC';
+    this.connectionTitle = '正在连接桌面端';
     this.connectionDescription = `${endpoint.host}:${endpoint.port}`;
     this.transport.connect(endpoint, {
       onOpen: () => {
         this.reconnectOnForeground = true;
         this.transportState = PocLifecycleState.RUNNING;
-        this.transportStatus = '已连接桌面 POC，PasteButton 读取后会发送文本';
+        this.transportStatus = '已连接桌面端，PasteButton 读取后会发送文本';
         this.connectionState = ConnectionState.ONLINE;
-        this.connectionTitle = '已连接桌面 POC';
+        this.connectionTitle = '已连接桌面端';
         this.connectionDescription = `${endpoint.host}:${endpoint.port} · 当前连接尚未认证`;
         this.refreshTransportDiagnostics();
       },
@@ -424,14 +495,14 @@ export struct HomePage {
         this.transportState = PocLifecycleState.IDLE;
         this.transportStatus = `连接已关闭：${reason}`;
         this.connectionState = ConnectionState.OFFLINE;
-        this.connectionTitle = '桌面 POC 已断开';
+        this.connectionTitle = '桌面端已断开';
         this.connectionDescription = reason;
       },
       onError: (reason: string) => {
         this.transportState = PocLifecycleState.FAILED;
         this.transportStatus = `连接失败：${reason}`;
         this.connectionState = ConnectionState.OFFLINE;
-        this.connectionTitle = '连接桌面 POC 失败';
+        this.connectionTitle = '连接桌面端失败';
         this.connectionDescription = `${reason}；可尝试其他候选或手动 IP`;
         this.refreshTransportDiagnostics();
       },
@@ -441,11 +512,11 @@ export struct HomePage {
         if (decoded.ok) {
           this.latestReceivedText = decoded.text;
           this.latestReceivedPreview = this.trimPreview(decoded.text);
-          this.latestReceivedSource = 'Desktop POC';
-          this.copyStatus = '已收到桌面 POC 文本，可点击复制到本机';
-          this.transportStatus = `收到桌面 POC 文本：${decoded.text.length} 字符`;
+          this.latestReceivedSource = '桌面端';
+          this.copyStatus = '已收到桌面端文本，可点击复制到本机';
+          this.transportStatus = `收到桌面端文本：${decoded.text.length} 字符`;
           this.connectionState = ConnectionState.ONLINE;
-          this.connectionTitle = '已收到桌面 POC 文本';
+          this.connectionTitle = '已收到桌面端文本';
           this.connectionDescription = '内容只进入预览，点击后才会复制到本机';
         } else {
           this.transportStatus = `${decoded.reason}，已忽略`;
@@ -463,9 +534,9 @@ export struct HomePage {
       })
       .catch(() => {
         this.transportState = PocLifecycleState.FAILED;
-        this.transportStatus = '连接桌面 POC 失败';
+        this.transportStatus = '连接桌面端失败';
         this.connectionState = ConnectionState.OFFLINE;
-        this.connectionTitle = '连接桌面 POC 失败';
+        this.connectionTitle = '连接桌面端失败';
         this.connectionDescription = '请检查候选地址、Windows 防火墙和当前网络';
       });
   }
@@ -508,16 +579,16 @@ export struct HomePage {
 
   private sendPocClipboardText(text: string): void {
     if (!this.transport.isConnected()) {
-      this.pasteStatus = '已读取纯文本；尚未连接桌面 POC，未发送';
+      this.pasteStatus = '已读取纯文本；尚未连接桌面端，未发送';
       return;
     }
 
     this.transport.sendClipboardText(text)
       .then((sent) => {
-        this.pasteStatus = sent ? '已发送到桌面 POC' : '发送失败：WebSocket 未连接';
+        this.pasteStatus = sent ? '已发送到桌面端' : '发送失败：WebSocket 未连接';
       })
       .catch(() => {
-        this.pasteStatus = '发送到桌面 POC 失败';
+        this.pasteStatus = '发送到桌面端失败';
       });
   }
 
@@ -525,9 +596,9 @@ export struct HomePage {
     this.reconnectOnForeground = false;
     this.transport.close();
     this.transportState = PocLifecycleState.IDLE;
-    this.transportStatus = '已主动断开桌面 POC';
+    this.transportStatus = '已主动断开桌面端';
     this.connectionState = ConnectionState.OFFLINE;
-    this.connectionTitle = '已主动断开桌面 POC';
+    this.connectionTitle = '已主动断开桌面端';
     this.connectionDescription = 'mDNS 发现仍可继续运行';
   }
 

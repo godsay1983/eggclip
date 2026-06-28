@@ -8,9 +8,14 @@
 </script>
 
 <section class="status-card" aria-label="连接状态">
-  <StatusDot {state} />
-  <div>
+  <div class="status-icon">
+    <StatusDot {state} />
+  </div>
+  <div class="status-copy">
     <strong>{title}</strong>
     <p>{description}</p>
   </div>
+  <span class:online={state === "online"} class="status-label">
+    {state === "online" ? "在线" : state === "connecting" ? "连接中" : state === "paused" ? "已暂停" : "离线"}
+  </span>
 </section>
