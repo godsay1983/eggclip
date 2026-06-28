@@ -41,6 +41,29 @@ export enum ClipboardDedupDecision {
   CONFLICT = 'conflict'
 }
 
+export enum InboundClipboardEventKind {
+  ITEM_LIVE = 'itemLive',
+  ITEM_BATCH = 'itemBatch'
+}
+
+export enum SyncPauseReason {
+  SYNC_DISABLED = 'syncDisabled',
+  AUTO_RECEIVE_DISABLED = 'autoReceiveDisabled',
+  AUTO_WRITE_DISABLED = 'autoWriteDisabled'
+}
+
+export interface LocalClipboardSyncPolicy {
+  persistLocally: boolean;
+  broadcastAfterCommit: boolean;
+  blockedReason?: SyncPauseReason;
+}
+
+export interface InboundClipboardPolicy {
+  updateHistory: boolean;
+  writeSystemClipboard: boolean;
+  blockedReason?: SyncPauseReason;
+}
+
 export interface ClipboardItem {
   itemId: string;
   spaceId: string;
@@ -133,6 +156,45 @@ export function validateAppSettings(settings: AppSettings): ValidationResult {
     return { ok: false, error: DomainValidationError.INVALID_FIELD, field: 'retentionDays' };
   }
   return { ok: true };
+}
+
+export function localClipboardSyncPolicy(settings: AppSettings): LocalClipboardSyncPolicy {
+  return {
+    persistLocally: true,
+    broadcastAfterCommit: settings.syncEnabled,
+    blockedReason: settings.syncEnabled ? undefined : SyncPauseReason.SYNC_DISABLED
+  };
+}
+
+export function inboundClipboardPolicy(
+  kind: InboundClipboardEventKind,
+  settings: AppSettings
+): InboundClipboardPolicy {
+  if (!settings.syncEnabled) {
+    return {
+      updateHistory: false,
+      writeSystemClipboard: false,
+      blockedReason: SyncPauseReason.SYNC_DISABLED
+    };
+  }
+  if (!settings.autoReceiveEnabled) {
+    return {
+      updateHistory: false,
+      writeSystemClipboard: false,
+      blockedReason: SyncPauseReason.AUTO_RECEIVE_DISABLED
+    };
+  }
+  if (kind === InboundClipboardEventKind.ITEM_BATCH) {
+    return {
+      updateHistory: true,
+      writeSystemClipboard: false
+    };
+  }
+  return {
+    updateHistory: true,
+    writeSystemClipboard: settings.autoWriteEnabled,
+    blockedReason: settings.autoWriteEnabled ? undefined : SyncPauseReason.AUTO_WRITE_DISABLED
+  };
 }
 
 export class HlcTimestamp {

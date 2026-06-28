@@ -415,20 +415,68 @@ pub enum InboundClipboardEventKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncPauseReason {
+    SyncDisabled,
+    AutoReceiveDisabled,
+    AutoWriteDisabled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LocalClipboardSyncPolicy {
+    pub persist_locally: bool,
+    pub broadcast_after_commit: bool,
+    pub blocked_reason: Option<SyncPauseReason>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InboundClipboardPolicy {
     pub write_system_clipboard: bool,
     pub update_history: bool,
+    pub blocked_reason: Option<SyncPauseReason>,
+}
+
+pub fn local_clipboard_sync_policy(settings: &AppSettings) -> LocalClipboardSyncPolicy {
+    LocalClipboardSyncPolicy {
+        persist_locally: true,
+        broadcast_after_commit: settings.sync_enabled,
+        blocked_reason: (!settings.sync_enabled).then_some(SyncPauseReason::SyncDisabled),
+    }
 }
 
 pub fn inbound_clipboard_policy(kind: InboundClipboardEventKind) -> InboundClipboardPolicy {
+    inbound_clipboard_policy_with_settings(kind, &AppSettings::default())
+}
+
+pub fn inbound_clipboard_policy_with_settings(
+    kind: InboundClipboardEventKind,
+    settings: &AppSettings,
+) -> InboundClipboardPolicy {
+    if !settings.sync_enabled {
+        return InboundClipboardPolicy {
+            write_system_clipboard: false,
+            update_history: false,
+            blocked_reason: Some(SyncPauseReason::SyncDisabled),
+        };
+    }
+    if !settings.auto_receive_enabled {
+        return InboundClipboardPolicy {
+            write_system_clipboard: false,
+            update_history: false,
+            blocked_reason: Some(SyncPauseReason::AutoReceiveDisabled),
+        };
+    }
+
     match kind {
         InboundClipboardEventKind::ItemLive => InboundClipboardPolicy {
-            write_system_clipboard: true,
+            write_system_clipboard: settings.auto_write_enabled,
             update_history: true,
+            blocked_reason: (!settings.auto_write_enabled)
+                .then_some(SyncPauseReason::AutoWriteDisabled),
         },
         InboundClipboardEventKind::ItemBatch => InboundClipboardPolicy {
             write_system_clipboard: false,
             update_history: true,
+            blocked_reason: None,
         },
     }
 }
@@ -441,7 +489,16 @@ pub fn apply_authenticated_inbound_item(
     item: &ClipboardText,
     kind: InboundClipboardEventKind,
 ) -> Result<InboundClipboardPolicy, String> {
-    let policy = inbound_clipboard_policy(kind);
+    apply_authenticated_inbound_item_with_settings(app, item, kind, &AppSettings::default())
+}
+
+pub fn apply_authenticated_inbound_item_with_settings(
+    app: &AppHandle,
+    item: &ClipboardText,
+    kind: InboundClipboardEventKind,
+    settings: &AppSettings,
+) -> Result<InboundClipboardPolicy, String> {
+    let policy = inbound_clipboard_policy_with_settings(kind, settings);
     if policy.write_system_clipboard {
         clipboard::write_remote_clipboard_text(app, item)?;
     }
@@ -607,6 +664,7 @@ mod tests {
             InboundClipboardPolicy {
                 write_system_clipboard: true,
                 update_history: true,
+                blocked_reason: None,
             }
         );
         assert_eq!(
@@ -614,6 +672,76 @@ mod tests {
             InboundClipboardPolicy {
                 write_system_clipboard: false,
                 update_history: true,
+                blocked_reason: None,
+            }
+        );
+    }
+
+    #[test]
+    fn sync_pause_policy_keeps_local_persistence_and_blocks_network_actions() {
+        let sync_disabled = AppSettings {
+            sync_enabled: false,
+            ..AppSettings::default()
+        };
+        let receive_disabled = AppSettings {
+            auto_receive_enabled: false,
+            ..AppSettings::default()
+        };
+        let write_disabled = AppSettings {
+            auto_write_enabled: false,
+            ..AppSettings::default()
+        };
+
+        assert_eq!(
+            local_clipboard_sync_policy(&sync_disabled),
+            LocalClipboardSyncPolicy {
+                persist_locally: true,
+                broadcast_after_commit: false,
+                blocked_reason: Some(SyncPauseReason::SyncDisabled),
+            }
+        );
+        assert_eq!(
+            inbound_clipboard_policy_with_settings(
+                InboundClipboardEventKind::ItemLive,
+                &sync_disabled
+            ),
+            InboundClipboardPolicy {
+                write_system_clipboard: false,
+                update_history: false,
+                blocked_reason: Some(SyncPauseReason::SyncDisabled),
+            }
+        );
+        assert_eq!(
+            inbound_clipboard_policy_with_settings(
+                InboundClipboardEventKind::ItemLive,
+                &receive_disabled
+            ),
+            InboundClipboardPolicy {
+                write_system_clipboard: false,
+                update_history: false,
+                blocked_reason: Some(SyncPauseReason::AutoReceiveDisabled),
+            }
+        );
+        assert_eq!(
+            inbound_clipboard_policy_with_settings(
+                InboundClipboardEventKind::ItemLive,
+                &write_disabled
+            ),
+            InboundClipboardPolicy {
+                write_system_clipboard: false,
+                update_history: true,
+                blocked_reason: Some(SyncPauseReason::AutoWriteDisabled),
+            }
+        );
+        assert_eq!(
+            inbound_clipboard_policy_with_settings(
+                InboundClipboardEventKind::ItemBatch,
+                &write_disabled
+            ),
+            InboundClipboardPolicy {
+                write_system_clipboard: false,
+                update_history: true,
+                blocked_reason: None,
             }
         );
     }

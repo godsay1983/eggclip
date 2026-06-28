@@ -22,14 +22,19 @@ import {
   POC_MAX_FRAME_BYTES
 } from '../main/ets/models/PocModels';
 import {
+  AppSettings,
   ContentType as DomainContentType,
   ClipboardDedupDecision,
   DomainValidationError,
   HlcTimestamp,
+  InboundClipboardEventKind,
   OriginSeqAllocator,
+  SyncPauseReason,
   buildLocalClipboardItemDraft,
   deduplicateClipboardItem,
   defaultAppSettings,
+  inboundClipboardPolicy,
+  localClipboardSyncPolicy,
   validateAppSettings
 } from '../main/ets/models/DomainModels';
 import {
@@ -225,6 +230,58 @@ export default function localUnitTest() {
         historyLimit: 10,
         retentionDays: 7
       }).error).assertEqual(DomainValidationError.INVALID_HISTORY_LIMIT);
+    });
+
+    it('appliesDomainSyncPausePolicies', 0, () => {
+      const defaults = defaultAppSettings();
+      const syncDisabled: AppSettings = {
+        syncEnabled: false,
+        autoReceiveEnabled: true,
+        autoWriteEnabled: false,
+        historyEnabled: true,
+        historyLimit: 50,
+        retentionDays: 7
+      };
+      const receiveDisabled: AppSettings = {
+        syncEnabled: true,
+        autoReceiveEnabled: false,
+        autoWriteEnabled: true,
+        historyEnabled: true,
+        historyLimit: 50,
+        retentionDays: 7
+      };
+      const writeDisabled: AppSettings = {
+        syncEnabled: true,
+        autoReceiveEnabled: true,
+        autoWriteEnabled: false,
+        historyEnabled: true,
+        historyLimit: 50,
+        retentionDays: 7
+      };
+
+      expect(localClipboardSyncPolicy(syncDisabled).persistLocally).assertEqual(true);
+      expect(localClipboardSyncPolicy(syncDisabled).broadcastAfterCommit).assertEqual(false);
+      expect(localClipboardSyncPolicy(syncDisabled).blockedReason)
+        .assertEqual(SyncPauseReason.SYNC_DISABLED);
+
+      expect(inboundClipboardPolicy(InboundClipboardEventKind.ITEM_LIVE, defaults).updateHistory)
+        .assertEqual(true);
+      expect(inboundClipboardPolicy(InboundClipboardEventKind.ITEM_LIVE, defaults).writeSystemClipboard)
+        .assertEqual(false);
+      expect(inboundClipboardPolicy(InboundClipboardEventKind.ITEM_LIVE, syncDisabled).blockedReason)
+        .assertEqual(SyncPauseReason.SYNC_DISABLED);
+      expect(inboundClipboardPolicy(InboundClipboardEventKind.ITEM_LIVE, receiveDisabled).blockedReason)
+        .assertEqual(SyncPauseReason.AUTO_RECEIVE_DISABLED);
+      expect(inboundClipboardPolicy(InboundClipboardEventKind.ITEM_LIVE, writeDisabled).updateHistory)
+        .assertEqual(true);
+      expect(inboundClipboardPolicy(InboundClipboardEventKind.ITEM_LIVE, writeDisabled).writeSystemClipboard)
+        .assertEqual(false);
+      expect(inboundClipboardPolicy(InboundClipboardEventKind.ITEM_LIVE, writeDisabled).blockedReason)
+        .assertEqual(SyncPauseReason.AUTO_WRITE_DISABLED);
+      expect(inboundClipboardPolicy(InboundClipboardEventKind.ITEM_BATCH, receiveDisabled).updateHistory)
+        .assertEqual(false);
+      expect(inboundClipboardPolicy(InboundClipboardEventKind.ITEM_BATCH, defaults).writeSystemClipboard)
+        .assertEqual(false);
     });
 
     it('deduplicatesDomainClipboardItemsByItemIdOriginSeqAndDigest', 0, () => {
