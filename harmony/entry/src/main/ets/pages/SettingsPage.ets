@@ -85,20 +85,9 @@ export struct SettingsPage {
         .fontColor(EggClipColors.textPrimary)
         .width('100%')
 
-      this.BooleanSettingRow('自动同步', this.syncEnabled, () => {
-        this.syncEnabled = !this.syncEnabled;
-        this.saveCurrentSettings();
-      })
-
-      this.BooleanSettingRow('自动接收', this.autoReceiveEnabled, () => {
-        this.autoReceiveEnabled = !this.autoReceiveEnabled;
-        this.saveCurrentSettings();
-      })
-
-      this.BooleanSettingRow('自动写入剪贴板', this.autoWriteEnabled, () => {
-        this.autoWriteEnabled = !this.autoWriteEnabled;
-        this.saveCurrentSettings();
-      })
+      this.SyncEnabledRow()
+      this.AutoReceiveEnabledRow()
+      this.AutoWriteEnabledRow()
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -116,10 +105,7 @@ export struct SettingsPage {
         .fontColor(EggClipColors.textPrimary)
         .width('100%')
 
-      this.BooleanSettingRow('保存历史', this.historyEnabled, () => {
-        this.historyEnabled = !this.historyEnabled;
-        this.saveCurrentSettings();
-      })
+      this.HistoryEnabledRow()
 
       Text(`历史数量：${this.historyLimit === 0 ? '不保存' : `${this.historyLimit} 条`}`)
         .fontSize(EggClipTypography.captionSize)
@@ -220,6 +206,38 @@ export struct SettingsPage {
     .padding(EggClipSpacing.cardPadding)
     .backgroundColor(EggClipColors.cardBackground)
     .borderRadius(EggClipSpacing.radiusMedium)
+  }
+
+  @Builder
+  private SyncEnabledRow() {
+    this.BooleanSettingRow('自动同步', this.syncEnabled, () => {
+      this.syncEnabled = !this.syncEnabled;
+      this.saveCurrentSettings();
+    })
+  }
+
+  @Builder
+  private AutoReceiveEnabledRow() {
+    this.BooleanSettingRow('自动接收', this.autoReceiveEnabled, () => {
+      this.autoReceiveEnabled = !this.autoReceiveEnabled;
+      this.saveCurrentSettings();
+    })
+  }
+
+  @Builder
+  private AutoWriteEnabledRow() {
+    this.BooleanSettingRow('自动写入剪贴板', this.autoWriteEnabled, () => {
+      this.autoWriteEnabled = !this.autoWriteEnabled;
+      this.saveCurrentSettings();
+    })
+  }
+
+  @Builder
+  private HistoryEnabledRow() {
+    this.BooleanSettingRow('保存历史', this.historyEnabled, () => {
+      this.historyEnabled = !this.historyEnabled;
+      this.saveCurrentSettings();
+    })
   }
 
   @Builder

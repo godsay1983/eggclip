@@ -29,6 +29,9 @@
       ...$settingsSnapshot.settings,
       [key]: value,
     });
+    if (key === "historyEnabled" || key === "historyLimit" || key === "retentionDays") {
+      await shellSnapshot.refreshHistorySummary();
+    }
   }
 
   function historyLimitFromValue(value: string): AppSettings["historyLimit"] {
@@ -167,7 +170,7 @@
         <label>
           <span>历史数量</span>
           <select
-            value={$settingsSnapshot.settings.historyLimit}
+            value={String($settingsSnapshot.settings.historyLimit)}
             disabled={$settingsSnapshot.state === "saving"}
             on:change={(event) =>
               saveSetting("historyLimit", historyLimitFromValue(event.currentTarget.value))}
