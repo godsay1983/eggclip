@@ -91,6 +91,7 @@ export interface PocRecentEndpoint {
   port: number;
   label: string;
   connectedAt: string;
+  connectedAtMs: number;
 }
 
 export interface ShellSnapshot {

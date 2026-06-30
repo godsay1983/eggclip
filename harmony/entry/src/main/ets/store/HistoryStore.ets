@@ -103,6 +103,19 @@ export class HistoryStore {
     return this.loadSummary();
   }
 
+  async clearAll(): Promise<HistoryStoreSnapshot> {
+    this.currentState = HistoryStoreState.LOADING;
+    this.currentErrorMessage = '';
+    try {
+      await this.clipboardRepository.clearAllHistory(Date.now());
+    } catch (_) {
+      this.currentState = HistoryStoreState.ERROR;
+      this.currentErrorMessage = '清空历史失败';
+      return this.snapshot();
+    }
+    return this.loadSummary();
+  }
+
   async captureLocalText(text: string): Promise<HistoryStoreSnapshot> {
     this.currentState = HistoryStoreState.LOADING;
     this.currentErrorMessage = '';

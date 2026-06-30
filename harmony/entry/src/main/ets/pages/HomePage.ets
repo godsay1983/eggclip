@@ -65,6 +65,7 @@ export struct HomePage {
   @State private historyItems: HistoryPreviewItem[] = [];
   @State private historyStatus: string = '正在读取本机历史摘要';
   @State private deletingHistoryItemId: string = '';
+  @State private clearingHistory: boolean = false;
 
   aboutToAppear(): void {
     pocConnectionStore.subscribe(this.connectionSnapshotListener);
@@ -298,11 +299,26 @@ export struct HomePage {
         .fontColor(EggClipColors.primary)
 
       Column({ space: 6 }) {
-        Text('最近记录')
-          .width('100%')
-          .fontSize(EggClipTypography.bodySize)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(EggClipColors.textPrimary)
+        Row({ space: 8 }) {
+          Text('最近记录')
+            .fontSize(EggClipTypography.bodySize)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(EggClipColors.textPrimary)
+            .layoutWeight(1)
+
+          Button(this.clearingHistory ? '清理中' : '清空')
+            .height(28)
+            .enabled(this.historyUsed > 0 && !this.clearingHistory && this.deletingHistoryItemId.length === 0)
+            .fontSize(11)
+            .fontColor(EggClipColors.textSecondary)
+            .backgroundColor(EggClipColors.controlBackground)
+            .borderRadius(14)
+            .onClick(() => {
+              this.clearHistory();
+            })
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
 
         Text(`当前本机历史 ${this.historyUsed} / ${this.historyLimit}；离线补齐只进历史，不覆盖当前剪贴板。`)
           .width('100%')
@@ -392,7 +408,7 @@ export struct HomePage {
 
         Button(this.deletingHistoryItemId === item.id ? '删除中' : '删除')
           .height(28)
-          .enabled(this.deletingHistoryItemId.length === 0)
+          .enabled(this.deletingHistoryItemId.length === 0 && !this.clearingHistory)
           .fontSize(11)
           .fontColor(EggClipColors.textSecondary)
           .backgroundColor(EggClipColors.cardBackground)
@@ -551,7 +567,7 @@ export struct HomePage {
   }
 
   private deleteHistoryItem(itemId: string): void {
-    if (this.historyStore === null || this.deletingHistoryItemId.length > 0) {
+    if (this.historyStore === null || this.deletingHistoryItemId.length > 0 || this.clearingHistory) {
       return;
     }
 
@@ -569,6 +585,28 @@ export struct HomePage {
       })
       .finally(() => {
         this.deletingHistoryItemId = '';
+      });
+  }
+
+  private clearHistory(): void {
+    if (this.historyStore === null || this.clearingHistory || this.deletingHistoryItemId.length > 0 || this.historyUsed === 0) {
+      return;
+    }
+
+    this.clearingHistory = true;
+    this.historyStatus = '正在清空本机历史';
+    this.historyStore.clearAll()
+      .then((snapshot: HistoryStoreSnapshot) => {
+        this.historyUsed = snapshot.used;
+        this.historyLimit = snapshot.limit;
+        this.historyItems = snapshot.items;
+        this.historyStatus = snapshot.errorMessage.length > 0 ? snapshot.errorMessage : '已清空本机历史；不会修改系统剪贴板';
+      })
+      .catch(() => {
+        this.historyStatus = '清空历史失败';
+      })
+      .finally(() => {
+        this.clearingHistory = false;
       });
   }
 

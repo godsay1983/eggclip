@@ -20,6 +20,7 @@
       .then(() => shellSnapshot.startPocTransport());
     void shellSnapshot.startClipboardMonitor();
     void shellSnapshot.refreshHistorySummary();
+    void shellSnapshot.loadRecentPocEndpoint();
     void settingsSnapshot.load();
   });
 

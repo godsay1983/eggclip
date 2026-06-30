@@ -29,6 +29,14 @@ import {
   SyncHeadRepository
 } from './RepositoryCommands';
 
+const RECENT_POC_ENDPOINT_KEY: string = 'pocRecentEndpoint';
+
+export interface RecentPocEndpointRecord {
+  host: string;
+  port: number;
+  connectedAt: number;
+}
+
 export class SpaceRdbRepository {
   private readonly context: common.Context;
   private readonly commands: SpaceRepository = new SpaceRepository();
@@ -347,6 +355,38 @@ export class SettingsRdbRepository {
       resultSet.close();
     }
   }
+
+  async saveRecentPocEndpoint(record: RecentPocEndpointRecord): Promise<void> {
+    if (!isValidRecentPocEndpoint(record)) {
+      throw new Error('Invalid recent POC endpoint');
+    }
+    const store = await Database.getStore(this.context);
+    await store.executeSql(
+      `INSERT INTO app_metadata(key, value, updated_at) VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      this.runner.bindArgs([RECENT_POC_ENDPOINT_KEY, JSON.stringify(record), record.connectedAt])
+    );
+  }
+
+  async loadRecentPocEndpoint(): Promise<RecentPocEndpointRecord | null> {
+    const store = await Database.getStore(this.context);
+    const resultSet = await store.querySql(
+      'SELECT value FROM app_metadata WHERE key = ? LIMIT 1',
+      this.runner.bindArgs([RECENT_POC_ENDPOINT_KEY])
+    );
+    try {
+      if (!resultSet.goToFirstRow()) {
+        return null;
+      }
+      const parsed = JSON.parse(getString(resultSet, 'value')) as RecentPocEndpointRecord;
+      if (!isValidRecentPocEndpoint(parsed)) {
+        return null;
+      }
+      return parsed;
+    } finally {
+      resultSet.close();
+    }
+  }
 }
 
 function readSpaceRecord(resultSet: relationalStore.ResultSet): SpaceRecord {
@@ -448,4 +488,35 @@ function getBlob(resultSet: relationalStore.ResultSet, columnName: string): Uint
     return new Uint8Array();
   }
   return resultSet.getBlob(columnIndex);
+}
+
+function isValidRecentPocEndpoint(record: RecentPocEndpointRecord): boolean {
+  if (!isValidIpv4Host(record.host)) {
+    return false;
+  }
+  if (!Number.isInteger(record.port) || record.port < 1 || record.port > 65535) {
+    return false;
+  }
+  return Number.isSafeInteger(record.connectedAt) && record.connectedAt >= 0;
+}
+
+function isValidIpv4Host(host: string): boolean {
+  const parts = host.split('.');
+  if (parts.length !== 4) {
+    return false;
+  }
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index];
+    if (part.length === 0 || !/^[0-9]+$/.test(part)) {
+      return false;
+    }
+    const value = Number(part);
+    if (!Number.isInteger(value) || value < 0 || value > 255) {
+      return false;
+    }
+    if (index === 0 && value >= 224 && value <= 239) {
+      return false;
+    }
+  }
+  return host !== '0.0.0.0' && host !== '255.255.255.255';
 }

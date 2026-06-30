@@ -11,7 +11,10 @@ import {
   PocLifecycleState
 } from '../models/PocModels';
 import { ConnectionState } from '../models/ShellModels';
-import { SettingsRdbRepository } from '../data/repositories/RdbRepositories';
+import {
+  RecentPocEndpointRecord,
+  SettingsRdbRepository
+} from '../data/repositories/RdbRepositories';
 import { MdnsDiscoveryService } from '../services/discovery/MdnsDiscoveryService';
 import {
   PocClipboardTextDecodeResult,
@@ -48,6 +51,7 @@ class PocConnectionStore {
   private readonly listeners: PocConnectionSnapshotListener[] = [];
   private discovery: MdnsDiscoveryService | null = null;
   private settingsRepository: SettingsRdbRepository | null = null;
+  private recentEndpointLoaded: boolean = false;
   private reconnectOnForeground: boolean = false;
   private manualHost: string = '127.0.0.1';
   private manualPort: string = '0';
@@ -77,6 +81,7 @@ class PocConnectionStore {
     if (this.settingsRepository === null) {
       this.settingsRepository = new SettingsRdbRepository(context);
     }
+    this.loadRecentEndpoint();
   }
 
   subscribe(listener: PocConnectionSnapshotListener): void {
@@ -296,10 +301,52 @@ class PocConnectionStore {
   }
 
   private rememberSuccessfulEndpoint(host: string, port: number): void {
+    const connectedAt = Date.now();
     this.lastSuccessfulHost = host;
     this.lastSuccessfulPort = port.toString();
     this.lastSuccessfulEndpointLabel = `${host}:${port}`;
-    this.lastSuccessfulAt = this.formatTime(Date.now());
+    this.lastSuccessfulAt = this.formatTime(connectedAt);
+    this.saveRecentEndpoint({
+      host,
+      port,
+      connectedAt
+    });
+  }
+
+  private loadRecentEndpoint(): void {
+    if (this.recentEndpointLoaded || this.settingsRepository === null) {
+      return;
+    }
+    this.recentEndpointLoaded = true;
+    this.settingsRepository.loadRecentPocEndpoint()
+      .then((record: RecentPocEndpointRecord | null) => {
+        if (record === null) {
+          return;
+        }
+        this.lastSuccessfulHost = record.host;
+        this.lastSuccessfulPort = record.port.toString();
+        this.lastSuccessfulEndpointLabel = `${record.host}:${record.port}`;
+        this.lastSuccessfulAt = this.formatTime(record.connectedAt);
+        if (this.manualPort === '0') {
+          this.manualHost = record.host;
+          this.manualPort = record.port.toString();
+        }
+        this.emit();
+      })
+      .catch(() => {
+        this.lastSuccessfulHost = '';
+        this.lastSuccessfulPort = '';
+        this.lastSuccessfulEndpointLabel = '';
+        this.lastSuccessfulAt = '';
+        this.emit();
+      });
+  }
+
+  private saveRecentEndpoint(record: RecentPocEndpointRecord): void {
+    this.settingsRepository?.saveRecentPocEndpoint(record).catch(() => {
+      this.transportStatus = '最近成功地址未能保存；当前连接仍可继续使用';
+      this.emit();
+    });
   }
 
   private handleInboundClipboardText(decoded: PocClipboardTextDecodeResult): void {

@@ -4,6 +4,7 @@ import type {
   ClipboardPreview,
   HistoryItemSummary,
   PocDiagnostics,
+  PocRecentEndpoint,
   PocTransportSummary,
   ShellSnapshot,
 } from "$lib/types/shell";
@@ -65,6 +66,12 @@ interface HistoryItemSummaryDto {
   source: string;
   receivedAtMs: number;
   contentLength: number;
+}
+
+interface PocRecentEndpointDto {
+  host: string;
+  port: number;
+  connectedAtMs: number;
 }
 
 export function createInitialShellSnapshot(): ShellSnapshot {
@@ -158,12 +165,18 @@ export async function sendPocClipboardText(text: string): Promise<number> {
   return invoke<number>("send_poc_clipboard_text", { text });
 }
 
-export async function connectPocPeer(host: string, port: number): Promise<string> {
-  return invoke<string>("connect_poc_peer", { host, port });
+export async function connectPocPeer(host: string, port: number): Promise<PocRecentEndpoint> {
+  const endpoint = await invoke<PocRecentEndpointDto>("connect_poc_peer", { host, port });
+  return toPocRecentEndpoint(endpoint);
 }
 
 export async function disconnectAllPocPeers(): Promise<number> {
   return invoke<number>("disconnect_all_poc_peers");
+}
+
+export async function loadPocRecentEndpoint(): Promise<PocRecentEndpoint | null> {
+  const endpoint = await invoke<PocRecentEndpointDto | null>("load_poc_recent_endpoint");
+  return endpoint ? toPocRecentEndpoint(endpoint) : null;
 }
 
 export async function startPocTransport(): Promise<PocTransportSummary> {
@@ -266,6 +279,20 @@ function toPocTransportSummary(status: PocTransportStatus): PocTransportSummary 
     })),
     connectedPeers: status.connectedPeers,
     lastError: status.lastError,
+  };
+}
+
+function toPocRecentEndpoint(endpoint: PocRecentEndpointDto): PocRecentEndpoint {
+  return {
+    host: endpoint.host,
+    port: endpoint.port,
+    label: `${endpoint.host}:${endpoint.port}`,
+    connectedAt: new Date(endpoint.connectedAtMs).toLocaleTimeString("zh-CN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }),
+    connectedAtMs: endpoint.connectedAtMs,
   };
 }
 

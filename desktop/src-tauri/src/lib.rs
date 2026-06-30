@@ -77,6 +77,7 @@ pub fn run() {
             transport::connect_poc_peer,
             transport::disconnect_all_poc_peers,
             transport::get_poc_transport_status,
+            transport::load_poc_recent_endpoint,
             transport::send_poc_clipboard_text,
             transport::start_poc_transport,
             transport::stop_poc_transport,

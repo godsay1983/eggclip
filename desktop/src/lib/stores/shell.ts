@@ -10,6 +10,7 @@ import {
   getClipboardHistoryUsed,
   getPocTransportStatus,
   listClipboardHistoryPreview,
+  loadPocRecentEndpoint,
   onLocalClipboardText,
   onPocClipboardText,
   onPocDiagnostics,
@@ -22,6 +23,7 @@ import {
   writeSystemClipboardText,
 } from "$lib/api/shell";
 import type { ClipboardPreview, OutboundSyncStatus } from "$lib/types/shell";
+import type { PocRecentEndpoint } from "$lib/types/shell";
 
 const snapshot = writable(createInitialShellSnapshot());
 let monitorStarted = false;
@@ -93,20 +95,10 @@ function setOutboundStatus(status: Omit<OutboundSyncStatus, "updatedAt">) {
   }));
 }
 
-function rememberPocEndpoint(endpoint: string) {
-  const [host, portText] = endpoint.split(":");
-  const port = Number(portText);
-  if (!host || !Number.isInteger(port) || port < 1 || port > 65535) {
-    return;
-  }
+function rememberPocEndpoint(endpoint: PocRecentEndpoint) {
   snapshot.update((state) => ({
     ...state,
-    lastPocEndpoint: {
-      host,
-      port,
-      label: `${host}:${port}`,
-      connectedAt: currentTimeLabel(),
-    },
+    lastPocEndpoint: endpoint,
   }));
 }
 
@@ -217,7 +209,6 @@ export const shellSnapshot = {
         }),
         onPocPeerConnected((peer) => {
           pocPeers.add(peer);
-          rememberPocEndpoint(peer);
           updatePocDevices(
             "远端设备已连接",
             `当前有 ${pocPeers.size} 个实验连接，仅允许用户触发收发`,
@@ -266,6 +257,20 @@ export const shellSnapshot = {
       },
     }));
   },
+  async loadRecentPocEndpoint() {
+    try {
+      const endpoint = await loadPocRecentEndpoint();
+      snapshot.update((state) => ({
+        ...state,
+        lastPocEndpoint: endpoint,
+      }));
+    } catch (_) {
+      snapshot.update((state) => ({
+        ...state,
+        lastPocEndpoint: null,
+      }));
+    }
+  },
   async connectPocPeer(host: string, port: number) {
     snapshot.update((state) => ({
       ...state,
@@ -283,7 +288,7 @@ export const shellSnapshot = {
         connection: {
           state: "connecting",
           title: "远端连接已建立",
-          description: `已连接 ${endpoint}；等待连接事件确认`,
+          description: `已连接 ${endpoint.label}；等待连接事件确认`,
         },
       }));
     } catch (error) {

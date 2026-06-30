@@ -2,7 +2,11 @@ mod session;
 
 use std::{collections::HashMap, net::Ipv4Addr, str::FromStr, sync::Mutex, time::Duration};
 
-use crate::clipboard::{ClipboardText, ClipboardTextError};
+use crate::{
+    clipboard::{ClipboardText, ClipboardTextError},
+    settings::{database_path, now_ms},
+    storage::{open_database, repositories::SettingsRepository},
+};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -21,6 +25,7 @@ pub use session::{
 
 pub const POC_MAX_FRAME_BYTES: usize = 1024 * 1024;
 const POC_CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
+const POC_RECENT_ENDPOINT_KEY: &str = "pocRecentEndpoint";
 
 #[derive(Default)]
 pub struct PocTransportRuntime {
@@ -104,6 +109,14 @@ struct PocPeerEvent {
 struct PocTextFrameEvent {
     peer: String,
     byte_len: usize,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PocRecentEndpoint {
+    host: String,
+    port: u16,
+    connected_at_ms: u64,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -251,7 +264,7 @@ pub async fn connect_poc_peer(
     runtime: State<'_, PocTransportRuntime>,
     host: String,
     port: u16,
-) -> Result<String, String> {
+) -> Result<PocRecentEndpoint, String> {
     let endpoint = validate_poc_endpoint(&host, port)?;
     let peer = format!("desktop-outbound:{endpoint}");
     if runtime
@@ -270,15 +283,37 @@ pub async fn connect_poc_peer(
         .map_err(|error| format!("无法连接桌面 POC：{error}"))?;
 
     let connected_endpoint = endpoint.clone();
+    let recent_endpoint = build_recent_endpoint(&connected_endpoint, now_ms()?)?;
+    let _ = save_poc_recent_endpoint_metadata(&app, &recent_endpoint);
     tauri::async_runtime::spawn(async move {
         handle_poc_websocket(app, peer, websocket).await;
     });
-    Ok(connected_endpoint)
+    Ok(recent_endpoint)
 }
 
 #[tauri::command]
 pub fn disconnect_all_poc_peers(runtime: State<'_, PocTransportRuntime>) -> Result<usize, String> {
     disconnect_all_poc_peers_with_runtime(&runtime)
+}
+
+#[tauri::command]
+pub fn load_poc_recent_endpoint(app: AppHandle) -> Result<Option<PocRecentEndpoint>, String> {
+    let path = database_path(&app)?;
+    let connection = open_database(path).map_err(|error| format!("无法打开本地数据库：{error}"))?;
+    let value = SettingsRepository::new(&connection)
+        .get(POC_RECENT_ENDPOINT_KEY)
+        .map_err(|error| format!("无法读取最近 POC 地址：{error}"))?;
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let endpoint = match serde_json::from_str::<PocRecentEndpoint>(&value) {
+        Ok(endpoint) => endpoint,
+        Err(_) => return Ok(None),
+    };
+    if validate_poc_endpoint(&endpoint.host, endpoint.port).is_err() {
+        return Ok(None);
+    }
+    Ok(Some(endpoint))
 }
 
 fn disconnect_all_poc_peers_with_runtime(runtime: &PocTransportRuntime) -> Result<usize, String> {
@@ -304,6 +339,37 @@ fn validate_poc_endpoint(host: &str, port: u16) -> Result<String, String> {
         return Err("请输入 1 到 65535 之间的端口".to_owned());
     }
     Ok(format!("{address}:{port}"))
+}
+
+fn build_recent_endpoint(
+    endpoint: &str,
+    connected_at_ms: u64,
+) -> Result<PocRecentEndpoint, String> {
+    let (host, port_text) = endpoint
+        .rsplit_once(':')
+        .ok_or_else(|| "POC 地址格式无效".to_owned())?;
+    let port = port_text
+        .parse::<u16>()
+        .map_err(|_| "POC 地址端口无效".to_owned())?;
+    validate_poc_endpoint(host, port)?;
+    Ok(PocRecentEndpoint {
+        host: host.to_owned(),
+        port,
+        connected_at_ms,
+    })
+}
+
+fn save_poc_recent_endpoint_metadata(
+    app: &AppHandle,
+    endpoint: &PocRecentEndpoint,
+) -> Result<(), String> {
+    let path = database_path(app)?;
+    let connection = open_database(path).map_err(|error| format!("无法打开本地数据库：{error}"))?;
+    let value = serde_json::to_string(endpoint)
+        .map_err(|error| format!("无法序列化最近 POC 地址：{error}"))?;
+    SettingsRepository::new(&connection)
+        .set(POC_RECENT_ENDPOINT_KEY, &value, endpoint.connected_at_ms)
+        .map_err(|error| format!("无法保存最近 POC 地址：{error}"))
 }
 
 fn broadcast_poc_clipboard_item_with_runtime(
@@ -619,6 +685,23 @@ mod tests {
         assert!(validate_poc_endpoint("224.0.0.1", 4567).is_err());
         assert!(validate_poc_endpoint("255.255.255.255", 4567).is_err());
         assert!(validate_poc_endpoint("127.0.0.1", 0).is_err());
+    }
+
+    #[test]
+    fn builds_recent_endpoint_without_trust_material() {
+        let endpoint = build_recent_endpoint("192.168.1.20:4567", 1_700_000_000_000)
+            .expect("recent endpoint should build");
+
+        assert_eq!(
+            endpoint,
+            PocRecentEndpoint {
+                host: "192.168.1.20".to_owned(),
+                port: 4567,
+                connected_at_ms: 1_700_000_000_000,
+            }
+        );
+        assert!(build_recent_endpoint("example.com:4567", 1_700_000_000_000).is_err());
+        assert!(build_recent_endpoint("192.168.1.20:not-a-port", 1_700_000_000_000).is_err());
     }
 
     #[test]
