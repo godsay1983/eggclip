@@ -80,6 +80,10 @@ export function createInitialShellSnapshot(): ShellSnapshot {
         id: "placeholder",
         name: "等待配对设备",
         state: "offline",
+        trustKind: "placeholder",
+        shortFingerprint: "未生成",
+        lastSeen: "暂无",
+        note: "正式配对完成后，这里会显示可信设备。",
       },
     ],
     history: {

@@ -84,14 +84,23 @@ function updatePocDevices(title: string, description: string) {
       peers.length > 0
         ? peers.map((peer) => ({
             id: `poc-${peer}`,
-            name: peer,
+            name: "远端 POC 连接",
             state: "online" as const,
+            trustKind: "poc" as const,
+            shortFingerprint: "未配对",
+            lastSeen: "当前会话在线",
+            endpoint: peer,
+            note: "实验连接尚未完成设备身份认证，仅用于手动收发验证。",
           }))
         : [
             {
               id: "placeholder",
               name: "等待可信设备",
               state: "offline" as const,
+              trustKind: "placeholder" as const,
+              shortFingerprint: "等待配对",
+              lastSeen: "暂无",
+              note: "正式配对完成后，这里会显示设备名称、公钥短指纹和最后在线时间。",
             },
           ],
   }));

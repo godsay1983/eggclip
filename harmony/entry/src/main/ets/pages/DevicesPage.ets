@@ -61,6 +61,7 @@ export struct DevicesPage {
       Column({ space: EggClipSpacing.sectionGap }) {
         this.Header()
         this.ConnectionCard()
+        this.RuntimeDeviceCard()
         this.DiscoveryCard()
         this.ManualTransportCard()
         this.TroubleshootingCard()
@@ -158,6 +159,79 @@ export struct DevicesPage {
     .padding(EggClipSpacing.cardPadding)
     .backgroundColor(EggClipColors.cardBackground)
     .borderRadius(EggClipSpacing.radiusLarge)
+  }
+
+  @Builder
+  private RuntimeDeviceCard() {
+    Column({ space: 12 }) {
+      Row() {
+        Text('运行时设备')
+          .fontSize(EggClipTypography.bodySize)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(EggClipColors.textPrimary)
+          .layoutWeight(1)
+
+        Text(this.runtimeDeviceKind())
+          .fontSize(EggClipTypography.captionSize)
+          .fontColor(EggClipColors.textSecondary)
+          .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+          .backgroundColor(EggClipColors.controlBackground)
+          .borderRadius(14)
+      }
+      .width('100%')
+
+      Row({ space: 10 }) {
+        StatusDot({ state: this.connectionState })
+
+        Column({ space: 4 }) {
+          Text(this.runtimeDeviceName())
+            .fontSize(EggClipTypography.bodySize)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(EggClipColors.textPrimary)
+
+          Text(this.runtimeDeviceDescription())
+            .fontSize(EggClipTypography.captionSize)
+            .fontColor(EggClipColors.textSecondary)
+            .lineHeight(18)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Top)
+
+      this.DeviceInfoRow('短指纹', this.transportState === PocLifecycleState.RUNNING ? '未配对' : '等待配对')
+      this.DeviceInfoRow('最后在线', this.runtimeLastSeenText())
+      this.DeviceInfoRow('端点', this.runtimeEndpointText())
+
+      Text('当前 POC 连接只表示 WebSocket 已连接，不代表设备身份可信。正式 trusted device 会在配对和认证完成后显示公钥短指纹、重命名和移除入口。')
+        .width('100%')
+        .fontSize(11)
+        .fontColor(EggClipColors.textSecondary)
+        .lineHeight(18)
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(EggClipSpacing.cardPadding)
+    .backgroundColor(EggClipColors.cardBackground)
+    .borderRadius(EggClipSpacing.radiusMedium)
+  }
+
+  @Builder
+  private DeviceInfoRow(label: string, value: string) {
+    Row({ space: 10 }) {
+      Text(label)
+        .width(72)
+        .fontSize(EggClipTypography.captionSize)
+        .fontColor(EggClipColors.textSecondary)
+
+      Text(value)
+        .layoutWeight(1)
+        .fontSize(EggClipTypography.captionSize)
+        .fontColor(EggClipColors.textPrimary)
+        .lineHeight(18)
+    }
+    .width('100%')
   }
 
   @Builder
@@ -503,6 +577,48 @@ export struct DevicesPage {
       return Color.Red;
     }
     return EggClipColors.textSecondary;
+  }
+
+  private runtimeDeviceKind(): string {
+    if (this.transportState === PocLifecycleState.RUNNING) {
+      return '实验连接';
+    }
+    return '待配对';
+  }
+
+  private runtimeDeviceName(): string {
+    if (this.transportState === PocLifecycleState.RUNNING) {
+      return '桌面端 POC 连接';
+    }
+    if (this.transportState === PocLifecycleState.FAILED) {
+      return '桌面端连接失败';
+    }
+    return '等待可信设备';
+  }
+
+  private runtimeDeviceDescription(): string {
+    if (this.transportState === PocLifecycleState.RUNNING) {
+      return '已建立临时 WebSocket，可回到首页用 PasteButton 手动发送文本。';
+    }
+    if (this.transportState === PocLifecycleState.FAILED) {
+      return '当前没有可信设备记录；可根据排障提示重试手动连接。';
+    }
+    return '正式配对完成后，这里会显示可信设备状态、短指纹和最后在线时间。';
+  }
+
+  private runtimeLastSeenText(): string {
+    if (this.transportState === PocLifecycleState.RUNNING) {
+      return '当前在线';
+    }
+    if (this.transportState === PocLifecycleState.FAILED) {
+      return '连接失败';
+    }
+    return '暂无';
+  }
+
+  private runtimeEndpointText(): string {
+    const port = this.manualPort.length > 0 ? this.manualPort : '未设置';
+    return `${this.manualHost}:${port}`;
   }
 
   private troubleshootingHint(): string {

@@ -19,12 +19,25 @@
     }
     return "离线";
   }
+
+  function trustLabel(kind: DeviceSummary["trustKind"]) {
+    if (kind === "trusted") {
+      return "可信设备";
+    }
+    if (kind === "poc") {
+      return "实验连接";
+    }
+    return "待配对";
+  }
 </script>
 
 <section class="device-section">
   <div class="section-heading compact">
-    <h2>设备</h2>
-    <button class="text-button" type="button">添加设备</button>
+    <div>
+      <h2>设备</h2>
+      <span class="metadata">POC 连接不等于可信设备</span>
+    </div>
+    <button class="text-button" type="button" disabled title="配对流程接入后开放">添加设备</button>
   </div>
   <div class="device-list">
     {#if devices.length === 0}
@@ -37,18 +50,41 @@
       </div>
     {:else}
       {#each devices as device (device.id)}
-        <span
+        <article
           class:online={device.state === "online"}
           class:connecting={device.state === "connecting"}
           class:auth-failed={device.state === "authFailed"}
           class:paused={device.state === "paused"}
-          class="device-chip"
+          class:poc-device={device.trustKind === "poc"}
+          class:placeholder-device={device.trustKind === "placeholder"}
+          class="device-card"
           title={`${device.name}：${statusLabel(device.state)}`}
         >
-          <StatusDot state={device.state} />
-          <span class="device-name">{device.name}</span>
-          <span class="device-state">{statusLabel(device.state)}</span>
-        </span>
+          <div class="device-card-header">
+            <StatusDot state={device.state} />
+            <div>
+              <strong>{device.name}</strong>
+              <p>{trustLabel(device.trustKind)} · {statusLabel(device.state)}</p>
+            </div>
+          </div>
+          <dl class="device-meta-grid">
+            <div>
+              <dt>短指纹</dt>
+              <dd>{device.shortFingerprint}</dd>
+            </div>
+            <div>
+              <dt>最后在线</dt>
+              <dd>{device.lastSeen}</dd>
+            </div>
+            {#if device.endpoint}
+              <div>
+                <dt>端点</dt>
+                <dd>{device.endpoint}</dd>
+              </div>
+            {/if}
+          </dl>
+          <p class="device-note">{device.note}</p>
+        </article>
       {/each}
     {/if}
   </div>

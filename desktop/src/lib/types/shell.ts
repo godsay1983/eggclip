@@ -9,6 +9,11 @@ export interface DeviceSummary {
   id: string;
   name: string;
   state: ConnectionState;
+  trustKind: "trusted" | "poc" | "placeholder";
+  shortFingerprint: string;
+  lastSeen: string;
+  endpoint?: string;
+  note: string;
 }
 
 export interface ClipboardPreview {

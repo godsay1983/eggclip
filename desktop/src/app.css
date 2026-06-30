@@ -557,52 +557,92 @@ footer {
 }
 
 .device-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: grid;
+  gap: 10px;
 }
 
-.device-chip {
-  gap: 7px;
-  padding: 8px 11px;
-  border-radius: 16px;
+.device-card {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
   color: var(--muted);
   background: var(--control);
   font-size: 12px;
 }
 
-.device-chip.online {
+.device-card.online {
   color: #1f6b42;
   background: rgba(78, 159, 109, 0.14);
 }
 
-.device-chip.connecting {
+.device-card.connecting {
   color: #8a6411;
   background: rgba(244, 196, 48, 0.18);
 }
 
-.device-chip.auth-failed {
+.device-card.auth-failed {
   color: #a33d31;
   background: rgba(214, 92, 74, 0.14);
 }
 
-.device-chip.paused {
+.device-card.paused {
   color: var(--muted);
   background: rgba(126, 118, 101, 0.12);
 }
 
-.device-name {
-  max-width: 150px;
+.device-card.poc-device {
+  border-style: dashed;
+}
+
+.device-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.device-card-header strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.device-card-header p,
+.device-note {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.device-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.device-meta-grid div {
+  min-width: 0;
+}
+
+.device-meta-grid dt {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.device-meta-grid dd {
+  margin: 2px 0 0;
   overflow: hidden;
+  color: var(--text);
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.device-state {
-  padding-left: 6px;
-  border-left: 1px solid var(--line);
-  font-size: 11px;
-  opacity: 0.82;
+.device-note {
+  margin: 0;
 }
 
 .device-empty {
