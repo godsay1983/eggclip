@@ -63,6 +63,7 @@ export struct DevicesPage {
         this.ConnectionCard()
         this.DiscoveryCard()
         this.ManualTransportCard()
+        this.TroubleshootingCard()
         this.EmptyDeviceCard()
         this.DevicePolicyCard()
       }
@@ -335,6 +336,59 @@ export struct DevicesPage {
   }
 
   @Builder
+  private TroubleshootingCard() {
+    Column({ space: 12 }) {
+      Text('连接排障')
+        .fontSize(EggClipTypography.bodySize)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(EggClipColors.textPrimary)
+        .width('100%')
+
+      Text(this.troubleshootingHint())
+        .width('100%')
+        .fontSize(EggClipTypography.captionSize)
+        .fontColor(EggClipColors.textSecondary)
+        .lineHeight(20)
+
+      this.TroubleshootingRow('自动发现', this.discoveryCandidates.length > 0
+        ? `已发现 ${this.discoveryCandidates.length} 个候选，可直接点“连接”。`
+        : '没有候选时，mDNS 可能被 VPN、模拟器网络、路由器或防火墙阻断。')
+      this.TroubleshootingRow('手动 IP', '在桌面端设置的局域网诊断中查看普通网卡 IPv4 和端口，填到上方手动连接。')
+      this.TroubleshootingRow('VPN/TUN', '模拟器可能需要开启 VPN 的 TUN 才能访问宿主机局域网；真机通常优先使用同一 Wi‑Fi。')
+      this.TroubleshootingRow('安全边界', '候选地址只代表发现到服务，不代表设备已可信；正式同步仍需要配对和认证。')
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(EggClipSpacing.cardPadding)
+    .backgroundColor(EggClipColors.cardBackground)
+    .borderRadius(EggClipSpacing.radiusMedium)
+  }
+
+  @Builder
+  private TroubleshootingRow(title: string, description: string) {
+    Row({ space: 10 }) {
+      Text('·')
+        .fontSize(20)
+        .fontColor(EggClipColors.primary)
+
+      Column({ space: 3 }) {
+        Text(title)
+          .fontSize(EggClipTypography.captionSize)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(EggClipColors.textPrimary)
+        Text(description)
+          .fontSize(EggClipTypography.captionSize)
+          .fontColor(EggClipColors.textSecondary)
+          .lineHeight(18)
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Top)
+  }
+
+  @Builder
   private EmptyDeviceCard() {
     Column({ space: 14 }) {
       Text('◌')
@@ -449,5 +503,21 @@ export struct DevicesPage {
       return Color.Red;
     }
     return EggClipColors.textSecondary;
+  }
+
+  private troubleshootingHint(): string {
+    if (this.transportState === PocLifecycleState.RUNNING) {
+      return 'WebSocket 已连接。现在可以回到首页，通过 PasteButton 发送本机剪贴板文本。';
+    }
+    if (this.transportState === PocLifecycleState.FAILED) {
+      return '连接失败时，优先检查桌面端是否运行、端口是否正确、Windows 防火墙是否允许，以及两端是否在同一局域网。';
+    }
+    if (this.discoveryState === PocLifecycleState.FAILED) {
+      return '自动发现失败时，不要卡在 mDNS；直接使用桌面端显示的 IPv4 和端口进行手动连接。';
+    }
+    if (!this.appInForeground) {
+      return '应用在后台时会停止发现和连接；回到前台后再重新发现。';
+    }
+    return '先开始发现桌面端；如果没有候选地址，再使用手动 IP 回退。';
   }
 }

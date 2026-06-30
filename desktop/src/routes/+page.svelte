@@ -3,6 +3,7 @@
   import HistoryList from "$lib/components/clipboard/HistoryList.svelte";
   import DeviceChips from "$lib/components/devices/DeviceChips.svelte";
   import NetworkDiagnosticsCard from "$lib/components/devices/NetworkDiagnosticsCard.svelte";
+  import NetworkTroubleshootingCard from "$lib/components/devices/NetworkTroubleshootingCard.svelte";
   import PocConnectCard from "$lib/components/devices/PocConnectCard.svelte";
   import StatusCard from "$lib/components/common/StatusCard.svelte";
   import StatusDot from "$lib/components/common/StatusDot.svelte";
@@ -242,6 +243,8 @@
         transport={$shellSnapshot.pocTransport}
         onRefresh={() => shellSnapshot.refreshPocTransportStatus()}
       />
+
+      <NetworkTroubleshootingCard transport={$shellSnapshot.pocTransport} />
 
       <DeviceChips devices={$shellSnapshot.devices} />
     </section>
