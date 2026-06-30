@@ -293,6 +293,27 @@ footer {
   background: var(--control);
 }
 
+.recent-endpoint {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin: -2px 0 12px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: var(--control);
+}
+
+.recent-endpoint strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.recent-endpoint p {
+  margin: 3px 0 0;
+  line-height: 1.45;
+}
+
 .endpoint-row,
 .poc-action-row {
   display: grid;

@@ -26,6 +26,16 @@
     }
   }
 
+  async function connectRecent(): Promise<void> {
+    const endpoint = $shellSnapshot.lastPocEndpoint;
+    if (!endpoint) {
+      return;
+    }
+    host = endpoint.host;
+    port = String(endpoint.port);
+    await connect();
+  }
+
   async function disconnect(): Promise<void> {
     busy = true;
     try {
@@ -71,6 +81,25 @@
     </label>
   </div>
   <p>自动发现不可用时，可输入另一台设备显示的 IPv4 和端口。候选地址不代表设备已经可信。</p>
+  {#if $shellSnapshot.lastPocEndpoint}
+    <div class="recent-endpoint">
+      <div>
+        <strong>最近成功地址</strong>
+        <p>
+          {$shellSnapshot.lastPocEndpoint.label} · {$shellSnapshot.lastPocEndpoint.connectedAt}
+          · 仅代表 POC 地址，不代表设备可信
+        </p>
+      </div>
+      <button
+        class="text-button"
+        type="button"
+        disabled={busy}
+        onclick={connectRecent}
+      >
+        回填并连接
+      </button>
+    </div>
+  {/if}
   <p class="poc-diagnostics">
     帧诊断：接收 {$shellSnapshot.pocDiagnostics.receivedFrames} · 接受
     {$shellSnapshot.pocDiagnostics.acceptedItems} · 拒绝 {$shellSnapshot.pocDiagnostics.rejectedFrames} ·

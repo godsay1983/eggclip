@@ -21,6 +21,10 @@ import {
 export interface PocConnectionSnapshot {
   manualHost: string;
   manualPort: string;
+  lastSuccessfulHost: string;
+  lastSuccessfulPort: string;
+  lastSuccessfulEndpointLabel: string;
+  lastSuccessfulAt: string;
   discoveryState: PocLifecycleState;
   discoveryStatus: string;
   discoveryCandidates: MdnsServiceCandidate[];
@@ -47,6 +51,10 @@ class PocConnectionStore {
   private reconnectOnForeground: boolean = false;
   private manualHost: string = '127.0.0.1';
   private manualPort: string = '0';
+  private lastSuccessfulHost: string = '';
+  private lastSuccessfulPort: string = '';
+  private lastSuccessfulEndpointLabel: string = '';
+  private lastSuccessfulAt: string = '';
   private discoveryState: PocLifecycleState = PocLifecycleState.IDLE;
   private discoveryStatus: string = '等待开始局域网发现';
   private discoveryCandidates: MdnsServiceCandidate[] = [];
@@ -89,6 +97,10 @@ class PocConnectionStore {
     return {
       manualHost: this.manualHost,
       manualPort: this.manualPort,
+      lastSuccessfulHost: this.lastSuccessfulHost,
+      lastSuccessfulPort: this.lastSuccessfulPort,
+      lastSuccessfulEndpointLabel: this.lastSuccessfulEndpointLabel,
+      lastSuccessfulAt: this.lastSuccessfulAt,
       discoveryState: this.discoveryState,
       discoveryStatus: this.discoveryStatus,
       discoveryCandidates: this.discoveryCandidates.slice(),
@@ -169,6 +181,7 @@ class PocConnectionStore {
     this.transport.connect(endpoint, {
       onOpen: () => {
         this.reconnectOnForeground = true;
+        this.rememberSuccessfulEndpoint(endpoint.host, endpoint.port);
         this.transportState = PocLifecycleState.RUNNING;
         this.transportStatus = '已连接桌面端，PasteButton 读取后会发送文本';
         this.connectionState = ConnectionState.ONLINE;
@@ -236,6 +249,15 @@ class PocConnectionStore {
     this.emit();
   }
 
+  connectLastSuccessfulEndpoint(): void {
+    if (this.lastSuccessfulHost.length === 0 || this.lastSuccessfulPort.length === 0) {
+      this.transportStatus = '暂无最近成功地址';
+      this.emit();
+      return;
+    }
+    this.connectManualEndpoint(this.lastSuccessfulHost, this.lastSuccessfulPort);
+  }
+
   handleForegroundChanged(appInForeground: boolean): void {
     if (appInForeground) {
       this.startDiscovery();
@@ -271,6 +293,13 @@ class PocConnectionStore {
     for (let index = 0; index < this.listeners.length; index += 1) {
       this.listeners[index](current);
     }
+  }
+
+  private rememberSuccessfulEndpoint(host: string, port: number): void {
+    this.lastSuccessfulHost = host;
+    this.lastSuccessfulPort = port.toString();
+    this.lastSuccessfulEndpointLabel = `${host}:${port}`;
+    this.lastSuccessfulAt = this.formatTime(Date.now());
   }
 
   private handleInboundClipboardText(decoded: PocClipboardTextDecodeResult): void {

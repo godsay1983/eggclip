@@ -111,6 +111,7 @@ export function createInitialShellSnapshot(): ShellSnapshot {
       connectedPeers: 0,
       lastError: null,
     },
+    lastPocEndpoint: null,
     syncEnabled: true,
   };
 }

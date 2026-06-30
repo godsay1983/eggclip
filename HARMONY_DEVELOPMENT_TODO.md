@@ -284,6 +284,7 @@ harmony/entry/src/main/ets/
 
 - [ ] App 前台时自动发现已配对桌面端。
 - [ ] 优先连接最近成功桌面端，失败后尝试其他 trusted desktop。
+  - [x] POC 阶段已在设备页记录当前会话最近成功桌面地址，支持回填和快速连接，并明确该地址不代表 trusted device。
 - [ ] 同一 peer 只保留一条 WebSocket。
 - [ ] 实现 PING/PONG、前台重连和带 jitter 的退避。
 - [ ] App 进入后台时安全停止发现和连接；回前台重新同步。

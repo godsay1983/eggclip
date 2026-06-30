@@ -93,6 +93,23 @@ function setOutboundStatus(status: Omit<OutboundSyncStatus, "updatedAt">) {
   }));
 }
 
+function rememberPocEndpoint(endpoint: string) {
+  const [host, portText] = endpoint.split(":");
+  const port = Number(portText);
+  if (!host || !Number.isInteger(port) || port < 1 || port > 65535) {
+    return;
+  }
+  snapshot.update((state) => ({
+    ...state,
+    lastPocEndpoint: {
+      host,
+      port,
+      label: `${host}:${port}`,
+      connectedAt: currentTimeLabel(),
+    },
+  }));
+}
+
 function updatePocDevices(title: string, description: string) {
   const peers = Array.from(pocPeers).sort();
   snapshot.update((state) => ({
@@ -200,6 +217,7 @@ export const shellSnapshot = {
         }),
         onPocPeerConnected((peer) => {
           pocPeers.add(peer);
+          rememberPocEndpoint(peer);
           updatePocDevices(
             "远端设备已连接",
             `当前有 ${pocPeers.size} 个实验连接，仅允许用户触发收发`,
@@ -259,6 +277,7 @@ export const shellSnapshot = {
     }));
     try {
       const endpoint = await connectPocPeer(host, port);
+      rememberPocEndpoint(endpoint);
       snapshot.update((state) => ({
         ...state,
         connection: {

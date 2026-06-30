@@ -15,6 +15,7 @@ describe("desktop shell", () => {
     expect(snapshot.connection.state).toBe("offline");
     expect(snapshot.current).toBeNull();
     expect(snapshot.outbound.state).toBe("idle");
+    expect(snapshot.lastPocEndpoint).toBeNull();
     expect(snapshot.history.limit).toBe(50);
     expect(snapshot.history.items).toEqual([]);
     expect(snapshot.devices).toHaveLength(1);

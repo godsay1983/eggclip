@@ -86,6 +86,13 @@ export interface PocTransportSummary {
   lastError: string | null;
 }
 
+export interface PocRecentEndpoint {
+  host: string;
+  port: number;
+  label: string;
+  connectedAt: string;
+}
+
 export interface ShellSnapshot {
   connection: {
     state: ConnectionState;
@@ -98,5 +105,6 @@ export interface ShellSnapshot {
   history: HistorySummary;
   pocDiagnostics: PocDiagnostics;
   pocTransport: PocTransportSummary;
+  lastPocEndpoint: PocRecentEndpoint | null;
   syncEnabled: boolean;
 }

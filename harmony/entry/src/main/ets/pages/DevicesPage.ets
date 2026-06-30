@@ -20,6 +20,10 @@ export struct DevicesPage {
   private readonly connectionSnapshotListener = (snapshot: PocConnectionSnapshot): void => {
     this.manualHost = snapshot.manualHost;
     this.manualPort = snapshot.manualPort;
+    this.lastSuccessfulHost = snapshot.lastSuccessfulHost;
+    this.lastSuccessfulPort = snapshot.lastSuccessfulPort;
+    this.lastSuccessfulEndpointLabel = snapshot.lastSuccessfulEndpointLabel;
+    this.lastSuccessfulAt = snapshot.lastSuccessfulAt;
     this.discoveryState = snapshot.discoveryState;
     this.discoveryStatus = snapshot.discoveryStatus;
     this.discoveryCandidates = snapshot.discoveryCandidates;
@@ -34,6 +38,10 @@ export struct DevicesPage {
   private appInForeground: boolean = false;
   @State private manualHost: string = '127.0.0.1';
   @State private manualPort: string = '0';
+  @State private lastSuccessfulHost: string = '';
+  @State private lastSuccessfulPort: string = '';
+  @State private lastSuccessfulEndpointLabel: string = '';
+  @State private lastSuccessfulAt: string = '';
   @State private discoveryState: PocLifecycleState = PocLifecycleState.IDLE;
   @State private discoveryStatus: string = '等待开始局域网发现';
   @State private discoveryCandidates: MdnsServiceCandidate[] = [];
@@ -371,6 +379,10 @@ export struct DevicesPage {
       }
       .width('100%')
 
+      if (this.lastSuccessfulEndpointLabel.length > 0) {
+        this.RecentEndpointCard()
+      }
+
       Button('连接桌面端')
         .width('100%')
         .height(44)
@@ -407,6 +419,55 @@ export struct DevicesPage {
     .padding(EggClipSpacing.cardPadding)
     .backgroundColor(EggClipColors.cardBackground)
     .borderRadius(EggClipSpacing.radiusMedium)
+  }
+
+  @Builder
+  private RecentEndpointCard() {
+    Column({ space: 8 }) {
+      Row({ space: 8 }) {
+        Column({ space: 3 }) {
+          Text('最近成功地址')
+            .fontSize(EggClipTypography.captionSize)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(EggClipColors.textPrimary)
+
+          Text(`${this.lastSuccessfulEndpointLabel} · ${this.lastSuccessfulAt} · 仅代表 POC 地址，不代表设备可信`)
+            .fontSize(11)
+            .fontColor(EggClipColors.textSecondary)
+            .lineHeight(18)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+
+        Button('回填')
+          .height(30)
+          .fontSize(11)
+          .fontColor(EggClipColors.textSecondary)
+          .backgroundColor(EggClipColors.cardBackground)
+          .borderRadius(15)
+          .onClick(() => {
+            this.manualHost = this.lastSuccessfulHost;
+            this.manualPort = this.lastSuccessfulPort;
+          })
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Top)
+
+      Button('连接上次地址')
+        .width('100%')
+        .height(38)
+        .fontColor(EggClipColors.onPrimary)
+        .backgroundColor(EggClipColors.primary)
+        .borderRadius(19)
+        .onClick(() => {
+          pocConnectionStore.connectLastSuccessfulEndpoint();
+        })
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+    .backgroundColor(EggClipColors.controlBackground)
+    .borderRadius(14)
   }
 
   @Builder
