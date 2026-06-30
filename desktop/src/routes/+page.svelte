@@ -96,6 +96,7 @@
 
   <ClipboardCard
     current={$shellSnapshot.current}
+    outbound={$shellSnapshot.outbound}
     onRead={() => shellSnapshot.readLocalClipboard()}
     onCopy={() => shellSnapshot.copyCurrentToClipboard()}
     onSendPoc={() => shellSnapshot.sendCurrentToPocPeer($settingsSnapshot.settings.syncEnabled)}

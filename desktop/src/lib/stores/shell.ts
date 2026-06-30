@@ -21,7 +21,7 @@ import {
   startPocTransport,
   writeSystemClipboardText,
 } from "$lib/api/shell";
-import type { ClipboardPreview } from "$lib/types/shell";
+import type { ClipboardPreview, OutboundSyncStatus } from "$lib/types/shell";
 
 const snapshot = writable(createInitialShellSnapshot());
 let monitorStarted = false;
@@ -45,20 +45,23 @@ async function refreshHistorySummaryState() {
   }));
 }
 
-async function captureHistoryText(text: string) {
+async function captureHistoryText(text: string): Promise<boolean> {
   if (text.length === 0) {
-    return;
+    return false;
   }
   const captured = await captureClipboardHistoryText(text);
   if (captured) {
     await refreshHistorySummaryState();
+    return true;
   }
+  return false;
 }
 
 function setCurrentClipboard(
   current: ClipboardPreview,
   title: string,
   description: string,
+  outbound?: OutboundSyncStatus,
 ) {
   snapshot.update((state) => ({
     ...state,
@@ -68,6 +71,25 @@ function setCurrentClipboard(
       description,
     },
     current,
+    outbound: outbound ?? state.outbound,
+  }));
+}
+
+function currentTimeLabel() {
+  return new Date().toLocaleTimeString("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function setOutboundStatus(status: Omit<OutboundSyncStatus, "updatedAt">) {
+  snapshot.update((state) => ({
+    ...state,
+    outbound: {
+      ...status,
+      updatedAt: currentTimeLabel(),
+    },
   }));
 }
 
@@ -162,6 +184,12 @@ export const shellSnapshot = {
             current,
             "已收到远端文本",
             `来自 ${peer}；当前实验连接尚未认证，只进入面板预览，请由用户点击复制`,
+            {
+              state: "idle",
+              title: "远端文本已进入预览",
+              description: "不会自动回传；需要使用时请点击“复制此内容”。",
+              updatedAt: current.receivedAt,
+            },
           );
         }),
         onPocDiagnostics((pocDiagnostics) => {
@@ -269,18 +297,37 @@ export const shellSnapshot = {
         setCurrentClipboard(
           current,
           "已监听到本机剪贴板",
-          "本机文本变化已写入本机历史，需由用户点击发送到 Harmony",
+          "本机文本变化已进入面板，需由用户点击发送到 Harmony",
+          {
+            state: "local",
+            title: "本机文本已就绪",
+            description: "未自动发送；点击“发送到 Harmony”后才会通过 POC 连接发送。",
+            updatedAt: current.receivedAt,
+          },
         );
-        void captureHistoryText(current.text).catch((error) => {
-          snapshot.update((state) => ({
-            ...state,
-            connection: {
-              state: "authFailed",
-              title: "保存本机历史失败",
-              description: error instanceof Error ? error.message : "无法保存本机剪贴板历史",
-            },
-          }));
-        });
+        void captureHistoryText(current.text)
+          .then(() => {
+            setOutboundStatus({
+              state: "local",
+              title: "本机记录已处理",
+              description: "可由用户点击“发送到 Harmony”进行 POC 发送。",
+            });
+          })
+          .catch((error) => {
+            setOutboundStatus({
+              state: "failed",
+              title: "保存本机记录失败",
+              description: "未确认本机记录处理成功，请检查本机数据库状态。",
+            });
+            snapshot.update((state) => ({
+              ...state,
+              connection: {
+                state: "authFailed",
+                title: "保存本机历史失败",
+                description: error instanceof Error ? error.message : "无法保存本机剪贴板历史",
+              },
+            }));
+          });
       });
     } catch (error) {
       monitorStarted = false;
@@ -308,10 +355,26 @@ export const shellSnapshot = {
       setCurrentClipboard(
         current,
         "已读取本机剪贴板",
-        "当前内容已写入本机历史，尚未同步到其他设备",
+        "当前内容已进入面板，尚未同步到其他设备",
+        {
+          state: "local",
+          title: "本机文本已就绪",
+          description: "未自动发送；点击“发送到 Harmony”后才会通过 POC 连接发送。",
+          updatedAt: current.receivedAt,
+        },
       );
       await captureHistoryText(current.text);
+      setOutboundStatus({
+        state: "local",
+        title: "本机记录已处理",
+        description: "可由用户点击“发送到 Harmony”进行 POC 发送。",
+      });
     } catch (error) {
+      setOutboundStatus({
+        state: "failed",
+        title: "读取或保存失败",
+        description: error instanceof Error ? error.message : "无法读取或保存本机剪贴板文本。",
+      });
       snapshot.update((state) => ({
         ...state,
         connection: {
@@ -406,6 +469,11 @@ export const shellSnapshot = {
   },
   async sendCurrentToPocPeer(syncEnabled = true) {
     if (!syncEnabled) {
+      setOutboundStatus({
+        state: "paused",
+        title: "同步已暂停",
+        description: "当前设置关闭了自动同步，未向远端发送当前文本。",
+      });
       snapshot.update((state) => ({
         ...state,
         connection: {
@@ -427,7 +495,20 @@ export const shellSnapshot = {
     }
 
     try {
+      setOutboundStatus({
+        state: "pending",
+        title: "正在发送",
+        description: "正在通过当前 POC WebSocket 连接发送文本。",
+      });
       const sentCount = await sendPocClipboardText(text);
+      setOutboundStatus({
+        state: sentCount > 0 ? "sent" : "waiting",
+        title: sentCount > 0 ? "已发送到远端" : "等待连接",
+        description:
+          sentCount > 0
+            ? `已向 ${sentCount} 个 POC 连接发送；正式协议接入后会使用 ITEM_LIVE。`
+            : "当前没有已连接设备；可连接后重新发送当前面板文本。",
+      });
       snapshot.update((state) => ({
         ...state,
         connection: {
@@ -440,6 +521,11 @@ export const shellSnapshot = {
         },
       }));
     } catch (error) {
+      setOutboundStatus({
+        state: "failed",
+        title: "发送失败",
+        description: error instanceof Error ? error.message : "无法发送当前文本。",
+      });
       snapshot.update((state) => ({
         ...state,
         connection: {

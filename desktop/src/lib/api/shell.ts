@@ -75,6 +75,12 @@ export function createInitialShellSnapshot(): ShellSnapshot {
       description: "桌面端将在局域网中自动发现可信设备",
     },
     current: null,
+    outbound: {
+      state: "idle",
+      title: "等待本机文本",
+      description: "读取或监听到本机剪贴板后，会先进入本机历史，再由用户触发发送。",
+      updatedAt: "",
+    },
     devices: [
       {
         id: "placeholder",

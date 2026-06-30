@@ -26,6 +26,22 @@ export interface ClipboardPreview {
   canCopy: boolean;
 }
 
+export type OutboundSyncState =
+  | "idle"
+  | "local"
+  | "waiting"
+  | "pending"
+  | "sent"
+  | "failed"
+  | "paused";
+
+export interface OutboundSyncStatus {
+  state: OutboundSyncState;
+  title: string;
+  description: string;
+  updatedAt: string;
+}
+
 export interface HistorySummary {
   used: number;
   limit: number;
@@ -77,6 +93,7 @@ export interface ShellSnapshot {
     description: string;
   };
   current: ClipboardPreview | null;
+  outbound: OutboundSyncStatus;
   devices: DeviceSummary[];
   history: HistorySummary;
   pocDiagnostics: PocDiagnostics;

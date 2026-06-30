@@ -14,6 +14,16 @@ import { EggClipColors } from '../theme/Colors';
 import { EggClipSpacing } from '../theme/Spacing';
 import { EggClipTypography } from '../theme/Typography';
 
+enum OutboundSendState {
+  IDLE = 'idle',
+  LOCAL = 'local',
+  WAITING = 'waiting',
+  PENDING = 'pending',
+  SENT = 'sent',
+  FAILED = 'failed',
+  PAUSED = 'paused'
+}
+
 @Component
 export struct HomePage {
   private readonly clipboardBridge: ClipboardBridgeService = new ClipboardBridgeService();
@@ -38,6 +48,10 @@ export struct HomePage {
   @State private pasteStatus: string = '等待点击 PasteButton 触发一次性授权';
   @State private transportDiagnostics: string = '帧诊断：接收 0 · 接受 0 · 拒绝 0';
   @State private copyStatus: string = '收到桌面文本后可手动复制到本机';
+  @State private outboundState: OutboundSendState = OutboundSendState.IDLE;
+  @State private outboundTitle: string = '等待本机文本';
+  @State private outboundDescription: string = '点击系统 PasteButton 后，会先保存本机历史，再按同步策略尝试发送。';
+  @State private outboundUpdatedAt: string = '';
   @State private connectionTitle: string = '等待桌面端';
   @State private connectionDescription: string = '连接和发现入口在设备页';
   @State private latestReceivedText: string = '';
@@ -187,8 +201,7 @@ export struct HomePage {
               .then((readResult) => {
                 this.pasteStatus = readResult.message;
                 if (readResult.ok) {
-                  this.captureLocalHistoryText(readResult.text);
-                  this.sendPocClipboardText(readResult.text);
+                  this.persistLocalHistoryThenSend(readResult.text);
                 }
               })
               .catch(() => {
@@ -203,6 +216,8 @@ export struct HomePage {
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
+
+      this.OutboundStatusCard()
 
       Button('复制到本机')
         .width('100%')
@@ -230,6 +245,49 @@ export struct HomePage {
     .padding(EggClipSpacing.cardPadding)
     .backgroundColor(EggClipColors.cardBackground)
     .borderRadius(EggClipSpacing.radiusLarge)
+  }
+
+  @Builder
+  private OutboundStatusCard() {
+    Column({ space: 6 }) {
+      Row({ space: 8 }) {
+        Column({ space: 2 }) {
+          Text(this.outboundTitle)
+            .fontSize(EggClipTypography.captionSize)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(EggClipColors.textPrimary)
+
+          Text(this.outboundDescription)
+            .width('100%')
+            .fontSize(11)
+            .fontColor(EggClipColors.textSecondary)
+            .lineHeight(18)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+
+        Text(this.outboundStateLabel())
+          .fontSize(11)
+          .fontColor(this.outboundStateColor())
+          .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+          .backgroundColor(EggClipColors.cardBackground)
+          .borderRadius(14)
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Top)
+
+      if (this.outboundUpdatedAt.length > 0) {
+        Text(`更新时间：${this.outboundUpdatedAt}`)
+          .width('100%')
+          .fontSize(10)
+          .fontColor(EggClipColors.textSecondary)
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+    .backgroundColor(EggClipColors.controlBackground)
+    .borderRadius(14)
   }
 
   @Builder
@@ -355,6 +413,7 @@ export struct HomePage {
   private sendPocClipboardText(text: string): void {
     if (this.historyStore === null) {
       this.pasteStatus = '无法读取同步策略，未发送到桌面端';
+      this.setOutboundStatus(OutboundSendState.FAILED, '发送策略不可用', '无法读取本机设置，已保留本机历史但未发送。');
       return;
     }
 
@@ -362,23 +421,33 @@ export struct HomePage {
       .then((policy: LocalBroadcastPolicySnapshot) => {
         if (!policy.allowed) {
           this.pasteStatus = policy.message;
+          this.setOutboundStatus(OutboundSendState.PAUSED, '同步已暂停', '文本已进入本机历史；当前同步策略禁止发送到桌面端。');
           return;
         }
         if (!pocConnectionStore.isConnected()) {
           this.pasteStatus = '已读取纯文本；尚未连接桌面端，未发送。请到设备页连接桌面端';
+          this.setOutboundStatus(OutboundSendState.WAITING, '等待桌面连接', '文本已进入本机历史；连接桌面端后可再次点击 PasteButton 发送。');
           return;
         }
 
+        this.setOutboundStatus(OutboundSendState.PENDING, '正在发送到桌面端', '正在通过当前 POC WebSocket 连接发送文本。');
         pocConnectionStore.sendClipboardText(text)
           .then((sent) => {
             this.pasteStatus = sent ? '已发送到桌面端' : '发送失败：WebSocket 未连接';
+            this.setOutboundStatus(
+              sent ? OutboundSendState.SENT : OutboundSendState.FAILED,
+              sent ? '已发送到桌面端' : '发送失败',
+              sent ? '已通过 POC 连接发送；正式协议接入后会改为 ITEM_LIVE。' : 'WebSocket 已断开，本机历史已保留。'
+            );
           })
           .catch(() => {
             this.pasteStatus = '发送到桌面端失败';
+            this.setOutboundStatus(OutboundSendState.FAILED, '发送到桌面端失败', '本机历史已保留，网络恢复后可重新触发发送。');
           });
       })
       .catch(() => {
         this.pasteStatus = '读取同步策略失败，未发送到桌面端';
+        this.setOutboundStatus(OutboundSendState.FAILED, '读取同步策略失败', '本机历史已保留，但未确认设置前不会发送。');
       });
   }
 
@@ -408,22 +477,41 @@ export struct HomePage {
     return '点击 PasteButton 发送本机剪贴板，或接收桌面端文本后，这里会显示最近记录的元数据；正文预览等待加密/解密链路接入。';
   }
 
-  private captureLocalHistoryText(text: string): void {
+  private persistLocalHistoryThenSend(text: string): void {
+    this.captureLocalHistoryText(text)
+      .then((saved: boolean) => {
+        if (saved) {
+          this.sendPocClipboardText(text);
+        }
+      });
+  }
+
+  private async captureLocalHistoryText(text: string): Promise<boolean> {
     if (this.historyStore === null) {
       this.historyStatus = '无法获取页面上下文，未保存本机历史';
-      return;
+      this.setOutboundStatus(OutboundSendState.FAILED, '本机历史不可用', '无法获取页面上下文，未发送到桌面端。');
+      return false;
     }
 
     this.historyStatus = '正在保存本机历史';
-    this.historyStore.captureLocalText(text)
+    this.setOutboundStatus(OutboundSendState.LOCAL, '正在确认本机记录', '本机记录处理完成后才会按同步策略尝试发送。');
+    return this.historyStore.captureLocalText(text)
       .then((snapshot: HistoryStoreSnapshot) => {
         this.historyUsed = snapshot.used;
         this.historyLimit = snapshot.limit;
         this.historyItems = snapshot.items;
         this.historyStatus = snapshot.errorMessage.length > 0 ? snapshot.errorMessage : '已保存到本机历史';
+        if (snapshot.errorMessage.length > 0) {
+          this.setOutboundStatus(OutboundSendState.FAILED, '保存本机历史失败', '本机事务未确认成功，已停止发送。');
+          return false;
+        }
+        this.setOutboundStatus(OutboundSendState.LOCAL, '本机记录已确认', '本机事务已完成，准备检查同步策略。');
+        return true;
       })
       .catch(() => {
         this.historyStatus = '保存本机历史失败';
+        this.setOutboundStatus(OutboundSendState.FAILED, '保存本机历史失败', '本机事务未确认成功，已停止发送。');
+        return false;
       });
   }
 
@@ -482,5 +570,56 @@ export struct HomePage {
       .finally(() => {
         this.deletingHistoryItemId = '';
       });
+  }
+
+  private setOutboundStatus(state: OutboundSendState, title: string, description: string): void {
+    this.outboundState = state;
+    this.outboundTitle = title;
+    this.outboundDescription = description;
+    this.outboundUpdatedAt = this.formatTime(Date.now());
+  }
+
+  private formatTime(milliseconds: number): string {
+    const date = new Date(milliseconds);
+    return `${this.padTime(date.getHours())}:${this.padTime(date.getMinutes())}:${this.padTime(date.getSeconds())}`;
+  }
+
+  private padTime(value: number): string {
+    return value < 10 ? `0${value}` : `${value}`;
+  }
+
+  private outboundStateLabel(): string {
+    if (this.outboundState === OutboundSendState.SENT) {
+      return '已发送';
+    }
+    if (this.outboundState === OutboundSendState.PENDING) {
+      return '发送中';
+    }
+    if (this.outboundState === OutboundSendState.WAITING) {
+      return '待连接';
+    }
+    if (this.outboundState === OutboundSendState.FAILED) {
+      return '失败';
+    }
+    if (this.outboundState === OutboundSendState.PAUSED) {
+      return '已暂停';
+    }
+    if (this.outboundState === OutboundSendState.LOCAL) {
+      return '本机';
+    }
+    return '空闲';
+  }
+
+  private outboundStateColor(): ResourceColor {
+    if (this.outboundState === OutboundSendState.SENT) {
+      return EggClipColors.statusOnline;
+    }
+    if (this.outboundState === OutboundSendState.FAILED) {
+      return Color.Red;
+    }
+    if (this.outboundState === OutboundSendState.PENDING || this.outboundState === OutboundSendState.WAITING) {
+      return EggClipColors.primary;
+    }
+    return EggClipColors.textSecondary;
   }
 }
