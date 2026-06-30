@@ -107,6 +107,7 @@
       ...$shellSnapshot.history,
       limit: $settingsSnapshot.settings.historyLimit,
     }}
+    historyEnabled={$settingsSnapshot.settings.historyEnabled && $settingsSnapshot.settings.historyLimit > 0}
     onClear={() => shellSnapshot.clearHistory()}
     onDelete={(itemId) => shellSnapshot.deleteHistoryItem(itemId)}
   />
@@ -132,6 +133,18 @@
       <p class="settings-note">
         设置只保存在本机；HarmonyOS 读取剪贴板仍必须由系统 PasteButton 触发。
       </p>
+
+      <section class="privacy-summary" aria-label="隐私说明">
+        <div>
+          <h3>隐私边界</h3>
+          <p>EggClip v1 只在局域网内传输纯文本，不使用账号、云同步或公网中继。</p>
+        </div>
+        <ul>
+          <li>历史默认保存在本机数据库，可关闭或清空。</li>
+          <li>桌面端可自动写入已认证实时文本；POC 连接仍只用于开发验证。</li>
+          <li>诊断只显示连接状态，不显示正文、摘要、邀请或密钥。</li>
+        </ul>
+      </section>
 
       <div class="setting-grid">
         <label>

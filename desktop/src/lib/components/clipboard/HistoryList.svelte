@@ -2,6 +2,7 @@
   import type { HistorySummary } from "$lib/types/shell";
 
   export let history: HistorySummary = { used: 0, limit: 50, items: [] };
+  export let historyEnabled = true;
   export let onClear: () => Promise<void> | void = () => {};
   export let onDelete: (itemId: string) => Promise<void> | void = () => {};
   let clearing = false;
@@ -65,9 +66,16 @@
     </div>
   {:else}
     <div class="empty-state">
-      <span aria-hidden="true">↔</span>
-      <strong>复制后，内容会出现在这里</strong>
-      <p>默认最多保存 50 条，最长保留 7 天；清空历史不会修改当前系统剪贴板。</p>
+      <span aria-hidden="true">{historyEnabled ? "↔" : "·"}</span>
+      <strong>{historyEnabled ? "还没有本机历史" : "历史保存已关闭"}</strong>
+      <p>
+        {historyEnabled
+          ? "点击“读取本机剪贴板”或接收桌面实时文本后，会在这里显示最近记录的元数据；正文预览等待加密/解密链路接入。"
+          : "当前只同步实时剪贴板，不写入本机历史。可以在设置中重新开启保存历史。"}
+      </p>
+      <p class="empty-state-note">
+        清空或关闭历史不会修改当前系统剪贴板，也不影响后续手动复制。
+      </p>
     </div>
   {/if}
 </section>

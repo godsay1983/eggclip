@@ -218,24 +218,48 @@ export struct SettingsPage {
 
   @Builder
   private PrivacyCard() {
-    Column({ space: 8 }) {
+    Column({ space: 10 }) {
       Text('隐私说明')
         .fontSize(EggClipTypography.bodySize)
         .fontWeight(FontWeight.Bold)
         .fontColor(EggClipColors.textPrimary)
         .width('100%')
 
-      Text('设置只保存在本机 RDB。EggClip v1 不使用账号、云同步或公网中继。HarmonyOS 端读取剪贴板必须由 PasteButton 触发。')
+      Text('EggClip v1 只在局域网内同步 text/plain，不使用账号、云同步、中心服务器或公网中继。')
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
         .lineHeight(20)
         .width('100%')
+
+      this.PrivacyPoint('剪贴板读取', 'HarmonyOS 端必须点击系统 PasteButton 才会读取一次剪贴板，应用不会静默读取。')
+      this.PrivacyPoint('历史保留', '历史只保存在本机 RDB，可关闭、限制数量和保留天数，也可清空本机历史。')
+      this.PrivacyPoint('诊断信息', '局域网诊断只显示连接状态、候选数量、错误类型和帧统计，不显示正文、摘要、邀请或密钥。')
+      this.PrivacyPoint('前台同步', '移动端只在前台发现和连接；进入后台会停止发现和 WebSocket 连接。')
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
     .padding(EggClipSpacing.cardPadding)
     .backgroundColor(EggClipColors.cardBackground)
     .borderRadius(EggClipSpacing.radiusMedium)
+  }
+
+  @Builder
+  private PrivacyPoint(label: string, value: string) {
+    Row({ space: 10 }) {
+      Text(label)
+        .width(72)
+        .fontSize(EggClipTypography.captionSize)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(EggClipColors.textPrimary)
+
+      Text(value)
+        .layoutWeight(1)
+        .fontSize(EggClipTypography.captionSize)
+        .fontColor(EggClipColors.textSecondary)
+        .lineHeight(18)
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Top)
   }
 
   @Builder

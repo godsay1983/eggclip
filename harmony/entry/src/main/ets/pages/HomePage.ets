@@ -26,6 +26,8 @@ export struct HomePage {
     this.latestReceivedAt = snapshot.latestReceivedAt;
     this.latestReceivedByteLength = snapshot.latestReceivedByteLength;
     this.transportDiagnostics = snapshot.transportDiagnostics;
+    this.connectionTitle = snapshot.connectionTitle;
+    this.connectionDescription = snapshot.connectionDescription;
     if (previousReceivedText !== snapshot.latestReceivedText) {
       this.latestReceivedExpanded = false;
     }
@@ -36,6 +38,8 @@ export struct HomePage {
   @State private pasteStatus: string = '等待点击 PasteButton 触发一次性授权';
   @State private transportDiagnostics: string = '帧诊断：接收 0 · 接受 0 · 拒绝 0';
   @State private copyStatus: string = '收到桌面文本后可手动复制到本机';
+  @State private connectionTitle: string = '等待桌面端';
+  @State private connectionDescription: string = '连接和发现入口在设备页';
   @State private latestReceivedText: string = '';
   @State private latestReceivedPreview: string = '';
   @State private latestReceivedSource: string = '暂无内容';
@@ -135,7 +139,7 @@ export struct HomePage {
       }
       .width('100%')
 
-      Text(this.latestReceivedPreview.length === 0 ? '桌面端发来的文本会先显示在这里，点击后才会复制到本机剪贴板。发送手机剪贴板必须点击系统 PasteButton。连接和发现入口已移到设备页。' : this.latestReceivedTextForDisplay())
+      Text(this.latestReceivedPreview.length === 0 ? this.emptyClipboardHelpText() : this.latestReceivedTextForDisplay())
         .fontSize(EggClipTypography.bodySize)
         .fontColor(EggClipColors.textSecondary)
         .lineHeight(24)
@@ -256,10 +260,7 @@ export struct HomePage {
           }
           .width('100%')
         } else {
-          Text(this.historyStatus)
-            .width('100%')
-            .fontSize(11)
-            .fontColor(EggClipColors.textSecondary)
+          this.EmptyHistoryState()
         }
       }
       .alignItems(HorizontalAlign.Start)
@@ -270,6 +271,34 @@ export struct HomePage {
     .padding(EggClipSpacing.cardPadding)
     .backgroundColor(EggClipColors.cardBackground)
     .borderRadius(EggClipSpacing.radiusMedium)
+  }
+
+  @Builder
+  private EmptyHistoryState() {
+    Column({ space: 6 }) {
+      Text(this.historyLimit === 0 ? '历史保存已关闭' : '还没有本机历史')
+        .fontSize(EggClipTypography.captionSize)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(EggClipColors.textPrimary)
+        .width('100%')
+
+      Text(this.emptyHistoryHelpText())
+        .width('100%')
+        .fontSize(11)
+        .fontColor(EggClipColors.textSecondary)
+        .lineHeight(18)
+
+      Text(this.historyStatus)
+        .width('100%')
+        .fontSize(10)
+        .fontColor(EggClipColors.textSecondary)
+        .lineHeight(16)
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+    .backgroundColor(EggClipColors.controlBackground)
+    .borderRadius(14)
   }
 
   @Builder
@@ -360,6 +389,23 @@ export struct HomePage {
   private latestReceivedMetaText(): string {
     const receivedAt = this.latestReceivedAt.length === 0 ? '未知时间' : this.latestReceivedAt;
     return `来源：${this.latestReceivedSource} · ${receivedAt} · ${this.latestReceivedText.length} 字符 · ${this.latestReceivedByteLength} 字节`;
+  }
+
+  private emptyClipboardHelpText(): string {
+    if (this.connectionTitle.indexOf('失败') >= 0 || this.connectionTitle.indexOf('不可用') >= 0) {
+      return `${this.connectionTitle}：${this.connectionDescription}。可以到设备页重新发现，或使用手动 IP 连接桌面端。`;
+    }
+    if (this.connectionTitle.indexOf('暂停') >= 0) {
+      return `${this.connectionTitle}：${this.connectionDescription}。恢复自动接收后，桌面端文本才会进入预览。`;
+    }
+    return '桌面端发来的文本会先显示在这里，点击后才会复制到本机剪贴板。发送手机剪贴板必须点击系统 PasteButton。连接和发现入口已移到设备页。';
+  }
+
+  private emptyHistoryHelpText(): string {
+    if (this.historyLimit === 0) {
+      return '当前只保留实时同步，不写入本机历史。可以在设置页把历史数量改为 20、50 或 100 条。';
+    }
+    return '点击 PasteButton 发送本机剪贴板，或接收桌面端文本后，这里会显示最近记录的元数据；正文预览等待加密/解密链路接入。';
   }
 
   private captureLocalHistoryText(text: string): void {
