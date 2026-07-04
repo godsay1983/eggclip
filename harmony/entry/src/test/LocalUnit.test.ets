@@ -47,6 +47,10 @@ import {
   PairingHandshakeDraftService
 } from '../main/ets/services/pairing/PairingHandshakeDraftService';
 import {
+  PairingClientHandshakeError,
+  PairingClientHandshakeSessionService
+} from '../main/ets/services/pairing/PairingClientHandshakeSessionService';
+import {
   PairingStore,
   PairingStoreState
 } from '../main/ets/store/PairingStore';
@@ -1279,6 +1283,93 @@ export default function localUnitTest() {
       expect(accepted.outcome).assertEqual(ProtocolHandshakeFrameOutcome.CONTINUE);
     });
 
+    it('orchestratesClientPairingHandshakeUntilAuthProofFrame', 0, () => {
+      const store = new PairingStore();
+      store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);
+      store.confirmCodeMatched();
+      const draft = store.buildPendingClientHandshakeDraft(
+        '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        '3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08',
+        'hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo',
+        1700000000000
+      );
+      if (!draft.ok || draft.draft === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+
+      const service = new PairingClientHandshakeSessionService();
+      const started = service.start(
+        draft.draft,
+        '018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01',
+        0
+      );
+      expect(started.ok).assertEqual(true);
+      if (started.session === undefined || started.clientHelloFrame === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      expect(started.clientHelloFrame.indexOf('CLIENT_HELLO') >= 0).assertEqual(true);
+      expect(started.clientHelloFrame.indexOf('pairingSecret')).assertEqual(-1);
+
+      const result = service.acceptServerHelloAndBuildAuthProof(
+        started.session,
+        SERVER_HELLO_FRAME_FOR_PAIRING_FIXTURE,
+        TEST_ED25519_SIGNATURE,
+        '018ff6f1-1d2a-725d-8d1a-894d2f5b0a42',
+        2
+      );
+      expect(result.ok).assertEqual(true);
+      expect(result.serverHello?.deviceId).assertEqual('018ff6f0-0a3b-7815-a4db-3eb6e23d9338');
+      expect(result.transcript?.input.remoteDeviceId).assertEqual('018ff6f0-0a3b-7815-a4db-3eb6e23d9338');
+      expect((result.authProofFrame?.indexOf('AUTH_PROOF') ?? -1) >= 0).assertEqual(true);
+      expect(result.authProofFrame?.indexOf('pairingSecret') ?? 0).assertEqual(-1);
+
+      const parser = new ProtocolParser();
+      const proofEnvelope = parser.parseEnvelope(result.authProofFrame ?? '');
+      expect(proofEnvelope.ok).assertEqual(true);
+      expect(proofEnvelope.envelope?.messageType).assertEqual(MessageType.AUTH_PROOF);
+    });
+
+    it('rejectsClientPairingHandshakeWhenServerHelloIdentityDiffersFromInvitation', 0, () => {
+      const store = new PairingStore();
+      store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);
+      store.confirmCodeMatched();
+      const draft = store.buildPendingClientHandshakeDraft(
+        '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        '3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08',
+        'hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo',
+        1700000000000
+      );
+      if (!draft.ok || draft.draft === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+
+      const service = new PairingClientHandshakeSessionService();
+      const started = service.start(
+        draft.draft,
+        '018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01',
+        0
+      );
+      if (!started.ok || started.session === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+
+      const result = service.acceptServerHelloAndBuildAuthProof(
+        started.session,
+        SERVER_HELLO_FRAME_WITH_WRONG_IDENTITY_FIXTURE,
+        TEST_ED25519_SIGNATURE,
+        '018ff6f1-1d2a-725d-8d1a-894d2f5b0a42',
+        2
+      );
+      expect(result.ok).assertEqual(false);
+      expect(result.error).assertEqual(PairingClientHandshakeError.SERVER_HELLO_MISMATCH);
+      expect(result.handshakeError).assertEqual(PairingHandshakeDraftError.SERVER_HELLO_MISMATCH);
+      expect(result.field).assertEqual('identityPublicKey');
+    });
+
     it('importsPairingInvitationTextThroughStoreWithoutPersistenceSideEffects', 0, () => {
       const store = new PairingStore();
       const parsed = store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);
@@ -1373,6 +1464,10 @@ const AUTH_PROOF_FIXTURE: string = '{"version":1,"type":"AUTH_PROOF","messageId"
 const AUTH_PROOF_TRANSCRIPT: string = 'EggClip v1 auth transcript\nrole=client\nspaceId=018ff6ef-c394-7d08-8b99-4b7d10f2767a\nlocalDeviceId=018ff6f0-0a3b-7815-a4db-3eb6e23d9338\nremoteDeviceId=018ff6f0-4adf-7d31-a987-3ef2b25d0212\nlocalIdentityPublicKey=11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo\nremoteIdentityPublicKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\nlocalEphemeralPublicKey=hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo\nremoteEphemeralPublicKey=3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08\npairingContext=trusted-device:018ff6ef-c394-7d08-8b99-4b7d10f2767a\n';
 
 const TEST_ED25519_SIGNATURE: string = 'AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8wMTIzNDU2Nzg5Ojs8PT4_QA';
+
+const SERVER_HELLO_FRAME_FOR_PAIRING_FIXTURE: string = '{"version":1,"type":"SERVER_HELLO","messageId":"018ff6f1-0000-7000-8000-000000000001","sessionCounter":1,"payload":{"spaceId":"018ff6ef-c394-7d08-8b99-4b7d10f2767a","deviceId":"018ff6f0-0a3b-7815-a4db-3eb6e23d9338","identityPublicKey":"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaapcHUro","ephemeralPublicKey":"Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I","capabilities":["textPlain","syncHeads"]}}';
+
+const SERVER_HELLO_FRAME_WITH_WRONG_IDENTITY_FIXTURE: string = '{"version":1,"type":"SERVER_HELLO","messageId":"018ff6f1-0000-7000-8000-000000000002","sessionCounter":1,"payload":{"spaceId":"018ff6ef-c394-7d08-8b99-4b7d10f2767a","deviceId":"018ff6f0-0a3b-7815-a4db-3eb6e23d9338","identityPublicKey":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","ephemeralPublicKey":"Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I","capabilities":["textPlain","syncHeads"]}}';
 
 const AUTH_OK_FIXTURE: string = '{"version":1,"type":"AUTH_OK","messageId":"018ff6f1-25f0-7c09-a4cf-3d683ebfae33","sessionCounter":3,"payload":{}}';
 
