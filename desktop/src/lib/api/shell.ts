@@ -218,6 +218,11 @@ export async function listLocalSyncSpaces(): Promise<SyncSpaceSummary[]> {
   return spaces.map(toSyncSpaceSummary);
 }
 
+export async function ensureDefaultSyncSpace(): Promise<SyncSpaceSummary> {
+  const space = await invoke<SyncSpaceSummaryDto>("ensure_default_sync_space");
+  return toSyncSpaceSummary(space);
+}
+
 export async function createPairingInvitation(
   spaceId: string,
 ): Promise<PairingInvitationSummary> {

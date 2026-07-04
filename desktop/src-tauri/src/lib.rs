@@ -78,6 +78,7 @@ pub fn run() {
             pairing::copy_pairing_invitation,
             pairing::create_local_sync_space,
             pairing::create_pairing_invitation,
+            pairing::ensure_default_sync_space,
             pairing::list_local_sync_spaces,
             identity::load_local_device_identity,
             settings::load_app_settings,

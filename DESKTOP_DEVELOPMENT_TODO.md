@@ -200,7 +200,7 @@ desktop/
 - [ ] 创建同步空间并生成 256 位 `spaceKey`。
   - [x] 后端已提供创建本地同步空间命令：生成 256-bit `spaceKey`、保存到 Windows Credential Manager、写入 `spaces` 元数据。
   - [x] 设置弹层已接入同步空间卡片，可创建默认空间并展示不含密钥的空间摘要。
-  - [ ] 默认空间自动初始化策略待接入。
+  - [x] 桌面端启动时已接入默认同步空间幂等初始化：已有空间则复用，没有空间才创建“默认空间”和 256-bit `spaceKey`。
 - [ ] 创建 5 分钟过期、一次性使用的高熵邀请。
   - [x] 桌面端已能基于同步空间生成 5 分钟过期的高熵配对邀请草稿，包含 256-bit pairing secret、发行设备身份公钥和六位人工确认码。
   - [x] 桌面端已增加邀请注册表 migration 和 repository，生成邀请时登记 `invitationId`、过期时间和 secret verifier，不保存原始 pairing secret。

@@ -5,6 +5,7 @@ import {
   createPairingInvitation,
   createLocalSyncSpace,
   createInitialShellSnapshot,
+  ensureDefaultSyncSpace,
   captureClipboardHistoryText,
   clearClipboardHistory,
   deleteClipboardHistoryItem,
@@ -304,6 +305,45 @@ export const shellSnapshot = {
           state: "error",
           invitation: state.syncSpace.invitation,
           errorMessage: error instanceof Error ? error.message : "无法读取同步空间",
+        },
+      }));
+    }
+  },
+  async ensureDefaultSyncSpace() {
+    snapshot.update((state) => ({
+      ...state,
+      syncSpace: {
+        ...state.syncSpace,
+        state: state.syncSpace.spaces.length > 0 ? "loading" : "creating",
+        errorMessage: null,
+      },
+    }));
+    try {
+      const space = await ensureDefaultSyncSpace();
+      snapshot.update((state) => {
+        const spaces = [
+          space,
+          ...state.syncSpace.spaces.filter((candidate) => candidate.id !== space.id),
+        ];
+        return {
+          ...state,
+          syncSpace: {
+            state: "ready",
+            spaces,
+            invitation: state.syncSpace.invitation,
+            invitationCopiedAt: state.syncSpace.invitationCopiedAt,
+            errorMessage: null,
+          },
+        };
+      });
+    } catch (error) {
+      snapshot.update((state) => ({
+        ...state,
+        syncSpace: {
+          ...state.syncSpace,
+          state: "error",
+          invitation: state.syncSpace.invitation,
+          errorMessage: error instanceof Error ? error.message : "无法初始化默认同步空间",
         },
       }));
     }

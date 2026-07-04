@@ -29,6 +29,7 @@ pub const SPACE_KEY_BYTES: usize = 32;
 pub const PAIRING_SECRET_BYTES: usize = 32;
 pub const INITIAL_SPACE_KEY_VERSION: u32 = 1;
 pub const PAIRING_INVITATION_TTL_MS: u64 = 5 * 60 * 1000;
+pub const DEFAULT_SPACE_DISPLAY_NAME: &str = "默认空间";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -136,6 +137,18 @@ pub fn list_local_sync_spaces(app: tauri::AppHandle) -> Result<Vec<SyncSpaceSumm
 }
 
 #[tauri::command]
+pub fn ensure_default_sync_space(app: tauri::AppHandle) -> Result<SyncSpaceSummary, String> {
+    let path = database_path(&app)?;
+    #[cfg(windows)]
+    let mut store = crate::secret_store::WindowsCredentialSecretStore;
+    #[cfg(not(windows))]
+    let mut store = crate::secret_store::UnavailableSecretStore;
+
+    ensure_default_sync_space_at_path(&path, &mut store, now_ms()?)
+        .map_err(|error| format!("无法初始化默认同步空间：{error}"))
+}
+
+#[tauri::command]
 pub fn create_pairing_invitation(
     app: tauri::AppHandle,
     space_id: String,
@@ -184,6 +197,28 @@ pub fn list_sync_spaces_at_path(path: &Path) -> Result<Vec<SyncSpaceSummary>, Pa
     let connection =
         open_database(path).map_err(|error| PairingError::Database(error.to_string()))?;
     list_sync_spaces(&connection)
+}
+
+pub fn ensure_default_sync_space_at_path<S: SecretBytesStore>(
+    path: &Path,
+    secret_store: &mut S,
+    now_ms: u64,
+) -> Result<SyncSpaceSummary, PairingError> {
+    let mut connection =
+        open_database(path).map_err(|error| PairingError::Database(error.to_string()))?;
+    ensure_default_sync_space_in_database(&mut connection, secret_store, now_ms)
+}
+
+pub fn ensure_default_sync_space_in_database<S: SecretBytesStore>(
+    connection: &mut Connection,
+    secret_store: &mut S,
+    now_ms: u64,
+) -> Result<SyncSpaceSummary, PairingError> {
+    let existing = list_sync_spaces(connection)?;
+    if let Some(space) = existing.into_iter().next() {
+        return Ok(space);
+    }
+    create_sync_space(connection, secret_store, DEFAULT_SPACE_DISPLAY_NAME, now_ms)
 }
 
 pub fn create_sync_space<S: SecretBytesStore>(
@@ -588,6 +623,26 @@ mod tests {
         assert!(spaces
             .iter()
             .all(|space| space.space_key_ref.starts_with("credential://")));
+    }
+
+    #[test]
+    fn ensures_default_sync_space_once_and_reuses_existing_space() {
+        let mut connection = open_in_memory_database().expect("database should open");
+        let mut store = MemorySecretStore::default();
+
+        let first =
+            ensure_default_sync_space_in_database(&mut connection, &mut store, 1_700_000_000_000)
+                .expect("default space should be created");
+        let second =
+            ensure_default_sync_space_in_database(&mut connection, &mut store, 1_700_000_000_500)
+                .expect("existing default space should be reused");
+        let spaces = list_sync_spaces(&connection).expect("spaces should list");
+
+        assert_eq!(first.display_name, DEFAULT_SPACE_DISPLAY_NAME);
+        assert_eq!(second.space_id, first.space_id);
+        assert_eq!(second.created_at_ms, first.created_at_ms);
+        assert_eq!(spaces.len(), 1);
+        assert_eq!(store.secrets.len(), 1);
     }
 
     #[test]

@@ -21,7 +21,7 @@
     void shellSnapshot.startClipboardMonitor();
     void shellSnapshot.refreshHistorySummary();
     void shellSnapshot.loadRecentPocEndpoint();
-    void shellSnapshot.refreshSyncSpaces();
+    void shellSnapshot.ensureDefaultSyncSpace();
     void settingsSnapshot.load();
   });
 
@@ -303,9 +303,13 @@
                     $shellSnapshot.syncSpace.invitation?.invitationString ?? "",
                   )}
               >
-                {$shellSnapshot.syncSpace.state === "copyingInvitation"
-                  ? "正在复制邀请"
-                  : "安全复制邀请"}
+                <span aria-hidden="true">⧉</span>
+                <strong>
+                  {$shellSnapshot.syncSpace.state === "copyingInvitation"
+                    ? "正在复制邀请"
+                    : "复制邀请"}
+                </strong>
+                <em>安全</em>
               </button>
               {#if $shellSnapshot.syncSpace.invitationCopiedAt}
                 <p class="copy-hint">
