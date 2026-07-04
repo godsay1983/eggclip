@@ -221,7 +221,16 @@ pub fn write_clipboard_text(text: String) -> Result<(), String> {
     set_eggclip_clipboard_text(&mut clipboard, &item)
 }
 
+pub fn write_suppressed_clipboard_text(app: &AppHandle, text: String) -> Result<(), String> {
+    let item = ClipboardText::parse(text).map_err(|error| error.to_string())?;
+    write_suppressed_clipboard_item(app, &item)
+}
+
 pub fn write_remote_clipboard_text(app: &AppHandle, item: &ClipboardText) -> Result<(), String> {
+    write_suppressed_clipboard_item(app, item)
+}
+
+fn write_suppressed_clipboard_item(app: &AppHandle, item: &ClipboardText) -> Result<(), String> {
     let runtime = app.state::<ClipboardRuntime>();
     let mut suppression = runtime
         .suppression

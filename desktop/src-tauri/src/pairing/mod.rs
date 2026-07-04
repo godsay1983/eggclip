@@ -10,6 +10,7 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::{
+    clipboard,
     crypto::encode_base64url,
     identity::{ensure_local_device_identity, IdentityError},
     secret_store::{SecretBytesStore, SecretStoreError},
@@ -74,6 +75,7 @@ pub enum PairingError {
     MissingSpaceKeyRef,
     MissingSpaceKey,
     Identity(String),
+    InvalidInvitation,
     Serialize(String),
 }
 
@@ -89,6 +91,7 @@ impl fmt::Display for PairingError {
             PairingError::MissingSpaceKeyRef => formatter.write_str("space key reference missing"),
             PairingError::MissingSpaceKey => formatter.write_str("space key missing"),
             PairingError::Identity(message) => write!(formatter, "identity error: {message}"),
+            PairingError::InvalidInvitation => formatter.write_str("invalid pairing invitation"),
             PairingError::Serialize(message) => write!(formatter, "serialize error: {message}"),
         }
     }
@@ -130,6 +133,14 @@ pub fn create_pairing_invitation(
 
     create_pairing_invitation_at_path(&path, &mut store, &space_id, now_ms()?)
         .map_err(|error| format!("无法生成配对邀请：{error}"))
+}
+
+#[tauri::command]
+pub fn copy_pairing_invitation(app: tauri::AppHandle, invitation: String) -> Result<(), String> {
+    validate_pairing_invitation_uri(&invitation)
+        .map_err(|error| format!("无法复制配对邀请：{error}"))?;
+    clipboard::write_suppressed_clipboard_text(&app, invitation)
+        .map_err(|error| format!("无法复制配对邀请：{error}"))
 }
 
 pub fn create_sync_space_at_path<S: SecretBytesStore>(
@@ -343,6 +354,29 @@ fn confirmation_code(payload_json: &[u8]) -> String {
     format!("{value:06}")
 }
 
+fn validate_pairing_invitation_uri(invitation: &str) -> Result<(), PairingError> {
+    let payload = invitation
+        .strip_prefix("eggclip://pair?p=")
+        .ok_or(PairingError::InvalidInvitation)?;
+    let payload_json = URL_SAFE_NO_PAD
+        .decode(payload)
+        .map_err(|_| PairingError::InvalidInvitation)?;
+    let decoded: PairingInvitationPayload =
+        serde_json::from_slice(&payload_json).map_err(|_| PairingError::InvalidInvitation)?;
+    if decoded.app != "eggclip"
+        || decoded.version != 1
+        || decoded.kind != "pairingInvitation"
+        || Uuid::parse_str(&decoded.space_id).is_err()
+        || Uuid::parse_str(&decoded.issuer_device_id).is_err()
+        || crate::crypto::decode_base64url(&decoded.pairing_secret)
+            .map(|secret| secret.len() != PAIRING_SECRET_BYTES)
+            .unwrap_or(true)
+    {
+        return Err(PairingError::InvalidInvitation);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 #[derive(Default)]
 struct MemorySecretStore {
@@ -509,6 +543,32 @@ mod tests {
         assert_ne!(
             decode_invitation_payload(&first.invitation).pairing_secret,
             decode_invitation_payload(&second.invitation).pairing_secret
+        );
+    }
+
+    #[test]
+    fn validates_pairing_invitation_uri_before_copy() {
+        let mut connection = open_in_memory_database().expect("database should open");
+        let mut store = MemorySecretStore::default();
+        let space = create_sync_space(&mut connection, &mut store, "默认空间", 1_700_000_000_000)
+            .expect("space should be created");
+        let invitation = create_pairing_invitation_for_space(
+            &mut connection,
+            &mut store,
+            &space.space_id,
+            1_700_000_000_500,
+        )
+        .expect("invitation should be created");
+
+        validate_pairing_invitation_uri(&invitation.invitation)
+            .expect("generated invitation should validate");
+        assert_eq!(
+            validate_pairing_invitation_uri("https://example.com/not-eggclip"),
+            Err(PairingError::InvalidInvitation)
+        );
+        assert_eq!(
+            validate_pairing_invitation_uri("eggclip://pair?p=not-base64url"),
+            Err(PairingError::InvalidInvitation)
         );
     }
 

@@ -75,6 +75,7 @@ pub fn run() {
             history::delete_clipboard_history_item,
             history::get_clipboard_history_used,
             history::list_clipboard_history_preview,
+            pairing::copy_pairing_invitation,
             pairing::create_local_sync_space,
             pairing::create_pairing_invitation,
             pairing::list_local_sync_spaces,

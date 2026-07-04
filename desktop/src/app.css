@@ -691,6 +691,17 @@ footer {
   letter-spacing: 0.16em;
 }
 
+.invitation-copy {
+  height: 36px;
+  margin-top: 10px;
+  border-color: rgba(167, 122, 0, 0.18);
+  background: linear-gradient(180deg, #fff5c9, var(--control));
+}
+
+.copy-hint {
+  color: #1f6b42 !important;
+}
+
 .setting-grid {
   display: grid;
   gap: 8px;

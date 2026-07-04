@@ -115,10 +115,11 @@ export interface PairingInvitationSummary {
 }
 
 export interface SyncSpaceState {
-  state: "idle" | "loading" | "creating" | "inviting" | "ready" | "error";
+  state: "idle" | "loading" | "creating" | "inviting" | "copyingInvitation" | "ready" | "error";
   spaces: SyncSpaceSummary[];
   invitation: PairingInvitationSummary | null;
   errorMessage: string | null;
+  invitationCopiedAt: string | null;
 }
 
 export interface ShellSnapshot {

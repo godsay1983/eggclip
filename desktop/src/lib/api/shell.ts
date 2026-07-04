@@ -145,6 +145,7 @@ export function createInitialShellSnapshot(): ShellSnapshot {
       spaces: [],
       invitation: null,
       errorMessage: null,
+      invitationCopiedAt: null,
     },
     syncEnabled: true,
   };
@@ -223,6 +224,12 @@ export async function createPairingInvitation(
     spaceId,
   });
   return toPairingInvitationSummary(invitation);
+}
+
+export async function copyPairingInvitation(invitationString: string): Promise<void> {
+  await invoke("copy_pairing_invitation", {
+    invitation: invitationString,
+  });
 }
 
 export async function startPocTransport(): Promise<PocTransportSummary> {

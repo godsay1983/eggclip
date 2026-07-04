@@ -292,8 +292,26 @@
                 <span>人工确认码</span>
                 <strong>{$shellSnapshot.syncSpace.invitation.confirmationCode}</strong>
               </div>
+              <button
+                class="secondary-action invitation-copy"
+                type="button"
+                disabled={$shellSnapshot.syncSpace.state === "copyingInvitation"}
+                on:click={() =>
+                  shellSnapshot.copyPairingInvitation(
+                    $shellSnapshot.syncSpace.invitation?.invitationString ?? "",
+                  )}
+              >
+                {$shellSnapshot.syncSpace.state === "copyingInvitation"
+                  ? "正在复制邀请"
+                  : "安全复制邀请"}
+              </button>
+              {#if $shellSnapshot.syncSpace.invitationCopiedAt}
+                <p class="copy-hint">
+                  已在 {$shellSnapshot.syncSpace.invitationCopiedAt} 复制；本机历史会忽略这次写入。
+                </p>
+              {/if}
               <p>
-                发行设备 #{$shellSnapshot.syncSpace.invitation.issuerShortFingerprint}。邀请字符串包含一次性秘密，后续会接入二维码和安全复制入口，当前不在界面展开明文。
+                发行设备 #{$shellSnapshot.syncSpace.invitation.issuerShortFingerprint}。邀请字符串包含一次性秘密，不在界面展开明文；请只发给要配对的设备。
               </p>
             </div>
           {/if}

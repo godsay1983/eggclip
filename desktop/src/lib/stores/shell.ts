@@ -1,6 +1,7 @@
 import { derived, writable } from "svelte/store";
 import {
   connectPocPeer,
+  copyPairingInvitation,
   createPairingInvitation,
   createLocalSyncSpace,
   createInitialShellSnapshot,
@@ -291,6 +292,7 @@ export const shellSnapshot = {
           state: spaces.length > 0 ? "ready" : "idle",
           spaces,
           invitation: state.syncSpace.invitation,
+          invitationCopiedAt: state.syncSpace.invitationCopiedAt,
           errorMessage: null,
         },
       }));
@@ -323,6 +325,7 @@ export const shellSnapshot = {
           state: "ready",
           spaces: [space, ...state.syncSpace.spaces],
           invitation: null,
+          invitationCopiedAt: null,
           errorMessage: null,
         },
         connection: {
@@ -354,6 +357,7 @@ export const shellSnapshot = {
       syncSpace: {
         ...state.syncSpace,
         state: "inviting",
+        invitationCopiedAt: null,
         errorMessage: null,
       },
     }));
@@ -365,6 +369,7 @@ export const shellSnapshot = {
           ...state.syncSpace,
           state: "ready",
           invitation,
+          invitationCopiedAt: null,
           errorMessage: null,
         },
         connection: {
@@ -385,6 +390,47 @@ export const shellSnapshot = {
           state: "authFailed",
           title: "生成配对邀请失败",
           description: error instanceof Error ? error.message : "无法生成配对邀请",
+        },
+      }));
+    }
+  },
+  async copyPairingInvitation(invitationString: string) {
+    snapshot.update((state) => ({
+      ...state,
+      syncSpace: {
+        ...state.syncSpace,
+        state: "copyingInvitation",
+        errorMessage: null,
+      },
+    }));
+    try {
+      await copyPairingInvitation(invitationString);
+      snapshot.update((state) => ({
+        ...state,
+        syncSpace: {
+          ...state.syncSpace,
+          state: "ready",
+          invitationCopiedAt: currentTimeLabel(),
+          errorMessage: null,
+        },
+        connection: {
+          state: "connecting",
+          title: "配对邀请已复制",
+          description: "邀请已通过安全复制入口写入系统剪贴板，本机历史监听会忽略这次写入。",
+        },
+      }));
+    } catch (error) {
+      snapshot.update((state) => ({
+        ...state,
+        syncSpace: {
+          ...state.syncSpace,
+          state: "error",
+          errorMessage: error instanceof Error ? error.message : "无法复制配对邀请",
+        },
+        connection: {
+          state: "authFailed",
+          title: "复制配对邀请失败",
+          description: error instanceof Error ? error.message : "无法复制配对邀请",
         },
       }));
     }
