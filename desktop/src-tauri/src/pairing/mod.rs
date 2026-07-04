@@ -11,13 +11,16 @@ use uuid::Uuid;
 
 use crate::{
     clipboard,
-    crypto::encode_base64url,
+    crypto::{decode_base64url, encode_base64url},
     identity::{ensure_local_device_identity, IdentityError},
     secret_store::{SecretBytesStore, SecretStoreError},
     settings::{database_path, now_ms},
     storage::{
         open_database,
-        repositories::{SpaceRecord, SpaceRepository},
+        repositories::{
+            PairingInvitationRecord, PairingInvitationRepository, PairingInvitationState,
+            SpaceRecord, SpaceRepository,
+        },
     },
     sync::{Space, SpaceState},
 };
@@ -40,6 +43,7 @@ pub struct SyncSpaceSummary {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PairingInvitationSummary {
+    pub invitation_id: String,
     pub space_id: String,
     pub space_display_name: String,
     pub invitation: String,
@@ -56,6 +60,7 @@ struct PairingInvitationPayload {
     app: String,
     version: u16,
     kind: String,
+    invitation_id: String,
     space_id: String,
     space_key_version: u32,
     issuer_device_id: String,
@@ -76,6 +81,10 @@ pub enum PairingError {
     MissingSpaceKey,
     Identity(String),
     InvalidInvitation,
+    InvitationMissing,
+    InvitationExpired,
+    InvitationConsumed,
+    InvalidInvitationSecret,
     Serialize(String),
 }
 
@@ -92,6 +101,12 @@ impl fmt::Display for PairingError {
             PairingError::MissingSpaceKey => formatter.write_str("space key missing"),
             PairingError::Identity(message) => write!(formatter, "identity error: {message}"),
             PairingError::InvalidInvitation => formatter.write_str("invalid pairing invitation"),
+            PairingError::InvitationMissing => formatter.write_str("pairing invitation missing"),
+            PairingError::InvitationExpired => formatter.write_str("pairing invitation expired"),
+            PairingError::InvitationConsumed => formatter.write_str("pairing invitation consumed"),
+            PairingError::InvalidInvitationSecret => {
+                formatter.write_str("invalid pairing invitation secret")
+            }
             PairingError::Serialize(message) => write!(formatter, "serialize error: {message}"),
         }
     }
@@ -276,13 +291,18 @@ pub fn create_pairing_invitation_for_space<S: SecretBytesStore>(
     }
     let identity = ensure_local_device_identity(connection, secret_store, now_ms)
         .map_err(pairing_identity_error)?;
+    let issuer_device_id = Uuid::parse_str(&identity.device_id)
+        .map_err(|_| PairingError::Identity("local device id is not a UUID".to_string()))?;
+    let invitation_id = Uuid::now_v7();
     let mut pairing_secret = random_pairing_secret()?;
     let pairing_secret_encoded = encode_base64url(&pairing_secret);
+    let secret_verifier = pairing_secret_verifier(invitation_id, &pairing_secret);
     let expires_at_ms = now_ms.saturating_add(PAIRING_INVITATION_TTL_MS);
     let payload = PairingInvitationPayload {
         app: "eggclip".to_string(),
         version: 1,
         kind: "pairingInvitation".to_string(),
+        invitation_id: invitation_id.to_string(),
         space_id: space.space.space_id.to_string(),
         space_key_version: space.space.key_version,
         issuer_device_id: identity.device_id.clone(),
@@ -298,8 +318,22 @@ pub fn create_pairing_invitation_for_space<S: SecretBytesStore>(
     );
     let confirmation_code = confirmation_code(&payload_json);
     pairing_secret.fill(0);
+    PairingInvitationRepository::new(connection)
+        .insert(&PairingInvitationRecord {
+            invitation_id,
+            space_id: space.space.space_id,
+            issuer_device_id,
+            secret_verifier,
+            state: PairingInvitationState::Active,
+            created_at: now_ms,
+            expires_at: expires_at_ms,
+            consumed_at: None,
+            consumed_by_device_id: None,
+        })
+        .map_err(|error| PairingError::Database(error.to_string()))?;
 
     Ok(PairingInvitationSummary {
+        invitation_id: invitation_id.to_string(),
         space_id: space.space.space_id.to_string(),
         space_display_name: space.space.display_name,
         invitation,
@@ -309,6 +343,56 @@ pub fn create_pairing_invitation_for_space<S: SecretBytesStore>(
         issuer_short_fingerprint: identity.identity_public_key.chars().take(8).collect(),
         confirmation_code,
     })
+}
+
+pub fn consume_pairing_invitation(
+    connection: &Connection,
+    invitation_id: &str,
+    pairing_secret: &str,
+    consumer_device_id: &str,
+    now_ms: u64,
+) -> Result<(), PairingError> {
+    let invitation_id =
+        Uuid::parse_str(invitation_id).map_err(|_| PairingError::InvalidInvitation)?;
+    let consumer_device_id =
+        Uuid::parse_str(consumer_device_id).map_err(|_| PairingError::InvalidInvitation)?;
+    let mut pairing_secret =
+        decode_base64url(pairing_secret).map_err(|_| PairingError::InvalidInvitationSecret)?;
+    if pairing_secret.len() != PAIRING_SECRET_BYTES {
+        return Err(PairingError::InvalidInvitationSecret);
+    }
+    let mut secret = [0u8; PAIRING_SECRET_BYTES];
+    secret.copy_from_slice(&pairing_secret);
+    pairing_secret.fill(0);
+    let verifier = pairing_secret_verifier(invitation_id, &secret);
+    secret.fill(0);
+
+    let repository = PairingInvitationRepository::new(connection);
+    let record = repository
+        .get(invitation_id)
+        .map_err(|error| PairingError::Database(error.to_string()))?
+        .ok_or(PairingError::InvitationMissing)?;
+    match record.state {
+        PairingInvitationState::Consumed => return Err(PairingError::InvitationConsumed),
+        PairingInvitationState::Expired => return Err(PairingError::InvitationExpired),
+        PairingInvitationState::Active => {}
+    }
+    if record.expires_at <= now_ms {
+        repository
+            .expire_before(now_ms)
+            .map_err(|error| PairingError::Database(error.to_string()))?;
+        return Err(PairingError::InvitationExpired);
+    }
+    if !constant_time_eq(verifier.as_bytes(), record.secret_verifier.as_bytes()) {
+        return Err(PairingError::InvalidInvitationSecret);
+    }
+    if !repository
+        .mark_consumed(invitation_id, consumer_device_id, now_ms)
+        .map_err(|error| PairingError::Database(error.to_string()))?
+    {
+        return Err(PairingError::InvitationConsumed);
+    }
+    Ok(())
 }
 
 fn normalize_space_display_name(display_name: &str) -> Result<String, PairingError> {
@@ -354,6 +438,28 @@ fn confirmation_code(payload_json: &[u8]) -> String {
     format!("{value:06}")
 }
 
+fn pairing_secret_verifier(
+    invitation_id: Uuid,
+    pairing_secret: &[u8; PAIRING_SECRET_BYTES],
+) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"EggClip pairing invitation verifier v1\0");
+    hasher.update(invitation_id.as_bytes());
+    hasher.update(pairing_secret);
+    URL_SAFE_NO_PAD.encode(hasher.finalize())
+}
+
+fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (left, right) in left.iter().zip(right.iter()) {
+        diff |= left ^ right;
+    }
+    diff == 0
+}
+
 fn validate_pairing_invitation_uri(invitation: &str) -> Result<(), PairingError> {
     let payload = invitation
         .strip_prefix("eggclip://pair?p=")
@@ -366,9 +472,10 @@ fn validate_pairing_invitation_uri(invitation: &str) -> Result<(), PairingError>
     if decoded.app != "eggclip"
         || decoded.version != 1
         || decoded.kind != "pairingInvitation"
+        || Uuid::parse_str(&decoded.invitation_id).is_err()
         || Uuid::parse_str(&decoded.space_id).is_err()
         || Uuid::parse_str(&decoded.issuer_device_id).is_err()
-        || crate::crypto::decode_base64url(&decoded.pairing_secret)
+        || decode_base64url(&decoded.pairing_secret)
             .map(|secret| secret.len() != PAIRING_SECRET_BYTES)
             .unwrap_or(true)
     {
@@ -506,6 +613,8 @@ mod tests {
         assert_eq!(payload.app, "eggclip");
         assert_eq!(payload.version, 1);
         assert_eq!(payload.kind, "pairingInvitation");
+        assert_eq!(payload.invitation_id, invitation.invitation_id);
+        Uuid::parse_str(&invitation.invitation_id).expect("invitation id should be a UUID");
         assert_eq!(payload.space_id, space.space_id);
         assert_eq!(payload.space_key_version, INITIAL_SPACE_KEY_VERSION);
         assert_eq!(
@@ -516,6 +625,15 @@ mod tests {
         assert_eq!(payload.issuer_device_id, invitation.issuer_device_id);
         assert!(payload.issuer_identity_public_key.len() >= 43);
         assert_eq!(invitation.confirmation_code.len(), 6);
+
+        let stored = PairingInvitationRepository::new(&connection)
+            .get(Uuid::parse_str(&invitation.invitation_id).expect("invitation id should parse"))
+            .expect("invitation should query")
+            .expect("invitation should be registered");
+        assert_eq!(stored.state, PairingInvitationState::Active);
+        assert_eq!(stored.space_id.to_string(), space.space_id);
+        assert_eq!(stored.expires_at, invitation.expires_at_ms);
+        assert_ne!(stored.secret_verifier, payload.pairing_secret);
     }
 
     #[test]
@@ -569,6 +687,102 @@ mod tests {
         assert_eq!(
             validate_pairing_invitation_uri("eggclip://pair?p=not-base64url"),
             Err(PairingError::InvalidInvitation)
+        );
+    }
+
+    #[test]
+    fn consumes_pairing_invitation_once_with_matching_secret() {
+        let mut connection = open_in_memory_database().expect("database should open");
+        let mut store = MemorySecretStore::default();
+        let space = create_sync_space(&mut connection, &mut store, "默认空间", 1_700_000_000_000)
+            .expect("space should be created");
+        let invitation = create_pairing_invitation_for_space(
+            &mut connection,
+            &mut store,
+            &space.space_id,
+            1_700_000_000_500,
+        )
+        .expect("invitation should be created");
+        let payload = decode_invitation_payload(&invitation.invitation);
+        let consumer_device_id = Uuid::now_v7().to_string();
+
+        consume_pairing_invitation(
+            &connection,
+            &payload.invitation_id,
+            &payload.pairing_secret,
+            &consumer_device_id,
+            1_700_000_001_000,
+        )
+        .expect("invitation should consume");
+        assert_eq!(
+            consume_pairing_invitation(
+                &connection,
+                &payload.invitation_id,
+                &payload.pairing_secret,
+                &consumer_device_id,
+                1_700_000_001_001,
+            ),
+            Err(PairingError::InvitationConsumed)
+        );
+
+        let stored = PairingInvitationRepository::new(&connection)
+            .get(Uuid::parse_str(&payload.invitation_id).expect("invitation id should parse"))
+            .expect("invitation should query")
+            .expect("invitation should exist");
+        assert_eq!(stored.state, PairingInvitationState::Consumed);
+        assert_eq!(
+            stored
+                .consumed_by_device_id
+                .map(|device_id| device_id.to_string()),
+            Some(consumer_device_id)
+        );
+    }
+
+    #[test]
+    fn rejects_expired_or_wrong_secret_invitation_consumption() {
+        let mut connection = open_in_memory_database().expect("database should open");
+        let mut store = MemorySecretStore::default();
+        let space = create_sync_space(&mut connection, &mut store, "默认空间", 1_700_000_000_000)
+            .expect("space should be created");
+        let wrong_secret = encode_base64url(&[9u8; PAIRING_SECRET_BYTES]);
+        let consumer_device_id = Uuid::now_v7().to_string();
+
+        let wrong_secret_invitation = create_pairing_invitation_for_space(
+            &mut connection,
+            &mut store,
+            &space.space_id,
+            1_700_000_000_500,
+        )
+        .expect("invitation should be created");
+        let wrong_secret_payload = decode_invitation_payload(&wrong_secret_invitation.invitation);
+        assert_eq!(
+            consume_pairing_invitation(
+                &connection,
+                &wrong_secret_payload.invitation_id,
+                &wrong_secret,
+                &consumer_device_id,
+                1_700_000_001_000,
+            ),
+            Err(PairingError::InvalidInvitationSecret)
+        );
+
+        let expired_invitation = create_pairing_invitation_for_space(
+            &mut connection,
+            &mut store,
+            &space.space_id,
+            1_700_000_010_000,
+        )
+        .expect("expired candidate should be created");
+        let expired_payload = decode_invitation_payload(&expired_invitation.invitation);
+        assert_eq!(
+            consume_pairing_invitation(
+                &connection,
+                &expired_payload.invitation_id,
+                &expired_payload.pairing_secret,
+                &consumer_device_id,
+                expired_invitation.expires_at_ms,
+            ),
+            Err(PairingError::InvitationExpired)
         );
     }
 

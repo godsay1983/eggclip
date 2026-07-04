@@ -104,6 +104,7 @@ export interface SyncSpaceSummary {
 }
 
 export interface PairingInvitationSummary {
+  invitationId: string;
   spaceId: string;
   spaceDisplayName: string;
   invitationString: string;

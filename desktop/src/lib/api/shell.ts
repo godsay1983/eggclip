@@ -85,6 +85,7 @@ interface SyncSpaceSummaryDto {
 }
 
 interface PairingInvitationSummaryDto {
+  invitationId: string;
   spaceId: string;
   spaceDisplayName: string;
   invitation: string;
@@ -368,6 +369,7 @@ function toPairingInvitationSummary(
   invitation: PairingInvitationSummaryDto,
 ): PairingInvitationSummary {
   return {
+    invitationId: invitation.invitationId,
     spaceId: invitation.spaceId,
     spaceDisplayName: invitation.spaceDisplayName,
     invitationString: invitation.invitation,

@@ -21,6 +21,26 @@ pub struct SpaceRecord {
     pub updated_at: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PairingInvitationState {
+    Active,
+    Consumed,
+    Expired,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PairingInvitationRecord {
+    pub invitation_id: Uuid,
+    pub space_id: Uuid,
+    pub issuer_device_id: Uuid,
+    pub secret_verifier: String,
+    pub state: PairingInvitationState,
+    pub created_at: u64,
+    pub expires_at: u64,
+    pub consumed_at: Option<u64>,
+    pub consumed_by_device_id: Option<Uuid>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeviceRecord {
     pub device: Device,
@@ -222,6 +242,100 @@ impl<'a> SpaceRepository<'a> {
         )?;
         let records = statement.query_map([], row_to_space_record)?.collect();
         records
+    }
+}
+
+pub struct PairingInvitationRepository<'a> {
+    connection: &'a Connection,
+}
+
+impl<'a> PairingInvitationRepository<'a> {
+    pub fn new(connection: &'a Connection) -> Self {
+        Self { connection }
+    }
+
+    pub fn insert(&self, record: &PairingInvitationRecord) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "INSERT INTO pairing_invitations(
+              invitation_id, space_id, issuer_device_id, secret_verifier, state,
+              created_at, expires_at, consumed_at, consumed_by_device_id
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                record.invitation_id.to_string(),
+                record.space_id.to_string(),
+                record.issuer_device_id.to_string(),
+                record.secret_verifier,
+                pairing_invitation_state_to_db(record.state),
+                u64_to_i64(record.created_at)?,
+                u64_to_i64(record.expires_at)?,
+                option_u64_to_i64(record.consumed_at)?,
+                record
+                    .consumed_by_device_id
+                    .map(|device_id| device_id.to_string()),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn get(&self, invitation_id: Uuid) -> rusqlite::Result<Option<PairingInvitationRecord>> {
+        self.connection
+            .query_row(
+                "SELECT invitation_id, space_id, issuer_device_id, secret_verifier, state,
+                  created_at, expires_at, consumed_at, consumed_by_device_id
+                 FROM pairing_invitations WHERE invitation_id = ?1",
+                params![invitation_id.to_string()],
+                row_to_pairing_invitation_record,
+            )
+            .optional()
+    }
+
+    pub fn list_active_by_space(
+        &self,
+        space_id: Uuid,
+        now_ms: u64,
+    ) -> rusqlite::Result<Vec<PairingInvitationRecord>> {
+        let mut statement = self.connection.prepare(
+            "SELECT invitation_id, space_id, issuer_device_id, secret_verifier, state,
+              created_at, expires_at, consumed_at, consumed_by_device_id
+             FROM pairing_invitations
+             WHERE space_id = ?1 AND state = 'active' AND expires_at > ?2
+             ORDER BY expires_at ASC, invitation_id ASC",
+        )?;
+        let records = statement
+            .query_map(
+                params![space_id.to_string(), u64_to_i64(now_ms)?],
+                row_to_pairing_invitation_record,
+            )?
+            .collect();
+        records
+    }
+
+    pub fn mark_consumed(
+        &self,
+        invitation_id: Uuid,
+        consumed_by_device_id: Uuid,
+        consumed_at: u64,
+    ) -> rusqlite::Result<bool> {
+        let changed = self.connection.execute(
+            "UPDATE pairing_invitations
+             SET state = 'consumed', consumed_at = ?2, consumed_by_device_id = ?3
+             WHERE invitation_id = ?1 AND state = 'active'",
+            params![
+                invitation_id.to_string(),
+                u64_to_i64(consumed_at)?,
+                consumed_by_device_id.to_string(),
+            ],
+        )?;
+        Ok(changed > 0)
+    }
+
+    pub fn expire_before(&self, now_ms: u64) -> rusqlite::Result<usize> {
+        self.connection.execute(
+            "UPDATE pairing_invitations
+             SET state = 'expired'
+             WHERE state = 'active' AND expires_at <= ?1",
+            params![u64_to_i64(now_ms)?],
+        )
     }
 }
 
@@ -811,6 +925,25 @@ fn row_to_space_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<SpaceRecord>
     })
 }
 
+fn row_to_pairing_invitation_record(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<PairingInvitationRecord> {
+    Ok(PairingInvitationRecord {
+        invitation_id: parse_uuid(row.get::<_, String>(0)?, 0)?,
+        space_id: parse_uuid(row.get::<_, String>(1)?, 1)?,
+        issuer_device_id: parse_uuid(row.get::<_, String>(2)?, 2)?,
+        secret_verifier: row.get(3)?,
+        state: db_to_pairing_invitation_state(row.get::<_, String>(4)?, 4)?,
+        created_at: i64_to_u64(row.get(5)?, 5)?,
+        expires_at: i64_to_u64(row.get(6)?, 6)?,
+        consumed_at: option_i64_to_u64(row.get(7)?, 7)?,
+        consumed_by_device_id: row
+            .get::<_, Option<String>>(8)?
+            .map(|value| parse_uuid(value, 8))
+            .transpose()?,
+    })
+}
+
 fn row_to_device_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<DeviceRecord> {
     Ok(DeviceRecord {
         device: Device {
@@ -876,6 +1009,26 @@ fn db_to_space_state(value: String, column: usize) -> rusqlite::Result<SpaceStat
         "rotatingKey" => Ok(SpaceState::RotatingKey),
         "archived" => Ok(SpaceState::Archived),
         _ => Err(text_error(column, "invalid space state")),
+    }
+}
+
+fn pairing_invitation_state_to_db(value: PairingInvitationState) -> &'static str {
+    match value {
+        PairingInvitationState::Active => "active",
+        PairingInvitationState::Consumed => "consumed",
+        PairingInvitationState::Expired => "expired",
+    }
+}
+
+fn db_to_pairing_invitation_state(
+    value: String,
+    column: usize,
+) -> rusqlite::Result<PairingInvitationState> {
+    match value.as_str() {
+        "active" => Ok(PairingInvitationState::Active),
+        "consumed" => Ok(PairingInvitationState::Consumed),
+        "expired" => Ok(PairingInvitationState::Expired),
+        _ => Err(text_error(column, "invalid pairing invitation state")),
     }
 }
 
@@ -1140,6 +1293,78 @@ mod tests {
             .expect("sync head query should succeed");
         assert_eq!(heads.len(), 1);
         assert_eq!(heads[0].head.latest_origin_seq, 1);
+    }
+
+    #[test]
+    fn pairing_invitation_repository_tracks_active_consumed_and_expired_states() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let (space_id, local_device_id, peer_device_id) =
+            seed_space_and_devices(&connection).expect("seed should succeed");
+        let invitations = PairingInvitationRepository::new(&connection);
+        let invitation_id = Uuid::now_v7();
+
+        invitations
+            .insert(&PairingInvitationRecord {
+                invitation_id,
+                space_id,
+                issuer_device_id: local_device_id,
+                secret_verifier: "verifier-ref".to_string(),
+                state: PairingInvitationState::Active,
+                created_at: 1_700_000_000_000,
+                expires_at: 1_700_000_300_000,
+                consumed_at: None,
+                consumed_by_device_id: None,
+            })
+            .expect("invitation should insert");
+
+        assert_eq!(
+            invitations
+                .list_active_by_space(space_id, 1_700_000_100_000)
+                .expect("active invitations should list")
+                .len(),
+            1
+        );
+        assert!(invitations
+            .mark_consumed(invitation_id, peer_device_id, 1_700_000_100_001)
+            .expect("invitation should be consumed"));
+        assert!(!invitations
+            .mark_consumed(invitation_id, peer_device_id, 1_700_000_100_002)
+            .expect("consumed invitation should not be consumed twice"));
+        let consumed = invitations
+            .get(invitation_id)
+            .expect("invitation should query")
+            .expect("invitation should exist");
+        assert_eq!(consumed.state, PairingInvitationState::Consumed);
+        assert_eq!(consumed.consumed_by_device_id, Some(peer_device_id));
+
+        let expired_id = Uuid::now_v7();
+        invitations
+            .insert(&PairingInvitationRecord {
+                invitation_id: expired_id,
+                space_id,
+                issuer_device_id: local_device_id,
+                secret_verifier: "expired-verifier-ref".to_string(),
+                state: PairingInvitationState::Active,
+                created_at: 1_700_000_000_000,
+                expires_at: 1_700_000_050_000,
+                consumed_at: None,
+                consumed_by_device_id: None,
+            })
+            .expect("expired candidate should insert");
+        assert_eq!(
+            invitations
+                .expire_before(1_700_000_050_000)
+                .expect("expired invitation should update"),
+            1
+        );
+        assert_eq!(
+            invitations
+                .get(expired_id)
+                .expect("expired invitation should query")
+                .expect("expired invitation should exist")
+                .state,
+            PairingInvitationState::Expired
+        );
     }
 
     #[test]

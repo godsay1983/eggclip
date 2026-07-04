@@ -4,7 +4,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 pub mod repositories;
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 1;
+pub const CURRENT_SCHEMA_VERSION: i64 = 2;
 pub const BUSY_TIMEOUT_MS: u64 = 5_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,10 +20,11 @@ struct Migration {
     sql: &'static str,
 }
 
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "initial_local_sync_schema",
-    sql: r#"
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "initial_local_sync_schema",
+        sql: r#"
 CREATE TABLE IF NOT EXISTS schema_migrations (
   version INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
@@ -97,7 +98,28 @@ CREATE INDEX IF NOT EXISTS idx_clipboard_items_retention
 CREATE INDEX IF NOT EXISTS idx_devices_space_trust
   ON devices(space_id, trust_state, connection_state);
 "#,
-}];
+    },
+    Migration {
+        version: 2,
+        name: "pairing_invitation_registry",
+        sql: r#"
+CREATE TABLE IF NOT EXISTS pairing_invitations (
+  invitation_id TEXT PRIMARY KEY,
+  space_id TEXT NOT NULL REFERENCES spaces(space_id) ON DELETE CASCADE,
+  issuer_device_id TEXT NOT NULL,
+  secret_verifier TEXT NOT NULL,
+  state TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  consumed_at INTEGER,
+  consumed_by_device_id TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_pairing_invitations_space_state
+  ON pairing_invitations(space_id, state, expires_at);
+"#,
+    },
+];
 
 pub fn open_database(path: impl AsRef<Path>) -> rusqlite::Result<Connection> {
     let mut connection = Connection::open(path)?;
@@ -174,6 +196,7 @@ mod tests {
         "app_metadata",
         "clipboard_items",
         "devices",
+        "pairing_invitations",
         "schema_migrations",
         "spaces",
         "sync_heads",
@@ -222,10 +245,13 @@ mod tests {
             })
             .expect("migration count should be readable");
 
-        assert_eq!(first.len(), 1);
-        assert_eq!(first[0].version, CURRENT_SCHEMA_VERSION);
+        assert_eq!(first.len(), MIGRATIONS.len());
+        assert_eq!(
+            first.last().map(|migration| migration.version),
+            Some(CURRENT_SCHEMA_VERSION)
+        );
         assert!(second.is_empty());
-        assert_eq!(migration_count, 1);
+        assert_eq!(migration_count, MIGRATIONS.len() as i64);
     }
 
     #[test]

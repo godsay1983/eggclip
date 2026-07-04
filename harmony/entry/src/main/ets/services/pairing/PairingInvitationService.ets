@@ -19,6 +19,7 @@ export interface PairingInvitationPayload {
   app: string;
   version: number;
   kind: string;
+  invitationId?: string;
   spaceId: string;
   spaceKeyVersion: number;
   issuerDeviceId: string;
@@ -28,6 +29,7 @@ export interface PairingInvitationPayload {
 }
 
 export interface PairingInvitationSummary {
+  invitationId?: string;
   spaceId: string;
   spaceShortId: string;
   spaceKeyVersion: number;
@@ -109,6 +111,7 @@ function parsePayloadJson(payloadText: string): PairingInvitationPayload | null 
       app: readString(value, 'app'),
       version: readNumber(value, 'version'),
       kind: readString(value, 'kind'),
+      invitationId: readOptionalString(value, 'invitationId'),
       spaceId: readString(value, 'spaceId'),
       spaceKeyVersion: readNumber(value, 'spaceKeyVersion'),
       issuerDeviceId: readString(value, 'issuerDeviceId'),
@@ -130,6 +133,9 @@ function validatePayload(payload: PairingInvitationPayload, nowMs: number): Pair
   }
   if (payload.kind !== 'pairingInvitation') {
     return invalidField('kind');
+  }
+  if (payload.invitationId !== undefined && !isUuid(payload.invitationId)) {
+    return invalidField('invitationId');
   }
   if (!isUuid(payload.spaceId)) {
     return invalidField('spaceId');
@@ -157,6 +163,7 @@ function validatePayload(payload: PairingInvitationPayload, nowMs: number): Pair
 
 function buildSummary(payload: PairingInvitationPayload, nowMs: number, payloadBytes: Uint8Array): PairingInvitationSummary {
   return {
+    invitationId: payload.invitationId,
     spaceId: payload.spaceId,
     spaceShortId: payload.spaceId.substring(payload.spaceId.length - 8),
     spaceKeyVersion: payload.spaceKeyVersion,
@@ -176,6 +183,17 @@ function confirmationCode(payloadBytes: Uint8Array): string {
 
 function readString(value: JsonObject, key: string): string {
   const field = value[key];
+  if (typeof field !== 'string') {
+    throw new Error(`invalid ${key}`);
+  }
+  return field;
+}
+
+function readOptionalString(value: JsonObject, key: string): string | undefined {
+  const field = value[key];
+  if (field === undefined) {
+    return undefined;
+  }
   if (typeof field !== 'string') {
     throw new Error(`invalid ${key}`);
   }

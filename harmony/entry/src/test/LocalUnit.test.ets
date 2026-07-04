@@ -986,13 +986,14 @@ export default function localUnitTest() {
       const result = service.parse(PAIRING_INVITATION_FIXTURE, 1700000000000);
 
       expect(result.ok).assertEqual(true);
+      expect(result.payload?.invitationId).assertEqual('018ff6f0-1111-7222-8333-123456789abc');
       expect(result.payload?.spaceId).assertEqual('018ff6ef-c394-7d08-8b99-4b7d10f2767a');
       expect(result.payload?.spaceKeyVersion).assertEqual(1);
       expect(result.payload?.pairingSecret).assertEqual('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
       expect(result.summary?.spaceShortId).assertEqual('10f2767a');
       expect(result.summary?.issuerShortFingerprint).assertEqual('11qYAYKx');
       expect(result.summary?.expiresInSeconds).assertEqual(300);
-      expect(result.summary?.confirmationCode).assertEqual('066442');
+      expect(result.summary?.confirmationCode).assertEqual('574920');
     });
 
     it('rejectsInvalidOrExpiredPairingInvitationUri', 0, () => {
@@ -1015,7 +1016,7 @@ export default function localUnitTest() {
       const parsed = store.parseCurrent(1700000000000);
 
       expect(parsed.state).assertEqual(PairingStoreState.READY);
-      expect(parsed.summary?.confirmationCode).assertEqual('066442');
+      expect(parsed.summary?.confirmationCode).assertEqual('574920');
       expect(parsed.statusText.indexOf('下一步') >= 0).assertEqual(true);
 
       const cleared = store.clear();
@@ -1035,7 +1036,7 @@ export default function localUnitTest() {
       const pending = store.confirmCodeMatched();
 
       expect(pending.state).assertEqual(PairingStoreState.PENDING);
-      expect(pending.summary?.confirmationCode).assertEqual('066442');
+      expect(pending.summary?.confirmationCode).assertEqual('574920');
       expect(pending.statusText.indexOf('等待接入身份交换') >= 0).assertEqual(true);
       expect(pending.error === null).assertEqual(true);
     });
@@ -1047,7 +1048,7 @@ export default function localUnitTest() {
       expect(parsed.state).assertEqual(PairingStoreState.READY);
       expect(parsed.invitationText).assertEqual(PAIRING_INVITATION_FIXTURE);
       expect(parsed.summary?.spaceShortId).assertEqual('10f2767a');
-      expect(parsed.summary?.confirmationCode).assertEqual('066442');
+      expect(parsed.summary?.confirmationCode).assertEqual('574920');
 
       const expired = store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000300000);
       expect(expired.state).assertEqual(PairingStoreState.ERROR);
@@ -1078,7 +1079,7 @@ export default function localUnitTest() {
   });
 }
 
-const PAIRING_INVITATION_FIXTURE: string = 'eggclip://pair?p=eyJhcHAiOiJlZ2djbGlwIiwidmVyc2lvbiI6MSwia2luZCI6InBhaXJpbmdJbnZpdGF0aW9uIiwic3BhY2VJZCI6IjAxOGZmNmVmLWMzOTQtN2QwOC04Yjk5LTRiN2QxMGYyNzY3YSIsInNwYWNlS2V5VmVyc2lvbiI6MSwiaXNzdWVyRGV2aWNlSWQiOiIwMThmZjZmMC0wYTNiLTc4MTUtYTRkYi0zZWI2ZTIzZDkzMzgiLCJpc3N1ZXJJZGVudGl0eVB1YmxpY0tleSI6IjExcVlBWUt4Q3JmVlNfN1R5V1FIT2c3aGN2UGFwaU1scndJYWFQY0hVUm8iLCJwYWlyaW5nU2VjcmV0IjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsImV4cGlyZXNBdE1zIjoxNzAwMDAwMzAwMDAwfQ';
+const PAIRING_INVITATION_FIXTURE: string = 'eggclip://pair?p=eyJhcHAiOiJlZ2djbGlwIiwidmVyc2lvbiI6MSwia2luZCI6InBhaXJpbmdJbnZpdGF0aW9uIiwiaW52aXRhdGlvbklkIjoiMDE4ZmY2ZjAtMTExMS03MjIyLTgzMzMtMTIzNDU2Nzg5YWJjIiwic3BhY2VJZCI6IjAxOGZmNmVmLWMzOTQtN2QwOC04Yjk5LTRiN2QxMGYyNzY3YSIsInNwYWNlS2V5VmVyc2lvbiI6MSwiaXNzdWVyRGV2aWNlSWQiOiIwMThmZjZmMC0wYTNiLTc4MTUtYTRkYi0zZWI2ZTIzZDkzMzgiLCJpc3N1ZXJJZGVudGl0eVB1YmxpY0tleSI6IjExcVlBWUt4Q3JmVlNfN1R5V1FIT2c3aGN2UGFwaU1scndJYWFwY0hVcm8iLCJwYWlyaW5nU2VjcmV0IjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsImV4cGlyZXNBdE1zIjoxNzAwMDAwMzAwMDAwfQ';
 
 const BAD_PAIRING_SECRET_INVITATION_FIXTURE: string = 'eggclip://pair?p=eyJhcHAiOiJlZ2djbGlwIiwidmVyc2lvbiI6MSwia2luZCI6InBhaXJpbmdJbnZpdGF0aW9uIiwic3BhY2VJZCI6IjAxOGZmNmVmLWMzOTQtN2QwOC04Yjk5LTRiN2QxMGYyNzY3YSIsInNwYWNlS2V5VmVyc2lvbiI6MSwiaXNzdWVyRGV2aWNlSWQiOiIwMThmZjZmMC0wYTNiLTc4MTUtYTRkYi0zZWI2ZTIzZDkzMzgiLCJpc3N1ZXJJZGVudGl0eVB1YmxpY0tleSI6IjExcVlBWUt4Q3JmVlNfN1R5V1FIT2c3aGN2UGFwaU1scndJYWFQY0hVUm8iLCJwYWlyaW5nU2VjcmV0IjoiQUEiLCJleHBpcmVzQXRNcyI6MTcwMDAwMDMwMDAwMH0';
 

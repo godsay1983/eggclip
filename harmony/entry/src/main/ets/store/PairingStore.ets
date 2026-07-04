@@ -127,6 +127,7 @@ function cloneSummary(summary: PairingInvitationSummary | null): PairingInvitati
     return null;
   }
   return {
+    invitationId: summary.invitationId,
     spaceId: summary.spaceId,
     spaceShortId: summary.spaceShortId,
     spaceKeyVersion: summary.spaceKeyVersion,
