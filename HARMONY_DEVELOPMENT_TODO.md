@@ -204,6 +204,7 @@ harmony/entry/src/main/ets/
 - [ ] 读取 `protocol/test-vectors/`。
   - [x] ArkTS 已镜像消费协议 JSON fixture。
   - [x] ArkTS 已镜像校验 crypto 向量形状、字节长度、transcript 和 nonce 规则。
+  - [x] 新增共享 crypto fixture 生成脚本，从 `protocol/test-vectors/crypto/` 生成 ArkTS 单测 fixture 模块。
   - [ ] ArkTS 测试直接从 `protocol/test-vectors/` 读取 crypto 文件。
 - [ ] ArkTS 实现通过 Ed25519 签名/验签向量。
   - [x] 本地 SDK 类型已确认存在 CryptoFramework/HUKS Ed25519 相关入口。

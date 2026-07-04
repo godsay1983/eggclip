@@ -5,6 +5,7 @@ pub mod clipboard;
 pub mod crypto;
 pub mod discovery;
 pub mod history;
+pub mod identity;
 pub mod protocol;
 pub mod settings;
 pub mod storage;

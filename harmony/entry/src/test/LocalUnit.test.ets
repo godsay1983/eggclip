@@ -1,6 +1,14 @@
 import { describe, expect, it } from '@ohos/hypium';
 import { ClipboardBridgeService } from '../main/ets/services/clipboard/ClipboardBridgeService';
 import {
+  AES_256_GCM_VECTOR,
+  ED25519_SIGNATURE_VECTOR,
+  HKDF_SHA256_VECTOR,
+  REPLAY_COUNTER_VECTOR,
+  SESSION_KEYS_VECTOR,
+  X25519_SHARED_SECRET_VECTOR
+} from './ProtocolCryptoFixtures';
+import {
   ProtocolHandshakeFrameOutcome,
   ProtocolHandshakeTransportSession,
   ProtocolTransportFrameError,
@@ -961,15 +969,3 @@ const UNKNOWN_VERSION_FIXTURE: string = '{"version":2,"type":"CLIENT_HELLO","mes
 const POST_AUTH_PLAINTEXT_FIXTURE: string = '{"version":1,"type":"ITEM_LIVE","messageId":"018ff6f3-0d8c-7d1e-a38a-f308c64de79f","sessionCounter":12,"payload":{"content":"must not be plaintext after auth"}}';
 
 const PRE_AUTH_CIPHERTEXT_FIXTURE: string = '{"version":1,"type":"CLIENT_HELLO","messageId":"018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01","sessionCounter":0,"ciphertext":{"algorithm":"AES-256-GCM","keyId":"session-v1-client-to-server","nonce":"DDDDDDDDDDDDDDDD","aad":"EEEEEEEEEEEEEEEE","body":"FFFFFFFFFFFFFFFF","tag":"GGGGGGGGGGGGGGGGGGGGGG"}}';
-
-const ED25519_SIGNATURE_VECTOR: string = '{"algorithm":"Ed25519","source":"RFC 8032 test 1","privateSeed":"nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A","publicKey":"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo","message":"","signature":"5VZDAMNgrHKQhuLMgG6CioSHfx645dl02HPgZSJJAVVfuIIVkKM7rMYeOXAc-bRr0lv18FlbviRlUUFDjnoQCw"}';
-
-const X25519_SHARED_SECRET_VECTOR: string = '{"algorithm":"X25519","source":"RFC 7748 section 6.1","alicePrivateKey":"dwdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LCo","alicePublicKey":"hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo","bobPrivateKey":"XasIfmJKikt54X-Lg4AO5m87sSkmGLb9HC-LJ_-I4Os","bobPublicKey":"3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08","sharedSecret":"Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I"}';
-
-const HKDF_SHA256_VECTOR: string = '{"algorithm":"HKDF-SHA-256","source":"RFC 5869 test case 1","ikm":"CwsLCwsLCwsLCwsLCwsLCwsLCwsLCw","salt":"AAECAwQFBgcICQoLDA","info":"8PHy8_T19vf4-Q","length":42,"prk":"B3cJNiwuMt8N3D8NxHu6Y5C2xzu1D5wxIuyEStfCs-U","okm":"PLJfJfqs1XqQQ09k0DYvKi0tCpDPGlpMXbAtVuzExb80AHII1biHGFhl"}';
-
-const AES_256_GCM_VECTOR: string = '{"algorithm":"AES-256-GCM","source":"Synthetic AES-256-GCM zero key/nonce/plaintext test-only vector","key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","nonce":"AAAAAAAAAAAAAAAA","aad":"","plaintext":"AAAAAAAAAAAAAAAAAAAAAA","ciphertext":"zqdAPU1ga24HTsXTuvOdGA","tag":"0NHIp5mZa_AmW5i11Iq5GQ","tamperedTag":"0NHIp5mZa_AmW5i11Iq5GA"}';
-
-const SESSION_KEYS_VECTOR: string = '{"algorithm":"EggClip-Session-Keys-v1","source":"Synthetic test-only session key derivation vector","sharedSecret":"Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I","transcriptSalt":"RWdnQ2xpcCB2MSB0ZXN0IGhhbmRzaGFrZSBzYWx0","clientToServerInfo":"EggClip v1 session key client-to-server","serverToClientInfo":"EggClip v1 session key server-to-client","clientToServerKey":"_CuE_7SfzdShnxyzHQy4IJ0zQjMAUVq-tynBZ2lBPYQ","serverToClientKey":"TSo91xPhGNnQb2KPW6xyjJJFeHsimcUss0Rm2Tnbo2M","counter":12,"clientToServerNonce":"YzJzAQAAAAAAAAAM","serverToClientNonce":"czJjAQAAAAAAAAAM"}';
-
-const REPLAY_COUNTER_VECTOR: string = '{"algorithm":"EggClip-Session-Counter-v1","accepted":[1,2,5],"rejected":[{"counter":2,"reason":"duplicate"},{"counter":4,"reason":"old"}]}';
