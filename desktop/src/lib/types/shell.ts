@@ -103,9 +103,21 @@ export interface SyncSpaceSummary {
   createdAt: string;
 }
 
+export interface PairingInvitationSummary {
+  spaceId: string;
+  spaceDisplayName: string;
+  invitationString: string;
+  expiresAt: string;
+  expiresInSeconds: number;
+  issuerDeviceId: string;
+  issuerShortFingerprint: string;
+  confirmationCode: string;
+}
+
 export interface SyncSpaceState {
-  state: "idle" | "loading" | "creating" | "ready" | "error";
+  state: "idle" | "loading" | "creating" | "inviting" | "ready" | "error";
   spaces: SyncSpaceSummary[];
+  invitation: PairingInvitationSummary | null;
   errorMessage: string | null;
 }
 

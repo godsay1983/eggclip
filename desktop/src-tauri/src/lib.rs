@@ -76,6 +76,7 @@ pub fn run() {
             history::get_clipboard_history_used,
             history::list_clipboard_history_preview,
             pairing::create_local_sync_space,
+            pairing::create_pairing_invitation,
             pairing::list_local_sync_spaces,
             identity::load_local_device_identity,
             settings::load_app_settings,

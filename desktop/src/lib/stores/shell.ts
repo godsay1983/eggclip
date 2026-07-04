@@ -1,6 +1,7 @@
 import { derived, writable } from "svelte/store";
 import {
   connectPocPeer,
+  createPairingInvitation,
   createLocalSyncSpace,
   createInitialShellSnapshot,
   captureClipboardHistoryText,
@@ -289,6 +290,7 @@ export const shellSnapshot = {
         syncSpace: {
           state: spaces.length > 0 ? "ready" : "idle",
           spaces,
+          invitation: state.syncSpace.invitation,
           errorMessage: null,
         },
       }));
@@ -298,6 +300,7 @@ export const shellSnapshot = {
         syncSpace: {
           ...state.syncSpace,
           state: "error",
+          invitation: state.syncSpace.invitation,
           errorMessage: error instanceof Error ? error.message : "无法读取同步空间",
         },
       }));
@@ -319,6 +322,7 @@ export const shellSnapshot = {
         syncSpace: {
           state: "ready",
           spaces: [space, ...state.syncSpace.spaces],
+          invitation: null,
           errorMessage: null,
         },
         connection: {
@@ -333,12 +337,54 @@ export const shellSnapshot = {
         syncSpace: {
           ...state.syncSpace,
           state: "error",
+          invitation: state.syncSpace.invitation,
           errorMessage: error instanceof Error ? error.message : "无法创建同步空间",
         },
         connection: {
           state: "authFailed",
           title: "创建同步空间失败",
           description: error instanceof Error ? error.message : "无法创建同步空间",
+        },
+      }));
+    }
+  },
+  async createPairingInvitation(spaceId: string) {
+    snapshot.update((state) => ({
+      ...state,
+      syncSpace: {
+        ...state.syncSpace,
+        state: "inviting",
+        errorMessage: null,
+      },
+    }));
+    try {
+      const invitation = await createPairingInvitation(spaceId);
+      snapshot.update((state) => ({
+        ...state,
+        syncSpace: {
+          ...state.syncSpace,
+          state: "ready",
+          invitation,
+          errorMessage: null,
+        },
+        connection: {
+          state: "connecting",
+          title: "已生成配对邀请",
+          description: `邀请 ${invitation.expiresInSeconds / 60} 分钟内有效，确认码 ${invitation.confirmationCode}`,
+        },
+      }));
+    } catch (error) {
+      snapshot.update((state) => ({
+        ...state,
+        syncSpace: {
+          ...state.syncSpace,
+          state: "error",
+          errorMessage: error instanceof Error ? error.message : "无法生成配对邀请",
+        },
+        connection: {
+          state: "authFailed",
+          title: "生成配对邀请失败",
+          description: error instanceof Error ? error.message : "无法生成配对邀请",
         },
       }));
     }

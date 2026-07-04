@@ -621,14 +621,30 @@ footer {
   padding: 11px 12px;
 }
 
+.space-card-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.space-card-actions .text-button {
+  min-height: 26px;
+  padding: 5px 9px;
+  font-size: 11px;
+}
+
 .space-card strong,
-.space-empty strong {
+.space-empty strong,
+.invitation-card strong {
   color: var(--text);
   font-size: 13px;
 }
 
 .space-card p,
-.space-empty p {
+.space-empty p,
+.invitation-card p {
   margin-top: 4px;
   color: var(--muted);
   font-size: 11px;
@@ -647,6 +663,32 @@ footer {
 
 .space-empty {
   padding: 12px;
+}
+
+.invitation-card {
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid rgba(244, 196, 48, 0.42);
+  border-radius: 16px;
+  background: rgba(255, 248, 231, 0.72);
+}
+
+.confirmation-code {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 9px 10px;
+  border-radius: 14px;
+  color: var(--muted);
+  background: var(--control);
+  font-size: 11px;
+}
+
+.confirmation-code strong {
+  font-size: 18px;
+  letter-spacing: 0.16em;
 }
 
 .setting-grid {
@@ -951,6 +993,10 @@ footer {
   background: rgba(57, 51, 41, 0.62);
 }
 
+:root[data-theme="dark"] .invitation-card {
+  background: rgba(57, 51, 41, 0.58);
+}
+
 :root[data-theme="dark"] .status-label.online {
   color: #b8f1c9;
   background: rgba(120, 192, 145, 0.14);
@@ -1010,6 +1056,10 @@ footer {
 
   :root:not([data-theme="light"]):not([data-theme="dark"]) .space-summary {
     background: rgba(57, 51, 41, 0.62);
+  }
+
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .invitation-card {
+    background: rgba(57, 51, 41, 0.58);
   }
 
   :root:not([data-theme="light"]):not([data-theme="dark"]) .status-label.online {

@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import type {
   ClipboardPreview,
   HistoryItemSummary,
+  PairingInvitationSummary,
   PocDiagnostics,
   PocRecentEndpoint,
   PocTransportSummary,
@@ -83,6 +84,17 @@ interface SyncSpaceSummaryDto {
   createdAtMs: number;
 }
 
+interface PairingInvitationSummaryDto {
+  spaceId: string;
+  spaceDisplayName: string;
+  invitation: string;
+  expiresAtMs: number;
+  expiresInSeconds: number;
+  issuerDeviceId: string;
+  issuerShortFingerprint: string;
+  confirmationCode: string;
+}
+
 export function createInitialShellSnapshot(): ShellSnapshot {
   return {
     connection: {
@@ -131,6 +143,7 @@ export function createInitialShellSnapshot(): ShellSnapshot {
     syncSpace: {
       state: "idle",
       spaces: [],
+      invitation: null,
       errorMessage: null,
     },
     syncEnabled: true,
@@ -201,6 +214,15 @@ export async function createLocalSyncSpace(displayName: string): Promise<SyncSpa
 export async function listLocalSyncSpaces(): Promise<SyncSpaceSummary[]> {
   const spaces = await invoke<SyncSpaceSummaryDto[]>("list_local_sync_spaces");
   return spaces.map(toSyncSpaceSummary);
+}
+
+export async function createPairingInvitation(
+  spaceId: string,
+): Promise<PairingInvitationSummary> {
+  const invitation = await invoke<PairingInvitationSummaryDto>("create_pairing_invitation", {
+    spaceId,
+  });
+  return toPairingInvitationSummary(invitation);
 }
 
 export async function startPocTransport(): Promise<PocTransportSummary> {
@@ -332,6 +354,25 @@ function toSyncSpaceSummary(space: SyncSpaceSummaryDto): SyncSpaceSummary {
       minute: "2-digit",
       second: "2-digit",
     }),
+  };
+}
+
+function toPairingInvitationSummary(
+  invitation: PairingInvitationSummaryDto,
+): PairingInvitationSummary {
+  return {
+    spaceId: invitation.spaceId,
+    spaceDisplayName: invitation.spaceDisplayName,
+    invitationString: invitation.invitation,
+    expiresAt: new Date(invitation.expiresAtMs).toLocaleTimeString("zh-CN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }),
+    expiresInSeconds: invitation.expiresInSeconds,
+    issuerDeviceId: invitation.issuerDeviceId,
+    issuerShortFingerprint: invitation.issuerShortFingerprint,
+    confirmationCode: invitation.confirmationCode,
   };
 }
 

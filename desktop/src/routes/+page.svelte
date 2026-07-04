@@ -266,10 +266,37 @@
                   <strong>{space.displayName}</strong>
                   <p>空间 #{space.shortId} · key v{space.keyVersion} · {space.createdAt}</p>
                 </div>
-                <span>{space.keyRefKind === "credential" ? "凭据库" : "待检查"}</span>
+                <div class="space-card-actions">
+                  <span>{space.keyRefKind === "credential" ? "凭据库" : "待检查"}</span>
+                  <button
+                    class="text-button"
+                    type="button"
+                    disabled={$shellSnapshot.syncSpace.state === "inviting"}
+                    on:click={() => shellSnapshot.createPairingInvitation(space.id)}
+                  >
+                    生成邀请
+                  </button>
+                </div>
               </article>
             {/each}
           </div>
+          {#if $shellSnapshot.syncSpace.invitation}
+            <div class="invitation-card">
+              <strong>配对邀请已生成</strong>
+              <p>
+                {$shellSnapshot.syncSpace.invitation.spaceDisplayName} ·
+                {$shellSnapshot.syncSpace.invitation.expiresInSeconds / 60} 分钟内有效 ·
+                到期 {$shellSnapshot.syncSpace.invitation.expiresAt}
+              </p>
+              <div class="confirmation-code">
+                <span>人工确认码</span>
+                <strong>{$shellSnapshot.syncSpace.invitation.confirmationCode}</strong>
+              </div>
+              <p>
+                发行设备 #{$shellSnapshot.syncSpace.invitation.issuerShortFingerprint}。邀请字符串包含一次性秘密，后续会接入二维码和安全复制入口，当前不在界面展开明文。
+              </p>
+            </div>
+          {/if}
         {/if}
       </section>
 
