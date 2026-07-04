@@ -195,6 +195,8 @@ harmony/entry/src/main/ets/
 - [ ] 验证目标 SDK 上 Ed25519、X25519、HKDF 和 AES-GCM 的具体 API。
 - [ ] 生成 Ed25519 长期设备身份。
 - [ ] 将私钥和 `spaceKey` 保存到 HUKS 或等效系统安全存储。
+  - [x] 建立 `spaceKey` HUKS alias/引用生成与校验边界；RDB repository 只接收 `huks://` 引用，不保存裸 key。
+  - [ ] 真实 HUKS import/generate 和读取流程待真机验证后接入。
 - [ ] RDB 只保存公钥、密钥版本和安全存储 alias。
 - [ ] 实现密钥存在、缺失、损坏和重新初始化路径。
 - [ ] 禁止日志输出密钥、邀请、正文、HMAC 摘要和完整帧。

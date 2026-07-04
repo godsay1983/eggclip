@@ -190,7 +190,7 @@ desktop/
   - [x] 身份密钥接入 Windows Credential Manager 存取；Tauri 命令已使用凭据库创建/加载本机身份。
 - [ ] 使用系统凭据库保存私钥和 `spaceKey`。
   - [x] 本机 Ed25519 身份 seed 已保存到 Windows Credential Manager，SQLite 只保存公钥和 `credential://` 引用。
-  - [ ] `spaceKey` 保存仍待配对/空间创建流程接入。
+  - [x] `spaceKey` 已接入 Windows Credential Manager 保存和加载边界；SQLite 只保存 `credential://` 引用。
 - [ ] SQLite 只保存公钥、密钥版本和加密引用。
 - [ ] 实现密钥加载失败、凭据缺失和凭据删除处理。
 - [ ] 日志过滤器拒绝输出正文、摘要、邀请和密钥。
@@ -198,6 +198,8 @@ desktop/
 ### 邀请和配对
 
 - [ ] 创建同步空间并生成 256 位 `spaceKey`。
+  - [x] 后端已提供创建本地同步空间命令：生成 256-bit `spaceKey`、保存到 Windows Credential Manager、写入 `spaces` 元数据。
+  - [ ] 创建空间 UI 和默认空间初始化策略待接入。
 - [ ] 创建 5 分钟过期、一次性使用的高熵邀请。
 - [ ] 生成二维码内容和可复制邀请字符串。
 - [ ] 六位确认码只用于双方人工核对，不作为唯一秘密。

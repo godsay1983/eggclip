@@ -6,18 +6,12 @@ use std::collections::HashMap;
 use rusqlite::Connection;
 use serde::Serialize;
 use uuid::Uuid;
-#[cfg(windows)]
-use windows_sys::Win32::{
-    Foundation::{GetLastError, ERROR_NOT_FOUND},
-    Security::Credentials::{
-        CredFree, CredReadW, CredWriteW, CREDENTIALW, CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC,
-    },
-};
 
 use crate::{
     crypto::{
         encode_base64url, Ed25519Identity, ED25519_PRIVATE_SEED_BYTES, ED25519_PUBLIC_KEY_BYTES,
     },
+    secret_store::{SecretBytesStore, SecretStoreError},
     settings::{database_path, now_ms},
     storage::{
         open_database,
@@ -82,9 +76,9 @@ pub fn load_local_device_identity(
 ) -> Result<LocalDeviceIdentitySummary, String> {
     let path = database_path(&app)?;
     #[cfg(windows)]
-    let mut store = WindowsCredentialIdentitySecretStore;
+    let mut store = crate::secret_store::WindowsCredentialSecretStore;
     #[cfg(not(windows))]
-    let mut store = UnavailableIdentitySecretStore;
+    let mut store = crate::secret_store::UnavailableSecretStore;
     ensure_local_device_identity_at_path(&path, &mut store, now_ms()?)
         .map_err(|error| format!("无法加载本机设备身份：{error}"))
 }
@@ -198,55 +192,28 @@ fn validate_public_key(value: &str) -> Result<(), IdentityError> {
     Ok(())
 }
 
-fn parse_created_at(value: &str) -> Result<u64, IdentityError> {
-    value
-        .parse::<u64>()
-        .map_err(|_| IdentityError::InvalidMetadata("identity createdAt".to_string()))
-}
-
-#[cfg(windows)]
-pub struct WindowsCredentialIdentitySecretStore;
-
-#[cfg(windows)]
-impl IdentitySecretStore for WindowsCredentialIdentitySecretStore {
+impl<T: SecretBytesStore> IdentitySecretStore for T {
     fn load_seed(
         &self,
         private_key_ref: &str,
     ) -> Result<Option<[u8; ED25519_PRIVATE_SEED_BYTES]>, IdentityError> {
-        let target_name = wide_null(private_key_ref);
-        let mut credential: *mut CREDENTIALW = std::ptr::null_mut();
-        let read_ok =
-            unsafe { CredReadW(target_name.as_ptr(), CRED_TYPE_GENERIC, 0, &mut credential) };
-
-        if read_ok == 0 {
-            let error = unsafe { GetLastError() };
-            if error == ERROR_NOT_FOUND {
-                return Ok(None);
-            }
-            return Err(IdentityError::KeyStore(format!(
-                "Windows Credential Manager read failed: {error}"
-            )));
-        }
-
-        let credential = CredentialHandle(credential);
-        let credential_ref = unsafe { &*credential.0 };
-        if credential_ref.CredentialBlobSize as usize != ED25519_PRIVATE_SEED_BYTES {
+        let Some(secret) = self
+            .load_secret(private_key_ref)
+            .map_err(identity_secret_store_error)?
+        else {
+            return Ok(None);
+        };
+        if secret.len() != ED25519_PRIVATE_SEED_BYTES {
             return Err(IdentityError::KeyStore(
-                "stored identity seed has invalid length".to_string(),
+                SecretStoreError::InvalidLength {
+                    actual: secret.len(),
+                    expected: ED25519_PRIVATE_SEED_BYTES,
+                }
+                .to_string(),
             ));
         }
-        if credential_ref.CredentialBlob.is_null() {
-            return Err(IdentityError::MissingPrivateKey);
-        }
-
         let mut seed = [0u8; ED25519_PRIVATE_SEED_BYTES];
-        let source = unsafe {
-            std::slice::from_raw_parts(
-                credential_ref.CredentialBlob,
-                credential_ref.CredentialBlobSize as usize,
-            )
-        };
-        seed.copy_from_slice(source);
+        seed.copy_from_slice(&secret);
         Ok(Some(seed))
     }
 
@@ -255,72 +222,19 @@ impl IdentitySecretStore for WindowsCredentialIdentitySecretStore {
         private_key_ref: &str,
         seed: [u8; ED25519_PRIVATE_SEED_BYTES],
     ) -> Result<(), IdentityError> {
-        let mut target_name = wide_null(private_key_ref);
-        let mut user_name = wide_null("EggClip");
-        let mut credential_blob = seed;
-        let credential = CREDENTIALW {
-            Type: CRED_TYPE_GENERIC,
-            TargetName: target_name.as_mut_ptr(),
-            CredentialBlobSize: credential_blob.len() as u32,
-            CredentialBlob: credential_blob.as_mut_ptr(),
-            Persist: CRED_PERSIST_LOCAL_MACHINE,
-            UserName: user_name.as_mut_ptr(),
-            ..Default::default()
-        };
-
-        let write_ok = unsafe { CredWriteW(&credential, 0) };
-        credential_blob.fill(0);
-        if write_ok == 0 {
-            let error = unsafe { GetLastError() };
-            return Err(IdentityError::KeyStore(format!(
-                "Windows Credential Manager write failed: {error}"
-            )));
-        }
-
-        Ok(())
+        self.save_secret(private_key_ref, &seed)
+            .map_err(identity_secret_store_error)
     }
 }
 
-#[cfg(windows)]
-struct CredentialHandle(*mut CREDENTIALW);
-
-#[cfg(windows)]
-impl Drop for CredentialHandle {
-    fn drop(&mut self) {
-        if !self.0.is_null() {
-            unsafe { CredFree(self.0.cast()) };
-        }
-    }
+fn identity_secret_store_error(error: SecretStoreError) -> IdentityError {
+    IdentityError::KeyStore(error.to_string())
 }
 
-#[cfg(windows)]
-fn wide_null(value: &str) -> Vec<u16> {
-    value.encode_utf16().chain(std::iter::once(0)).collect()
-}
-
-#[cfg(not(windows))]
-struct UnavailableIdentitySecretStore;
-
-#[cfg(not(windows))]
-impl IdentitySecretStore for UnavailableIdentitySecretStore {
-    fn load_seed(
-        &self,
-        _private_key_ref: &str,
-    ) -> Result<Option<[u8; ED25519_PRIVATE_SEED_BYTES]>, IdentityError> {
-        Err(IdentityError::KeyStore(
-            "system credential store is not wired to the Tauri command yet".to_string(),
-        ))
-    }
-
-    fn save_seed(
-        &mut self,
-        _private_key_ref: &str,
-        _seed: [u8; ED25519_PRIVATE_SEED_BYTES],
-    ) -> Result<(), IdentityError> {
-        Err(IdentityError::KeyStore(
-            "system credential store is not wired to the Tauri command yet".to_string(),
-        ))
-    }
+fn parse_created_at(value: &str) -> Result<u64, IdentityError> {
+    value
+        .parse::<u64>()
+        .map_err(|_| IdentityError::InvalidMetadata("identity createdAt".to_string()))
 }
 
 #[cfg(test)]

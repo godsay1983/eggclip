@@ -6,7 +6,9 @@ pub mod crypto;
 pub mod discovery;
 pub mod history;
 pub mod identity;
+pub mod pairing;
 pub mod protocol;
+pub mod secret_store;
 pub mod settings;
 pub mod storage;
 pub mod sync;
@@ -73,6 +75,7 @@ pub fn run() {
             history::delete_clipboard_history_item,
             history::get_clipboard_history_used,
             history::list_clipboard_history_preview,
+            pairing::create_local_sync_space,
             identity::load_local_device_identity,
             settings::load_app_settings,
             settings::save_app_settings,

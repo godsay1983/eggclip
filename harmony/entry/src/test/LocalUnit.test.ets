@@ -29,6 +29,12 @@ import {
   sessionNonce
 } from '../main/ets/services/crypto/CryptoVectorService';
 import {
+  INITIAL_SPACE_KEY_VERSION,
+  SPACE_KEY_BYTES,
+  SpaceKeyReferenceError,
+  SpaceKeyReferenceService
+} from '../main/ets/services/crypto/SpaceKeyReferenceService';
+import {
   ClipboardValidationError,
   EGGCLIP_MDNS_DISCOVERY_TYPE,
   EGGCLIP_MDNS_SERVICE_TYPE,
@@ -503,6 +509,43 @@ export default function localUnitTest() {
         themeMode: ThemeMode.SYSTEM
       }, 1700000000400)).assertEqual(null);
       expect(settings.loadAppSettings().args[0]).assertEqual('appSettings');
+    });
+
+    it('buildsSpaceKeyHuksAliasWithoutPersistingRawKey', 0, () => {
+      const spaceId = '018ff6ef-c394-7d08-8b99-4b7d10f2767a';
+      const service = new SpaceKeyReferenceService();
+      const alias = service.buildHuksAlias(spaceId, INITIAL_SPACE_KEY_VERSION);
+
+      expect(alias.ok).assertEqual(true);
+      expect(alias.alias).assertEqual(`huks://eggclip/space-key/${spaceId}/v1`);
+      expect(service.inspectImportedSpaceKey(new Uint8Array(SPACE_KEY_BYTES)).ok).assertEqual(true);
+      expect(service.inspectImportedSpaceKey(new Uint8Array(SPACE_KEY_BYTES - 1)).error)
+        .assertEqual(SpaceKeyReferenceError.INVALID_KEY_LENGTH);
+      expect(service.buildHuksAlias('not-a-uuid', INITIAL_SPACE_KEY_VERSION).error)
+        .assertEqual(SpaceKeyReferenceError.INVALID_SPACE_ID);
+      expect(service.buildHuksAlias(spaceId, 0).error)
+        .assertEqual(SpaceKeyReferenceError.INVALID_KEY_VERSION);
+
+      const command = new SpaceRepository().upsert({
+        space: {
+          spaceId,
+          displayName: '默认空间',
+          keyVersion: INITIAL_SPACE_KEY_VERSION,
+          state: DomainSpaceState.ACTIVE,
+          createdAt: 1700000000000
+        },
+        encryptedSpaceKeyRef: alias.alias,
+        updatedAt: 1700000000000
+      });
+
+      expect(command.args[2]).assertEqual(alias.alias);
+      let containsRawKey = false;
+      for (const arg of command.args) {
+        if (arg instanceof Uint8Array) {
+          containsRawKey = true;
+        }
+      }
+      expect(containsRawKey).assertEqual(false);
     });
 
     it('buildsRetentionRepositoryCommandsForHistoryPolicy', 0, () => {
