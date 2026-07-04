@@ -1,7 +1,10 @@
 import { decodeBase64Url } from '../crypto/CryptoVectorService';
 import {
+  AuthRole,
+  AuthTranscriptInput,
   Capability,
-  HelloPayload
+  HelloPayload,
+  canonicalAuthTranscript
 } from '../../models/ProtocolModels';
 import { PairingInvitationPayload } from './PairingInvitationService';
 
@@ -12,6 +15,7 @@ export enum PairingHandshakeDraftError {
   MISSING_PENDING_INVITATION = 'missingPendingInvitation',
   MISSING_INVITATION_ID = 'missingInvitationId',
   EXPIRED_INVITATION = 'expiredInvitation',
+  SERVER_HELLO_MISMATCH = 'serverHelloMismatch',
   INVALID_FIELD = 'invalidField'
 }
 
@@ -29,6 +33,18 @@ export interface PairingHandshakeDraft {
 export interface PairingHandshakeDraftResult {
   ok: boolean;
   draft?: PairingHandshakeDraft;
+  error?: PairingHandshakeDraftError;
+  field?: string;
+}
+
+export interface PairingAuthTranscriptDraft {
+  input: AuthTranscriptInput;
+  canonicalTranscript: string;
+}
+
+export interface PairingAuthTranscriptDraftResult {
+  ok: boolean;
+  transcript?: PairingAuthTranscriptDraft;
   error?: PairingHandshakeDraftError;
   field?: string;
 }
@@ -101,10 +117,62 @@ export class PairingHandshakeDraftService {
       }
     };
   }
+
+  buildClientAuthTranscriptDraft(
+    draft: PairingHandshakeDraft,
+    serverHelloPayload: HelloPayload
+  ): PairingAuthTranscriptDraftResult {
+    if (serverHelloPayload.spaceId !== draft.spaceId) {
+      return mismatch('spaceId');
+    }
+    if (serverHelloPayload.deviceId !== draft.remoteDeviceId) {
+      return mismatch('deviceId');
+    }
+    if (serverHelloPayload.identityPublicKey !== draft.remoteIdentityPublicKey) {
+      return mismatch('identityPublicKey');
+    }
+    if (!hasBase64UrlLength(serverHelloPayload.ephemeralPublicKey, EPHEMERAL_PUBLIC_KEY_BYTES)) {
+      return invalidTranscriptField('ephemeralPublicKey');
+    }
+    if (serverHelloPayload.capabilities.indexOf(Capability.TEXT_PLAIN) < 0) {
+      return invalidTranscriptField('capabilities');
+    }
+
+    const input: AuthTranscriptInput = {
+      role: AuthRole.CLIENT,
+      spaceId: draft.spaceId,
+      localDeviceId: draft.clientHelloPayload.deviceId,
+      remoteDeviceId: draft.remoteDeviceId,
+      localIdentityPublicKey: draft.clientHelloPayload.identityPublicKey,
+      remoteIdentityPublicKey: draft.remoteIdentityPublicKey,
+      localEphemeralPublicKey: draft.clientHelloPayload.ephemeralPublicKey,
+      remoteEphemeralPublicKey: serverHelloPayload.ephemeralPublicKey,
+      pairingContext: draft.pairingContext
+    };
+    const canonicalTranscript = canonicalAuthTranscript(input);
+    if (canonicalTranscript === null) {
+      return invalidTranscriptField('transcript');
+    }
+    return {
+      ok: true,
+      transcript: {
+        input,
+        canonicalTranscript
+      }
+    };
+  }
 }
 
 function invalidField(field: string): PairingHandshakeDraftResult {
   return { ok: false, error: PairingHandshakeDraftError.INVALID_FIELD, field };
+}
+
+function invalidTranscriptField(field: string): PairingAuthTranscriptDraftResult {
+  return { ok: false, error: PairingHandshakeDraftError.INVALID_FIELD, field };
+}
+
+function mismatch(field: string): PairingAuthTranscriptDraftResult {
+  return { ok: false, error: PairingHandshakeDraftError.SERVER_HELLO_MISMATCH, field };
 }
 
 function hasBase64UrlLength(value: string, expectedBytes: number): boolean {
