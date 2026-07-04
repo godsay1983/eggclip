@@ -247,7 +247,7 @@ harmony/entry/src/main/ets/
   - [x] 已支持输入框导入邀请并只做内存解析，不写入 RDB 或本机历史。
   - [x] PairingPage 已接入真实 PasteButton 导入入口，用户授权后读取纯文本邀请并立即校验，不保存到历史或 RDB。
   - [ ] 扫码导入入口待接入。
-- [ ] 校验 app、协议版本、spaceId、过期时间和字段长度。
+- [x] 校验 app、协议版本、spaceId、过期时间和字段长度；已覆盖 URI 总长度、payload 大小、UUID、设备名长度/控制字符、公钥和 pairingSecret 字节长度。
 - [x] 邀请页面显示邀请设备名称和公钥短指纹；对旧邀请缺失设备名时回退为“桌面端 #短指纹”。
 
 ### 安全配对

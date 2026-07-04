@@ -5,6 +5,8 @@ const INVITATION_PREFIX: string = 'eggclip://pair?p=';
 const PAIRING_SECRET_BYTES: number = 32;
 const IDENTITY_PUBLIC_KEY_BYTES: number = 32;
 const MAX_INVITATION_URI_LENGTH: number = 4096;
+const MAX_INVITATION_PAYLOAD_BYTES: number = 3072;
+const MAX_ISSUER_DEVICE_NAME_CHARS: number = 32;
 
 export enum PairingInvitationError {
   EMPTY = 'empty',
@@ -66,6 +68,9 @@ export class PairingInvitationService {
     const payloadBytes = decodeBase64Url(encodedPayload);
     if (payloadBytes === null) {
       return { ok: false, error: PairingInvitationError.INVALID_PAYLOAD };
+    }
+    if (payloadBytes.length > MAX_INVITATION_PAYLOAD_BYTES) {
+      return { ok: false, error: PairingInvitationError.TOO_LARGE };
     }
     const payloadText = decodeUtf8(payloadBytes);
     if (payloadText === null) {
@@ -237,7 +242,7 @@ function normalizeIssuerDeviceName(value: string | undefined): string | null {
     return null;
   }
   let normalized = '';
-  for (let index = 0; index < trimmed.length && normalized.length < 32; index += 1) {
+  for (let index = 0; index < trimmed.length && normalized.length < MAX_ISSUER_DEVICE_NAME_CHARS; index += 1) {
     const code = trimmed.charCodeAt(index);
     if (code >= 0x20 && code !== 0x7f) {
       normalized += trimmed.charAt(index);

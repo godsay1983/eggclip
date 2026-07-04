@@ -1011,6 +1011,24 @@ export default function localUnitTest() {
         .assertEqual('pairingSecret');
     });
 
+    it('rejectsPairingInvitationFieldLengthAndControlBoundaries', 0, () => {
+      const service = new PairingInvitationService();
+      const valid = service.parse(pairingInvitationFixtureUri('EggClip Desktop'), 1700000000000);
+      expect(valid.ok).assertEqual(true);
+      expect(valid.summary?.issuerDeviceName).assertEqual('EggClip Desktop');
+
+      const longDeviceName = service.parse(pairingInvitationFixtureUri('a'.repeat(33)), 1700000000000);
+      expect(longDeviceName.error).assertEqual(PairingInvitationError.INVALID_FIELD);
+      expect(longDeviceName.field).assertEqual('issuerDeviceName');
+
+      const controlDeviceName = service.parse(pairingInvitationFixtureUri('EggClip\nDesktop'), 1700000000000);
+      expect(controlDeviceName.error).assertEqual(PairingInvitationError.INVALID_FIELD);
+      expect(controlDeviceName.field).assertEqual('issuerDeviceName');
+
+      const tooLarge = service.parse(`eggclip://pair?p=${'A'.repeat(4097)}`, 1700000000000);
+      expect(tooLarge.error).assertEqual(PairingInvitationError.TOO_LARGE);
+    });
+
     it('keepsPairingStoreAsParseOnlyUntilSecurePairingIsImplemented', 0, () => {
       const store = new PairingStore();
       store.updateInvitationText(PAIRING_INVITATION_FIXTURE);
@@ -1083,6 +1101,51 @@ export default function localUnitTest() {
 const PAIRING_INVITATION_FIXTURE: string = 'eggclip://pair?p=eyJhcHAiOiJlZ2djbGlwIiwidmVyc2lvbiI6MSwia2luZCI6InBhaXJpbmdJbnZpdGF0aW9uIiwiaW52aXRhdGlvbklkIjoiMDE4ZmY2ZjAtMTExMS03MjIyLTgzMzMtMTIzNDU2Nzg5YWJjIiwic3BhY2VJZCI6IjAxOGZmNmVmLWMzOTQtN2QwOC04Yjk5LTRiN2QxMGYyNzY3YSIsInNwYWNlS2V5VmVyc2lvbiI6MSwiaXNzdWVyRGV2aWNlSWQiOiIwMThmZjZmMC0wYTNiLTc4MTUtYTRkYi0zZWI2ZTIzZDkzMzgiLCJpc3N1ZXJJZGVudGl0eVB1YmxpY0tleSI6IjExcVlBWUt4Q3JmVlNfN1R5V1FIT2c3aGN2UGFwaU1scndJYWFwY0hVcm8iLCJwYWlyaW5nU2VjcmV0IjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsImV4cGlyZXNBdE1zIjoxNzAwMDAwMzAwMDAwfQ';
 
 const BAD_PAIRING_SECRET_INVITATION_FIXTURE: string = 'eggclip://pair?p=eyJhcHAiOiJlZ2djbGlwIiwidmVyc2lvbiI6MSwia2luZCI6InBhaXJpbmdJbnZpdGF0aW9uIiwic3BhY2VJZCI6IjAxOGZmNmVmLWMzOTQtN2QwOC04Yjk5LTRiN2QxMGYyNzY3YSIsInNwYWNlS2V5VmVyc2lvbiI6MSwiaXNzdWVyRGV2aWNlSWQiOiIwMThmZjZmMC0wYTNiLTc4MTUtYTRkYi0zZWI2ZTIzZDkzMzgiLCJpc3N1ZXJJZGVudGl0eVB1YmxpY0tleSI6IjExcVlBWUt4Q3JmVlNfN1R5V1FIT2c3aGN2UGFwaU1scndJYWFQY0hVUm8iLCJwYWlyaW5nU2VjcmV0IjoiQUEiLCJleHBpcmVzQXRNcyI6MTcwMDAwMDMwMDAwMH0';
+
+interface PairingInvitationFixturePayload {
+  app: string;
+  version: number;
+  kind: string;
+  invitationId: string;
+  spaceId: string;
+  spaceKeyVersion: number;
+  issuerDeviceName?: string;
+  issuerDeviceId: string;
+  issuerIdentityPublicKey: string;
+  pairingSecret: string;
+  expiresAtMs: number;
+}
+
+function basePairingInvitationPayload(issuerDeviceName?: string): PairingInvitationFixturePayload {
+  const payload: PairingInvitationFixturePayload = {
+    app: 'eggclip',
+    version: 1,
+    kind: 'pairingInvitation',
+    invitationId: '018ff6f0-1111-7222-8333-123456789abc',
+    spaceId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
+    spaceKeyVersion: 1,
+    issuerDeviceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
+    issuerIdentityPublicKey: '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo',
+    pairingSecret: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+    expiresAtMs: 1700000300000
+  };
+  if (issuerDeviceName !== undefined) {
+    payload.issuerDeviceName = issuerDeviceName;
+  }
+  return payload;
+}
+
+function pairingInvitationFixtureUri(issuerDeviceName?: string): string {
+  return `eggclip://pair?p=${encodeBase64Url(asciiBytes(JSON.stringify(basePairingInvitationPayload(issuerDeviceName))))}`;
+}
+
+function asciiBytes(value: string): Uint8Array {
+  const bytes = new Uint8Array(value.length);
+  for (let index = 0; index < value.length; index += 1) {
+    bytes[index] = value.charCodeAt(index) & 0xff;
+  }
+  return bytes;
+}
 
 const CLIENT_HELLO_FIXTURE: string = '{"version":1,"type":"CLIENT_HELLO","messageId":"018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01","sessionCounter":0,"payload":{"spaceId":"018ff6ef-c394-7d08-8b99-4b7d10f2767a","deviceId":"018ff6f0-0a3b-7815-a4db-3eb6e23d9338","identityPublicKey":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","ephemeralPublicKey":"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB","capabilities":["textPlain","syncHeads","itemBatch","itemLive"]}}';
 
