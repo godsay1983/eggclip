@@ -242,11 +242,11 @@ harmony/entry/src/main/ets/
 - [ ] 定义 `eggclip://pair` 邀请格式或等效版本化字符串。
   - [x] HarmonyOS 已实现 `eggclip://pair?p=` 邀请 URI 解析，校验 app、版本、kind、spaceId、spaceKeyVersion、发行设备、公钥、256-bit pairingSecret 和过期时间。
   - [x] HarmonyOS 已兼容桌面端新增 `invitationId` 字段，解析结果保留该 ID 供后续正式握手消费回传。
-- [ ] 接入系统扫码能力或安全二维码解析组件。
+- [x] 已接入系统 Scan Kit 扫码入口，限制 QR_CODE，扫码结果复用现有内存导入校验路径。
 - [ ] 支持从剪贴文本/输入框导入邀请，但不得把邀请保存到历史。
   - [x] 已支持输入框导入邀请并只做内存解析，不写入 RDB 或本机历史。
   - [x] PairingPage 已接入真实 PasteButton 导入入口，用户授权后读取纯文本邀请并立即校验，不保存到历史或 RDB。
-  - [ ] 扫码导入入口待接入。
+  - [x] PairingPage 已接入扫码导入入口，扫码文本不写入 RDB 或本机历史，直接进入邀请解析与确认码流程。
 - [x] 校验 app、协议版本、spaceId、过期时间和字段长度；已覆盖 URI 总长度、payload 大小、UUID、设备名长度/控制字符、公钥和 pairingSecret 字节长度。
 - [x] 邀请页面显示邀请设备名称和公钥短指纹；对旧邀请缺失设备名时回退为“桌面端 #短指纹”。
 

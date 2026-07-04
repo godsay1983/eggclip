@@ -4,7 +4,9 @@ import {
   PairingStoreState,
   createInitialPairingSnapshot
 } from '../store/PairingStore';
+import { common } from '@kit.AbilityKit';
 import { PairingInvitationSummary } from '../services/pairing/PairingInvitationService';
+import { PairingScanService } from '../services/pairing/PairingScanService';
 import { ClipboardBridgeService } from '../services/clipboard/ClipboardBridgeService';
 import { EggClipColors } from '../theme/Colors';
 import { EggClipSpacing } from '../theme/Spacing';
@@ -14,8 +16,9 @@ import { EggClipTypography } from '../theme/Typography';
 export struct PairingPage {
   private readonly pairingStore: PairingStore = new PairingStore();
   private readonly clipboardBridge: ClipboardBridgeService = new ClipboardBridgeService();
+  private readonly pairingScanService: PairingScanService = new PairingScanService();
   @State private snapshot: PairingStoreSnapshot = createInitialPairingSnapshot();
-  @State private pasteImportStatus: string = '也可以点击系统 PasteButton，从剪贴板读取桌面端复制的邀请。';
+  @State private pasteImportStatus: string = '可以扫码导入，或点击系统 PasteButton 从剪贴板读取邀请。';
 
   build() {
     Column({ space: 12 }) {
@@ -57,6 +60,16 @@ export struct PairingPage {
         })
 
       Column({ space: 6 }) {
+        Button('扫码导入桌面端二维码')
+          .width('100%')
+          .height(42)
+          .fontColor(EggClipColors.textPrimary)
+          .backgroundColor(EggClipColors.controlBackground)
+          .borderRadius(21)
+          .onClick(() => {
+            this.importInvitationFromScan();
+          })
+
         PasteButton({
           text: PasteDescription.PASTE,
           buttonType: ButtonType.Capsule
@@ -248,5 +261,28 @@ export struct PairingPage {
       return Color.Red;
     }
     return EggClipColors.textSecondary;
+  }
+
+  private importInvitationFromScan(): void {
+    const hostContext = this.getUIContext().getHostContext();
+    if (hostContext === undefined) {
+      this.pasteImportStatus = '无法打开扫码界面：未获取到页面上下文';
+      return;
+    }
+    this.pasteImportStatus = '正在打开系统扫码界面';
+    this.pairingScanService.scanPairingInvitation(hostContext as common.Context)
+      .then((scanResult) => {
+        if (!scanResult.ok) {
+          this.pasteImportStatus = scanResult.message;
+          return;
+        }
+        this.snapshot = this.pairingStore.importInvitationText(scanResult.invitationText);
+        this.pasteImportStatus = this.snapshot.state === PairingStoreState.READY
+          ? '已从二维码读取并校验邀请'
+          : this.snapshot.statusText;
+      })
+      .catch(() => {
+        this.pasteImportStatus = '扫码导入失败，请改用复制邀请字符串导入';
+      });
   }
 }
