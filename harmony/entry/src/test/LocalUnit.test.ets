@@ -51,6 +51,10 @@ import {
   PairingClientHandshakeSessionService
 } from '../main/ets/services/pairing/PairingClientHandshakeSessionService';
 import {
+  PairingAuthProofValidationError,
+  PairingAuthProofValidationService
+} from '../main/ets/services/pairing/PairingAuthProofValidationService';
+import {
   PairingStore,
   PairingStoreState
 } from '../main/ets/store/PairingStore';
@@ -1281,6 +1285,87 @@ export default function localUnitTest() {
       const accepted = session.acceptTextFrame(built.frame);
       expect(accepted.ok).assertEqual(true);
       expect(accepted.outcome).assertEqual(ProtocolHandshakeFrameOutcome.CONTINUE);
+    });
+
+    it('validatesAuthProofPayloadAgainstCanonicalTranscriptBeforeEd25519Verify', 0, () => {
+      const handshake = new PairingHandshakeDraftService();
+      const store = new PairingStore();
+      store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);
+      store.confirmCodeMatched();
+      const draft = store.buildPendingClientHandshakeDraft(
+        '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        '3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08',
+        'hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo',
+        1700000000000
+      );
+      if (!draft.ok || draft.draft === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      const transcript = handshake.buildClientAuthTranscriptDraft(draft.draft, {
+        spaceId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
+        deviceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
+        identityPublicKey: '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaapcHUro',
+        ephemeralPublicKey: 'Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I',
+        capabilities: [Capability.TEXT_PLAIN, Capability.SYNC_HEADS]
+      });
+      if (!transcript.ok || transcript.transcript === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+
+      const builder = new ProtocolFrameBuilderService();
+      const built = builder.buildAuthProofFrame(
+        AuthRole.CLIENT,
+        transcript.transcript.canonicalTranscript,
+        TEST_ED25519_SIGNATURE,
+        '018ff6f1-1d2a-725d-8d1a-894d2f5b0a42',
+        2
+      );
+      const parser = new ProtocolParser();
+      const parsed = parser.parseEnvelope(built.frame);
+      const proof = parser.parseAuthProofPayload(parsed.envelope?.payload);
+      if (!proof.ok || proof.payload === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+
+      const validator = new PairingAuthProofValidationService();
+      expect(validator.validatePayloadAgainstTranscript(
+        proof.payload,
+        AuthRole.CLIENT,
+        transcript.transcript
+      ).ok).assertEqual(true);
+      expect(validator.validatePayloadAgainstTranscript(
+        {
+          role: AuthRole.SERVER,
+          signatureAlgorithm: proof.payload.signatureAlgorithm,
+          transcriptHash: proof.payload.transcriptHash,
+          signature: proof.payload.signature
+        },
+        AuthRole.CLIENT,
+        transcript.transcript
+      ).error).assertEqual(PairingAuthProofValidationError.ROLE_MISMATCH);
+      expect(validator.validatePayloadAgainstTranscript(
+        {
+          role: AuthRole.CLIENT,
+          signatureAlgorithm: proof.payload.signatureAlgorithm,
+          transcriptHash: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+          signature: proof.payload.signature
+        },
+        AuthRole.CLIENT,
+        transcript.transcript
+      ).error).assertEqual(PairingAuthProofValidationError.TRANSCRIPT_HASH_MISMATCH);
+      expect(validator.validatePayloadAgainstTranscript(
+        {
+          role: AuthRole.CLIENT,
+          signatureAlgorithm: proof.payload.signatureAlgorithm,
+          transcriptHash: proof.payload.transcriptHash,
+          signature: 'AA'
+        },
+        AuthRole.CLIENT,
+        transcript.transcript
+      ).error).assertEqual(PairingAuthProofValidationError.INVALID_SIGNATURE);
     });
 
     it('orchestratesClientPairingHandshakeUntilAuthProofFrame', 0, () => {
