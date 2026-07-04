@@ -1023,6 +1023,20 @@ export default function localUnitTest() {
       expect(cleared.summary === null).assertEqual(true);
     });
 
+    it('importsPairingInvitationTextThroughStoreWithoutPersistenceSideEffects', 0, () => {
+      const store = new PairingStore();
+      const parsed = store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);
+
+      expect(parsed.state).assertEqual(PairingStoreState.READY);
+      expect(parsed.invitationText).assertEqual(PAIRING_INVITATION_FIXTURE);
+      expect(parsed.summary?.spaceShortId).assertEqual('10f2767a');
+      expect(parsed.summary?.confirmationCode).assertEqual('066442');
+
+      const expired = store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000300000);
+      expect(expired.state).assertEqual(PairingStoreState.ERROR);
+      expect(expired.error).assertEqual(PairingInvitationError.EXPIRED);
+    });
+
     it('validatesCryptoVectorShapesBeforePlatformCryptoIntegration', 0, () => {
       const service = new CryptoVectorService();
       expect(service.validateEd25519SignatureVector(ED25519_SIGNATURE_VECTOR).ok).assertEqual(true);

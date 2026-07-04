@@ -5,6 +5,7 @@ import {
   createInitialPairingSnapshot
 } from '../store/PairingStore';
 import { PairingInvitationSummary } from '../services/pairing/PairingInvitationService';
+import { ClipboardBridgeService } from '../services/clipboard/ClipboardBridgeService';
 import { EggClipColors } from '../theme/Colors';
 import { EggClipSpacing } from '../theme/Spacing';
 import { EggClipTypography } from '../theme/Typography';
@@ -12,7 +13,9 @@ import { EggClipTypography } from '../theme/Typography';
 @Component
 export struct PairingPage {
   private readonly pairingStore: PairingStore = new PairingStore();
+  private readonly clipboardBridge: ClipboardBridgeService = new ClipboardBridgeService();
   @State private snapshot: PairingStoreSnapshot = createInitialPairingSnapshot();
+  @State private pasteImportStatus: string = '也可以点击系统 PasteButton，从剪贴板读取桌面端复制的邀请。';
 
   build() {
     Column({ space: 12 }) {
@@ -52,6 +55,47 @@ export struct PairingPage {
         .onChange((value: string) => {
           this.snapshot = this.pairingStore.updateInvitationText(value);
         })
+
+      Column({ space: 6 }) {
+        PasteButton({
+          text: PasteDescription.PASTE,
+          buttonType: ButtonType.Capsule
+        })
+          .width('100%')
+          .height(42)
+          .fontColor(EggClipColors.onPrimary)
+          .backgroundColor(EggClipColors.primary)
+          .borderRadius(21)
+          .onClick((_event: ClickEvent, result: PasteButtonOnClickResult) => {
+            if (result !== PasteButtonOnClickResult.SUCCESS) {
+              this.pasteImportStatus = 'PasteButton 临时授权失败，未读取系统剪贴板';
+              return;
+            }
+            this.pasteImportStatus = 'PasteButton 已授权，正在读取邀请文本';
+            this.clipboardBridge.readPlainTextAfterPasteButton()
+              .then((readResult) => {
+                if (!readResult.ok) {
+                  this.pasteImportStatus = readResult.message;
+                  return;
+                }
+                this.snapshot = this.pairingStore.importInvitationText(readResult.text);
+                this.pasteImportStatus = this.snapshot.state === PairingStoreState.READY
+                  ? '已从剪贴板读取并校验邀请'
+                  : this.snapshot.statusText;
+              })
+              .catch(() => {
+                this.pasteImportStatus = '读取剪贴板失败，请确认当前内容是纯文本邀请';
+              });
+          })
+
+        Text(this.pasteImportStatus)
+          .width('100%')
+          .fontSize(11)
+          .fontColor(EggClipColors.textSecondary)
+          .lineHeight(18)
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
 
       Row({ space: 8 }) {
         Button('校验邀请')

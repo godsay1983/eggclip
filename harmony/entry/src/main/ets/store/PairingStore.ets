@@ -44,6 +44,17 @@ export class PairingStore {
     return this.snapshot();
   }
 
+  importInvitationText(value: string, nowMs: number = Date.now()): PairingStoreSnapshot {
+    this.currentSnapshot = {
+      state: PairingStoreState.IDLE,
+      invitationText: value,
+      statusText: '已从系统 PasteButton 读取邀请，正在校验',
+      summary: null,
+      error: null
+    };
+    return this.parseCurrent(nowMs);
+  }
+
   clear(): PairingStoreSnapshot {
     this.currentSnapshot = createInitialPairingSnapshot();
     return this.snapshot();
