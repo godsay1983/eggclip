@@ -1214,6 +1214,71 @@ export default function localUnitTest() {
       expect(wrongSpace.field).assertEqual('spaceId');
     });
 
+    it('buildsAuthProofFrameFromClientTranscriptDraft', 0, () => {
+      const handshake = new PairingHandshakeDraftService();
+      const store = new PairingStore();
+      store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);
+      store.confirmCodeMatched();
+      const draft = store.buildPendingClientHandshakeDraft(
+        '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        '3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08',
+        'hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo',
+        1700000000000
+      );
+      if (!draft.ok || draft.draft === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      const transcript = handshake.buildClientAuthTranscriptDraft(draft.draft, {
+        spaceId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
+        deviceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
+        identityPublicKey: '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaapcHUro',
+        ephemeralPublicKey: 'Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I',
+        capabilities: [Capability.TEXT_PLAIN, Capability.SYNC_HEADS]
+      });
+      if (!transcript.ok || transcript.transcript === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+
+      const builder = new ProtocolFrameBuilderService();
+      const invalidSignature = builder.buildAuthProofFrame(
+        AuthRole.CLIENT,
+        transcript.transcript.canonicalTranscript,
+        'AA',
+        '018ff6f1-1d2a-725d-8d1a-894d2f5b0a42',
+        2
+      );
+      expect(invalidSignature.ok).assertEqual(false);
+      expect(invalidSignature.error).assertEqual(ProtocolFrameBuildError.INVALID_SIGNATURE);
+
+      const built = builder.buildAuthProofFrame(
+        AuthRole.CLIENT,
+        transcript.transcript.canonicalTranscript,
+        TEST_ED25519_SIGNATURE,
+        '018ff6f1-1d2a-725d-8d1a-894d2f5b0a42',
+        2
+      );
+      expect(built.ok).assertEqual(true);
+      expect(built.frame.indexOf('pairingSecret')).assertEqual(-1);
+      expect(built.frame.indexOf('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')).assertEqual(-1);
+
+      const parser = new ProtocolParser();
+      const parsed = parser.parseEnvelope(built.frame);
+      expect(parsed.ok).assertEqual(true);
+      expect(parsed.envelope?.messageType).assertEqual(MessageType.AUTH_PROOF);
+      const proof = parser.parseAuthProofPayload(parsed.envelope?.payload);
+      expect(proof.ok).assertEqual(true);
+      expect(proof.payload?.role).assertEqual(AuthRole.CLIENT);
+      expect(proof.payload?.signature).assertEqual(TEST_ED25519_SIGNATURE);
+      expect(proof.payload?.transcriptHash).assertEqual('V7r4hNyV_MTEfFFXqZQ8KipuV8u96rMSryE535SPmCQ');
+
+      const session = new ProtocolHandshakeTransportSession();
+      const accepted = session.acceptTextFrame(built.frame);
+      expect(accepted.ok).assertEqual(true);
+      expect(accepted.outcome).assertEqual(ProtocolHandshakeFrameOutcome.CONTINUE);
+    });
+
     it('importsPairingInvitationTextThroughStoreWithoutPersistenceSideEffects', 0, () => {
       const store = new PairingStore();
       const parsed = store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);
@@ -1306,6 +1371,8 @@ const CLIENT_HELLO_FIXTURE: string = '{"version":1,"type":"CLIENT_HELLO","messag
 const AUTH_PROOF_FIXTURE: string = '{"version":1,"type":"AUTH_PROOF","messageId":"018ff6f1-1d2a-725d-8d1a-894d2f5b0a42","sessionCounter":2,"payload":{"role":"client","signatureAlgorithm":"Ed25519","transcriptHash":"aM5GGwvEfnwOx_BNJSJktCEYEkmCrSH0wgAESnSOYEw","signature":"cdpm2njgsHCfH0hrubU-NbHMbWcN1xNtr-vZTKx_Tdf85hHKW8gIJuk463rj4f744vegLphZFO0RTvP_gQjeAg"}}';
 
 const AUTH_PROOF_TRANSCRIPT: string = 'EggClip v1 auth transcript\nrole=client\nspaceId=018ff6ef-c394-7d08-8b99-4b7d10f2767a\nlocalDeviceId=018ff6f0-0a3b-7815-a4db-3eb6e23d9338\nremoteDeviceId=018ff6f0-4adf-7d31-a987-3ef2b25d0212\nlocalIdentityPublicKey=11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo\nremoteIdentityPublicKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\nlocalEphemeralPublicKey=hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo\nremoteEphemeralPublicKey=3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08\npairingContext=trusted-device:018ff6ef-c394-7d08-8b99-4b7d10f2767a\n';
+
+const TEST_ED25519_SIGNATURE: string = 'AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8wMTIzNDU2Nzg5Ojs8PT4_QA';
 
 const AUTH_OK_FIXTURE: string = '{"version":1,"type":"AUTH_OK","messageId":"018ff6f1-25f0-7c09-a4cf-3d683ebfae33","sessionCounter":3,"payload":{}}';
 
