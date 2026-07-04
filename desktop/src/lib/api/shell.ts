@@ -89,6 +89,7 @@ interface PairingInvitationSummaryDto {
   spaceId: string;
   spaceDisplayName: string;
   invitation: string;
+  qrSvg: string;
   expiresAtMs: number;
   expiresInSeconds: number;
   issuerDeviceName: string;
@@ -379,6 +380,7 @@ function toPairingInvitationSummary(
     spaceId: invitation.spaceId,
     spaceDisplayName: invitation.spaceDisplayName,
     invitationString: invitation.invitation,
+    qrSvg: invitation.qrSvg,
     expiresAt: new Date(invitation.expiresAtMs).toLocaleTimeString("zh-CN", {
       hour: "2-digit",
       minute: "2-digit",

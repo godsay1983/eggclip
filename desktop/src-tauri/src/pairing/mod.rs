@@ -4,6 +4,7 @@ use std::{fmt, path::Path};
 use std::collections::HashMap;
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use qrcode::{render::svg, EcLevel, QrCode};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -31,6 +32,7 @@ pub const INITIAL_SPACE_KEY_VERSION: u32 = 1;
 pub const PAIRING_INVITATION_TTL_MS: u64 = 5 * 60 * 1000;
 pub const DEFAULT_SPACE_DISPLAY_NAME: &str = "默认空间";
 const PAIRING_INVITATION_EXPIRY_SWEEP_SECONDS: u64 = 60;
+const PAIRING_INVITATION_QR_MIN_DIMENSIONS: u32 = 224;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,6 +51,7 @@ pub struct PairingInvitationSummary {
     pub space_id: String,
     pub space_display_name: String,
     pub invitation: String,
+    pub qr_svg: String,
     pub expires_at_ms: u64,
     pub expires_in_seconds: u64,
     pub issuer_device_name: String,
@@ -89,6 +92,7 @@ pub enum PairingError {
     InvitationExpired,
     InvitationConsumed,
     InvalidInvitationSecret,
+    QrCode(String),
     Serialize(String),
 }
 
@@ -111,6 +115,7 @@ impl fmt::Display for PairingError {
             PairingError::InvalidInvitationSecret => {
                 formatter.write_str("invalid pairing invitation secret")
             }
+            PairingError::QrCode(message) => write!(formatter, "qr code error: {message}"),
             PairingError::Serialize(message) => write!(formatter, "serialize error: {message}"),
         }
     }
@@ -392,6 +397,7 @@ pub fn create_pairing_invitation_for_space<S: SecretBytesStore>(
         "eggclip://pair?p={}",
         URL_SAFE_NO_PAD.encode(payload_json.as_slice())
     );
+    let qr_svg = pairing_invitation_qr_svg(&invitation)?;
     let confirmation_code = confirmation_code(&payload_json);
     pairing_secret.fill(0);
     PairingInvitationRepository::new(connection)
@@ -413,6 +419,7 @@ pub fn create_pairing_invitation_for_space<S: SecretBytesStore>(
         space_id: space.space.space_id.to_string(),
         space_display_name: space.space.display_name,
         invitation,
+        qr_svg,
         expires_at_ms,
         expires_in_seconds: PAIRING_INVITATION_TTL_MS / 1000,
         issuer_device_name,
@@ -580,6 +587,20 @@ fn validate_pairing_invitation_uri(invitation: &str) -> Result<(), PairingError>
     Ok(())
 }
 
+fn pairing_invitation_qr_svg(invitation: &str) -> Result<String, PairingError> {
+    let code = QrCode::with_error_correction_level(invitation.as_bytes(), EcLevel::M)
+        .map_err(|error| PairingError::QrCode(error.to_string()))?;
+    Ok(code
+        .render::<svg::Color>()
+        .min_dimensions(
+            PAIRING_INVITATION_QR_MIN_DIMENSIONS,
+            PAIRING_INVITATION_QR_MIN_DIMENSIONS,
+        )
+        .dark_color(svg::Color("#2f2300"))
+        .light_color(svg::Color("#fff8e7"))
+        .build())
+}
+
 #[cfg(test)]
 #[derive(Default)]
 struct MemorySecretStore {
@@ -743,6 +764,8 @@ mod tests {
         assert_eq!(payload.issuer_device_id, invitation.issuer_device_id);
         assert!(payload.issuer_identity_public_key.len() >= 43);
         assert_eq!(invitation.confirmation_code.len(), 6);
+        assert!(invitation.qr_svg.contains("<svg"));
+        assert!(!invitation.qr_svg.contains(&payload.pairing_secret));
 
         let stored = PairingInvitationRepository::new(&connection)
             .get(Uuid::parse_str(&invitation.invitation_id).expect("invitation id should parse"))

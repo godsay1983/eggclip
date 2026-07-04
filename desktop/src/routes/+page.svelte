@@ -294,6 +294,10 @@
                 <span>人工确认码</span>
                 <strong>{$shellSnapshot.syncSpace.invitation.confirmationCode}</strong>
               </div>
+              <div class="invitation-qr" aria-label="配对二维码">
+                {@html $shellSnapshot.syncSpace.invitation.qrSvg}
+                <span>用鸿蒙端扫码导入，或复制邀请字符串手动导入。</span>
+              </div>
               <button
                 class="secondary-action invitation-copy"
                 type="button"

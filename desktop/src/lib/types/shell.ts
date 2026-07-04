@@ -108,6 +108,7 @@ export interface PairingInvitationSummary {
   spaceId: string;
   spaceDisplayName: string;
   invitationString: string;
+  qrSvg: string;
   expiresAt: string;
   expiresInSeconds: number;
   issuerDeviceName: string;
