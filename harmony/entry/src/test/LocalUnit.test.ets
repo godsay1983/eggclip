@@ -35,6 +35,14 @@ import {
   SpaceKeyReferenceService
 } from '../main/ets/services/crypto/SpaceKeyReferenceService';
 import {
+  PairingInvitationError,
+  PairingInvitationService
+} from '../main/ets/services/pairing/PairingInvitationService';
+import {
+  PairingStore,
+  PairingStoreState
+} from '../main/ets/store/PairingStore';
+import {
   ClipboardValidationError,
   EGGCLIP_MDNS_DISCOVERY_TYPE,
   EGGCLIP_MDNS_SERVICE_TYPE,
@@ -973,6 +981,48 @@ export default function localUnitTest() {
       expect(decodeBase64Url('====') === null).assertEqual(true);
     });
 
+    it('parsesDesktopPairingInvitationUriWithoutPersistingTrust', 0, () => {
+      const service = new PairingInvitationService();
+      const result = service.parse(PAIRING_INVITATION_FIXTURE, 1700000000000);
+
+      expect(result.ok).assertEqual(true);
+      expect(result.payload?.spaceId).assertEqual('018ff6ef-c394-7d08-8b99-4b7d10f2767a');
+      expect(result.payload?.spaceKeyVersion).assertEqual(1);
+      expect(result.payload?.pairingSecret).assertEqual('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
+      expect(result.summary?.spaceShortId).assertEqual('10f2767a');
+      expect(result.summary?.issuerShortFingerprint).assertEqual('11qYAYKx');
+      expect(result.summary?.expiresInSeconds).assertEqual(300);
+      expect(result.summary?.confirmationCode).assertEqual('066442');
+    });
+
+    it('rejectsInvalidOrExpiredPairingInvitationUri', 0, () => {
+      const service = new PairingInvitationService();
+
+      expect(service.parse('', 1700000000000).error).assertEqual(PairingInvitationError.EMPTY);
+      expect(service.parse('https://example.com', 1700000000000).error)
+        .assertEqual(PairingInvitationError.INVALID_SCHEME);
+      expect(service.parse('eggclip://pair?p=not-base64', 1700000000000).error)
+        .assertEqual(PairingInvitationError.INVALID_PAYLOAD);
+      expect(service.parse(PAIRING_INVITATION_FIXTURE, 1700000300000).error)
+        .assertEqual(PairingInvitationError.EXPIRED);
+      expect(service.parse(BAD_PAIRING_SECRET_INVITATION_FIXTURE, 1700000000000).field)
+        .assertEqual('pairingSecret');
+    });
+
+    it('keepsPairingStoreAsParseOnlyUntilSecurePairingIsImplemented', 0, () => {
+      const store = new PairingStore();
+      store.updateInvitationText(PAIRING_INVITATION_FIXTURE);
+      const parsed = store.parseCurrent(1700000000000);
+
+      expect(parsed.state).assertEqual(PairingStoreState.READY);
+      expect(parsed.summary?.confirmationCode).assertEqual('066442');
+      expect(parsed.statusText.indexOf('下一步') >= 0).assertEqual(true);
+
+      const cleared = store.clear();
+      expect(cleared.state).assertEqual(PairingStoreState.IDLE);
+      expect(cleared.summary === null).assertEqual(true);
+    });
+
     it('validatesCryptoVectorShapesBeforePlatformCryptoIntegration', 0, () => {
       const service = new CryptoVectorService();
       expect(service.validateEd25519SignatureVector(ED25519_SIGNATURE_VECTOR).ok).assertEqual(true);
@@ -996,6 +1046,10 @@ export default function localUnitTest() {
     });
   });
 }
+
+const PAIRING_INVITATION_FIXTURE: string = 'eggclip://pair?p=eyJhcHAiOiJlZ2djbGlwIiwidmVyc2lvbiI6MSwia2luZCI6InBhaXJpbmdJbnZpdGF0aW9uIiwic3BhY2VJZCI6IjAxOGZmNmVmLWMzOTQtN2QwOC04Yjk5LTRiN2QxMGYyNzY3YSIsInNwYWNlS2V5VmVyc2lvbiI6MSwiaXNzdWVyRGV2aWNlSWQiOiIwMThmZjZmMC0wYTNiLTc4MTUtYTRkYi0zZWI2ZTIzZDkzMzgiLCJpc3N1ZXJJZGVudGl0eVB1YmxpY0tleSI6IjExcVlBWUt4Q3JmVlNfN1R5V1FIT2c3aGN2UGFwaU1scndJYWFQY0hVUm8iLCJwYWlyaW5nU2VjcmV0IjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsImV4cGlyZXNBdE1zIjoxNzAwMDAwMzAwMDAwfQ';
+
+const BAD_PAIRING_SECRET_INVITATION_FIXTURE: string = 'eggclip://pair?p=eyJhcHAiOiJlZ2djbGlwIiwidmVyc2lvbiI6MSwia2luZCI6InBhaXJpbmdJbnZpdGF0aW9uIiwic3BhY2VJZCI6IjAxOGZmNmVmLWMzOTQtN2QwOC04Yjk5LTRiN2QxMGYyNzY3YSIsInNwYWNlS2V5VmVyc2lvbiI6MSwiaXNzdWVyRGV2aWNlSWQiOiIwMThmZjZmMC0wYTNiLTc4MTUtYTRkYi0zZWI2ZTIzZDkzMzgiLCJpc3N1ZXJJZGVudGl0eVB1YmxpY0tleSI6IjExcVlBWUt4Q3JmVlNfN1R5V1FIT2c3aGN2UGFwaU1scndJYWFQY0hVUm8iLCJwYWlyaW5nU2VjcmV0IjoiQUEiLCJleHBpcmVzQXRNcyI6MTcwMDAwMDMwMDAwMH0';
 
 const CLIENT_HELLO_FIXTURE: string = '{"version":1,"type":"CLIENT_HELLO","messageId":"018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01","sessionCounter":0,"payload":{"spaceId":"018ff6ef-c394-7d08-8b99-4b7d10f2767a","deviceId":"018ff6f0-0a3b-7815-a4db-3eb6e23d9338","identityPublicKey":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","ephemeralPublicKey":"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB","capabilities":["textPlain","syncHeads","itemBatch","itemLive"]}}';
 

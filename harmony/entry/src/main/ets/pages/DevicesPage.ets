@@ -14,6 +14,7 @@ import { EggClipColors } from '../theme/Colors';
 import { EggClipSpacing } from '../theme/Spacing';
 import { EggClipTypography } from '../theme/Typography';
 import { APP_FOREGROUND_STORAGE_KEY } from '../utils/AppLifecycle';
+import { PairingPage } from './PairingPage';
 
 @Component
 export struct DevicesPage {
@@ -68,6 +69,7 @@ export struct DevicesPage {
     Scroll() {
       Column({ space: EggClipSpacing.sectionGap }) {
         this.Header()
+        PairingPage()
         this.ConnectionCard()
         this.RuntimeDeviceCard()
         this.DiscoveryCard()
