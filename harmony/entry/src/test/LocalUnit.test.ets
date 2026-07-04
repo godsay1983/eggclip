@@ -14,6 +14,10 @@ import {
   ProtocolTransportFrameError,
   ProtocolTransportSession
 } from '../main/ets/services/transport/ProtocolTransportSession';
+import {
+  ProtocolFrameBuildError,
+  ProtocolFrameBuilderService
+} from '../main/ets/services/transport/ProtocolFrameBuilderService';
 import { WebSocketTransportService } from '../main/ets/services/transport/WebSocketTransportService';
 import {
   SettingsStoreState,
@@ -1102,6 +1106,54 @@ export default function localUnitTest() {
       const serialized = JSON.stringify(draft.draft);
       expect(serialized.indexOf('pairingSecret')).assertEqual(-1);
       expect(serialized.indexOf('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')).assertEqual(-1);
+    });
+
+    it('buildsClientHelloFrameFromPairingDraftForHandshakeTransport', 0, () => {
+      const store = new PairingStore();
+      store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);
+      store.confirmCodeMatched();
+      const draft = store.buildPendingClientHandshakeDraft(
+        '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo',
+        'hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo',
+        1700000000000
+      );
+      if (!draft.ok || draft.draft === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+
+      const builder = new ProtocolFrameBuilderService();
+      const invalid = builder.buildClientHelloFrame(
+        draft.draft.clientHelloPayload,
+        'not-a-uuid',
+        0
+      );
+      expect(invalid.ok).assertEqual(false);
+      expect(invalid.error).assertEqual(ProtocolFrameBuildError.INVALID_MESSAGE_ID);
+
+      const built = builder.buildClientHelloFrame(
+        draft.draft.clientHelloPayload,
+        '018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01',
+        1
+      );
+      expect(built.ok).assertEqual(true);
+      expect(built.frame.indexOf('pairingSecret')).assertEqual(-1);
+      expect(built.frame.indexOf('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')).assertEqual(-1);
+
+      const parser = new ProtocolParser();
+      const parsed = parser.parseEnvelope(built.frame);
+      expect(parsed.ok).assertEqual(true);
+      expect(parsed.envelope?.messageType).assertEqual(MessageType.CLIENT_HELLO);
+      const hello = parser.parseHelloPayload(parsed.envelope?.payload);
+      expect(hello.ok).assertEqual(true);
+      expect(hello.payload?.spaceId).assertEqual(draft.draft.spaceId);
+      expect(hello.payload?.deviceId).assertEqual('018ff6f0-4adf-7d31-a987-3ef2b25d0212');
+
+      const session = new ProtocolHandshakeTransportSession();
+      const accepted = session.acceptTextFrame(built.frame);
+      expect(accepted.ok).assertEqual(true);
+      expect(accepted.outcome).assertEqual(ProtocolHandshakeFrameOutcome.CONTINUE);
     });
 
     it('importsPairingInvitationTextThroughStoreWithoutPersistenceSideEffects', 0, () => {
