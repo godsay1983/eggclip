@@ -253,7 +253,11 @@ harmony/entry/src/main/ets/
 ### 安全配对
 
 - [ ] 使用 128/256 位一次性 `pairingSecret` 建立配对通道。
+  - [x] PairingStore 已保留确认后的内存待握手材料，并可生成不暴露 `pairingSecret` 的 CLIENT_HELLO draft。
+  - [ ] pairingSecret 参与正式配对通道派生/证明待接入。
 - [ ] 完成设备身份交换和握手 transcript 验证。
+  - [x] 已新增 PairingHandshakeDraftService，基于邀请、本机身份公钥和临时公钥生成 CLIENT_HELLO payload 与版本化 `pairing-invitation:v1:<invitationId>` 上下文。
+  - [ ] 真实 X25519 临时密钥生成、SERVER_HELLO 处理和 AUTH_PROOF 验证待接入。
 - [x] 显示六位人工确认码供双方核对，但不把它当成唯一秘密。
   - [x] PairingPage 已显示六位人工确认码，并要求用户点击“确认码一致，继续配对”后才进入 pending；确认码不作为唯一秘密。
   - [x] PairingStore 确认后会从 UI snapshot 中清空完整邀请文本，只保留摘要和内存待握手材料。

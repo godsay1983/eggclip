@@ -5,6 +5,10 @@ import {
   PairingInvitationService,
   PairingInvitationSummary
 } from '../services/pairing/PairingInvitationService';
+import {
+  PairingHandshakeDraftResult,
+  PairingHandshakeDraftService
+} from '../services/pairing/PairingHandshakeDraftService';
 
 export enum PairingStoreState {
   IDLE = 'idle',
@@ -23,6 +27,7 @@ export interface PairingStoreSnapshot {
 
 export class PairingStore {
   private readonly service: PairingInvitationService = new PairingInvitationService();
+  private readonly handshakeDraftService: PairingHandshakeDraftService = new PairingHandshakeDraftService();
   private currentSnapshot: PairingStoreSnapshot = createInitialPairingSnapshot();
   private pendingPayload: PairingInvitationPayload | null = null;
 
@@ -32,6 +37,30 @@ export class PairingStore {
 
   hasPendingHandshakeMaterial(): boolean {
     return this.currentSnapshot.state === PairingStoreState.PENDING && this.pendingPayload !== null;
+  }
+
+  buildPendingClientHandshakeDraft(
+    localDeviceId: string,
+    localIdentityPublicKey: string,
+    localEphemeralPublicKey: string,
+    nowMs: number = Date.now()
+  ): PairingHandshakeDraftResult {
+    if (!this.hasPendingHandshakeMaterial()) {
+      return this.handshakeDraftService.buildClientHandshakeDraft({
+        invitation: null,
+        localDeviceId,
+        localIdentityPublicKey,
+        localEphemeralPublicKey,
+        nowMs
+      });
+    }
+    return this.handshakeDraftService.buildClientHandshakeDraft({
+      invitation: clonePayload(this.pendingPayload as PairingInvitationPayload),
+      localDeviceId,
+      localIdentityPublicKey,
+      localEphemeralPublicKey,
+      nowMs
+    });
   }
 
   updateInvitationText(value: string): PairingStoreSnapshot {

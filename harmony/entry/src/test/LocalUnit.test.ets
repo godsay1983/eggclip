@@ -38,6 +38,7 @@ import {
   PairingInvitationError,
   PairingInvitationService
 } from '../main/ets/services/pairing/PairingInvitationService';
+import { PairingHandshakeDraftError } from '../main/ets/services/pairing/PairingHandshakeDraftService';
 import {
   PairingStore,
   PairingStoreState
@@ -1065,6 +1066,42 @@ export default function localUnitTest() {
       const cleared = store.clear();
       expect(cleared.state).assertEqual(PairingStoreState.IDLE);
       expect(store.hasPendingHandshakeMaterial()).assertEqual(false);
+    });
+
+    it('buildsPairingClientHandshakeDraftWithoutExposingPairingSecret', 0, () => {
+      const store = new PairingStore();
+      const missing = store.buildPendingClientHandshakeDraft(
+        '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo',
+        'hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo',
+        1700000000000
+      );
+      expect(missing.ok).assertEqual(false);
+      expect(missing.error).assertEqual(PairingHandshakeDraftError.MISSING_PENDING_INVITATION);
+
+      store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);
+      store.confirmCodeMatched();
+      const draft = store.buildPendingClientHandshakeDraft(
+        '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo',
+        'hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo',
+        1700000000000
+      );
+
+      expect(draft.ok).assertEqual(true);
+      expect(draft.draft?.invitationId).assertEqual('018ff6f0-1111-7222-8333-123456789abc');
+      expect(draft.draft?.spaceId).assertEqual('018ff6ef-c394-7d08-8b99-4b7d10f2767a');
+      expect(draft.draft?.remoteDeviceId).assertEqual('018ff6f0-0a3b-7815-a4db-3eb6e23d9338');
+      expect(draft.draft?.pairingContext)
+        .assertEqual('pairing-invitation:v1:018ff6f0-1111-7222-8333-123456789abc');
+      expect(draft.draft?.clientHelloPayload.deviceId).assertEqual('018ff6f0-4adf-7d31-a987-3ef2b25d0212');
+      expect(draft.draft?.clientHelloPayload.identityPublicKey)
+        .assertEqual('11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo');
+      expect(draft.draft?.clientHelloPayload.ephemeralPublicKey)
+        .assertEqual('hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo');
+      const serialized = JSON.stringify(draft.draft);
+      expect(serialized.indexOf('pairingSecret')).assertEqual(-1);
+      expect(serialized.indexOf('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')).assertEqual(-1);
     });
 
     it('importsPairingInvitationTextThroughStoreWithoutPersistenceSideEffects', 0, () => {
