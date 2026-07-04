@@ -205,7 +205,8 @@ desktop/
   - [x] 桌面端已能基于同步空间生成 5 分钟过期的高熵配对邀请草稿，包含 256-bit pairing secret、发行设备身份公钥和六位人工确认码。
   - [x] 桌面端已增加邀请注册表 migration 和 repository，生成邀请时登记 `invitationId`、过期时间和 secret verifier，不保存原始 pairing secret。
   - [x] 桌面端已实现本地消费骨架：拒绝过期、重复消费和错误 pairing secret，并将成功消费标记为 consumed。
-  - [ ] 远端导入校验、正式握手消费入口和定期过期清理待接入。
+  - [x] 桌面端生成新邀请前会机会性标记已过期 active 邀请，避免旧邀请长期保持 active 状态。
+  - [ ] 远端导入校验、正式握手消费入口和后台定期过期清理待接入。
 - [ ] 生成二维码内容和可复制邀请字符串。
   - [x] 后端已生成版本化 `eggclip://pair` 邀请 URI；前端当前只展示确认码和过期信息，避免完整邀请 secret 被剪贴板监听收入历史。
   - [x] 桌面端已接入安全复制邀请入口：后端校验 `eggclip://pair` URI 后写入系统剪贴板，并登记 suppression token，避免本机历史监听保存邀请 secret。

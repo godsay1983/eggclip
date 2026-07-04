@@ -324,6 +324,9 @@ pub fn create_pairing_invitation_for_space<S: SecretBytesStore>(
     if space.encrypted_space_key_ref.is_none() {
         return Err(PairingError::MissingSpaceKeyRef);
     }
+    PairingInvitationRepository::new(connection)
+        .expire_before(now_ms)
+        .map_err(|error| PairingError::Database(error.to_string()))?;
     let identity = ensure_local_device_identity(connection, secret_store, now_ms)
         .map_err(pairing_identity_error)?;
     let issuer_device_id = Uuid::parse_str(&identity.device_id)
@@ -717,6 +720,41 @@ mod tests {
             decode_invitation_payload(&first.invitation).pairing_secret,
             decode_invitation_payload(&second.invitation).pairing_secret
         );
+    }
+
+    #[test]
+    fn creating_invitation_expires_previous_active_invitations() {
+        let mut connection = open_in_memory_database().expect("database should open");
+        let mut store = MemorySecretStore::default();
+        let space = create_sync_space(&mut connection, &mut store, "默认空间", 1_700_000_000_000)
+            .expect("space should be created");
+
+        let first = create_pairing_invitation_for_space(
+            &mut connection,
+            &mut store,
+            &space.space_id,
+            1_700_000_000_500,
+        )
+        .expect("first invitation should be created");
+        let second = create_pairing_invitation_for_space(
+            &mut connection,
+            &mut store,
+            &space.space_id,
+            first.expires_at_ms,
+        )
+        .expect("second invitation should be created");
+        let invitations = PairingInvitationRepository::new(&connection);
+        let first_record = invitations
+            .get(Uuid::parse_str(&first.invitation_id).expect("first id should parse"))
+            .expect("first invitation should query")
+            .expect("first invitation should exist");
+        let second_record = invitations
+            .get(Uuid::parse_str(&second.invitation_id).expect("second id should parse"))
+            .expect("second invitation should query")
+            .expect("second invitation should exist");
+
+        assert_eq!(first_record.state, PairingInvitationState::Expired);
+        assert_eq!(second_record.state, PairingInvitationState::Active);
     }
 
     #[test]
