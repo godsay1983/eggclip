@@ -94,6 +94,21 @@ export interface PocRecentEndpoint {
   connectedAtMs: number;
 }
 
+export interface SyncSpaceSummary {
+  id: string;
+  displayName: string;
+  keyVersion: number;
+  shortId: string;
+  keyRefKind: "credential" | "unknown";
+  createdAt: string;
+}
+
+export interface SyncSpaceState {
+  state: "idle" | "loading" | "creating" | "ready" | "error";
+  spaces: SyncSpaceSummary[];
+  errorMessage: string | null;
+}
+
 export interface ShellSnapshot {
   connection: {
     state: ConnectionState;
@@ -107,5 +122,6 @@ export interface ShellSnapshot {
   pocDiagnostics: PocDiagnostics;
   pocTransport: PocTransportSummary;
   lastPocEndpoint: PocRecentEndpoint | null;
+  syncSpace: SyncSpaceState;
   syncEnabled: boolean;
 }

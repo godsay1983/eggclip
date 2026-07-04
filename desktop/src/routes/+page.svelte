@@ -21,6 +21,7 @@
     void shellSnapshot.startClipboardMonitor();
     void shellSnapshot.refreshHistorySummary();
     void shellSnapshot.loadRecentPocEndpoint();
+    void shellSnapshot.refreshSyncSpaces();
     void settingsSnapshot.load();
   });
 
@@ -230,6 +231,47 @@
           </select>
         </label>
       </div>
+
+      <div class="settings-divider"></div>
+
+      <section class="space-summary" aria-label="同步空间">
+        <div class="section-heading compact">
+          <div>
+            <h2>同步空间</h2>
+            <p class="metadata">
+              {$shellSnapshot.syncSpace.errorMessage ??
+                "空间密钥保存到系统凭据库，界面不显示密钥"}
+            </p>
+          </div>
+          <button
+            class="text-button"
+            type="button"
+            disabled={$shellSnapshot.syncSpace.state === "creating"}
+            on:click={() => shellSnapshot.createDefaultSyncSpace()}
+          >
+            {$shellSnapshot.syncSpace.spaces.length > 0 ? "新增空间" : "创建默认空间"}
+          </button>
+        </div>
+
+        {#if $shellSnapshot.syncSpace.spaces.length === 0}
+          <div class="space-empty">
+            <strong>尚未创建正式同步空间</strong>
+            <p>当前 POC 连接仍可手动验证收发；正式配对前需要先创建本地空间和 256-bit spaceKey。</p>
+          </div>
+        {:else}
+          <div class="space-list">
+            {#each $shellSnapshot.syncSpace.spaces as space (space.id)}
+              <article class="space-card">
+                <div>
+                  <strong>{space.displayName}</strong>
+                  <p>空间 #{space.shortId} · key v{space.keyVersion} · {space.createdAt}</p>
+                </div>
+                <span>{space.keyRefKind === "credential" ? "凭据库" : "待检查"}</span>
+              </article>
+            {/each}
+          </div>
+        {/if}
+      </section>
 
       <div class="settings-divider"></div>
 

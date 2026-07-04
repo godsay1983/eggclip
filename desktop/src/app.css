@@ -368,6 +368,10 @@ footer {
   margin-bottom: 12px;
 }
 
+.section-heading.compact > div {
+  min-width: 0;
+}
+
 .eyebrow,
 .metadata {
   color: var(--muted);
@@ -520,7 +524,8 @@ footer {
 
 .settings-popover .status-card,
 .settings-popover .poc-connect-card,
-.settings-popover .device-section {
+.settings-popover .device-section,
+.settings-popover .space-summary {
   margin-top: 12px;
   box-shadow: none;
 }
@@ -569,6 +574,79 @@ footer {
   display: grid;
   gap: 4px;
   padding-left: 18px;
+}
+
+.space-summary {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgba(255, 243, 196, 0.48);
+}
+
+.space-summary .section-heading {
+  align-items: flex-start;
+}
+
+.space-summary .text-button {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(244, 196, 48, 0.2);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.space-summary .metadata {
+  line-height: 1.45;
+}
+
+.space-list {
+  display: grid;
+  gap: 8px;
+}
+
+.space-card,
+.space-empty {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--control);
+}
+
+.space-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 12px;
+}
+
+.space-card strong,
+.space-empty strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.space-card p,
+.space-empty p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.space-card span {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: #1f6b42;
+  background: rgba(78, 159, 109, 0.16);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.space-empty {
+  padding: 12px;
 }
 
 .setting-grid {
@@ -869,6 +947,10 @@ footer {
   background: rgba(57, 51, 41, 0.62);
 }
 
+:root[data-theme="dark"] .space-summary {
+  background: rgba(57, 51, 41, 0.62);
+}
+
 :root[data-theme="dark"] .status-label.online {
   color: #b8f1c9;
   background: rgba(120, 192, 145, 0.14);
@@ -923,6 +1005,10 @@ footer {
   }
 
   :root:not([data-theme="light"]):not([data-theme="dark"]) .privacy-summary {
+    background: rgba(57, 51, 41, 0.62);
+  }
+
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .space-summary {
     background: rgba(57, 51, 41, 0.62);
   }
 

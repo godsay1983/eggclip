@@ -214,6 +214,15 @@ impl<'a> SpaceRepository<'a> {
             )
             .optional()
     }
+
+    pub fn list(&self) -> rusqlite::Result<Vec<SpaceRecord>> {
+        let mut statement = self.connection.prepare(
+            "SELECT space_id, display_name, encrypted_space_key_ref, key_version, state, created_at, updated_at
+             FROM spaces ORDER BY created_at DESC, space_id DESC",
+        )?;
+        let records = statement.query_map([], row_to_space_record)?.collect();
+        records
+    }
 }
 
 pub struct DeviceRepository<'a> {

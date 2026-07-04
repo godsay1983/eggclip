@@ -70,6 +70,12 @@ pub fn create_local_sync_space(
         .map_err(|error| format!("无法创建同步空间：{error}"))
 }
 
+#[tauri::command]
+pub fn list_local_sync_spaces(app: tauri::AppHandle) -> Result<Vec<SyncSpaceSummary>, String> {
+    let path = database_path(&app)?;
+    list_sync_spaces_at_path(&path).map_err(|error| format!("无法读取同步空间：{error}"))
+}
+
 pub fn create_sync_space_at_path<S: SecretBytesStore>(
     path: &Path,
     secret_store: &mut S,
@@ -79,6 +85,12 @@ pub fn create_sync_space_at_path<S: SecretBytesStore>(
     let mut connection =
         open_database(path).map_err(|error| PairingError::Database(error.to_string()))?;
     create_sync_space(&mut connection, secret_store, display_name, now_ms)
+}
+
+pub fn list_sync_spaces_at_path(path: &Path) -> Result<Vec<SyncSpaceSummary>, PairingError> {
+    let connection =
+        open_database(path).map_err(|error| PairingError::Database(error.to_string()))?;
+    list_sync_spaces(&connection)
 }
 
 pub fn create_sync_space<S: SecretBytesStore>(
@@ -152,6 +164,22 @@ pub fn load_space_key<S: SecretBytesStore>(
     let mut key = [0u8; SPACE_KEY_BYTES];
     key.copy_from_slice(&secret);
     Ok(key)
+}
+
+pub fn list_sync_spaces(connection: &Connection) -> Result<Vec<SyncSpaceSummary>, PairingError> {
+    let records = SpaceRepository::new(connection)
+        .list()
+        .map_err(|error| PairingError::Database(error.to_string()))?;
+    Ok(records
+        .into_iter()
+        .map(|record| SyncSpaceSummary {
+            space_id: record.space.space_id.to_string(),
+            display_name: record.space.display_name,
+            key_version: record.space.key_version,
+            space_key_ref: record.encrypted_space_key_ref.unwrap_or_default(),
+            created_at_ms: record.space.created_at,
+        })
+        .collect())
 }
 
 fn normalize_space_display_name(display_name: &str) -> Result<String, PairingError> {
@@ -251,6 +279,25 @@ mod tests {
                 .expect("secret should load")
                 .expect("secret should exist")
         );
+    }
+
+    #[test]
+    fn lists_spaces_without_loading_raw_space_keys() {
+        let mut connection = open_in_memory_database().expect("database should open");
+        let mut store = MemorySecretStore::default();
+        let first = create_sync_space(&mut connection, &mut store, "默认空间", 1_700_000_000_000)
+            .expect("first space should be created");
+        let second = create_sync_space(&mut connection, &mut store, "临时空间", 1_700_000_000_100)
+            .expect("second space should be created");
+
+        let spaces = list_sync_spaces(&connection).expect("spaces should list");
+
+        assert_eq!(spaces.len(), 2);
+        assert_eq!(spaces[0].space_id, second.space_id);
+        assert_eq!(spaces[1].space_id, first.space_id);
+        assert!(spaces
+            .iter()
+            .all(|space| space.space_key_ref.starts_with("credential://")));
     }
 
     #[test]

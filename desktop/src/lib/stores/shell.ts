@@ -1,6 +1,7 @@
 import { derived, writable } from "svelte/store";
 import {
   connectPocPeer,
+  createLocalSyncSpace,
   createInitialShellSnapshot,
   captureClipboardHistoryText,
   clearClipboardHistory,
@@ -10,6 +11,7 @@ import {
   getClipboardHistoryUsed,
   getPocTransportStatus,
   listClipboardHistoryPreview,
+  listLocalSyncSpaces,
   loadPocRecentEndpoint,
   onLocalClipboardText,
   onPocClipboardText,
@@ -268,6 +270,76 @@ export const shellSnapshot = {
       snapshot.update((state) => ({
         ...state,
         lastPocEndpoint: null,
+      }));
+    }
+  },
+  async refreshSyncSpaces() {
+    snapshot.update((state) => ({
+      ...state,
+      syncSpace: {
+        ...state.syncSpace,
+        state: "loading",
+        errorMessage: null,
+      },
+    }));
+    try {
+      const spaces = await listLocalSyncSpaces();
+      snapshot.update((state) => ({
+        ...state,
+        syncSpace: {
+          state: spaces.length > 0 ? "ready" : "idle",
+          spaces,
+          errorMessage: null,
+        },
+      }));
+    } catch (error) {
+      snapshot.update((state) => ({
+        ...state,
+        syncSpace: {
+          ...state.syncSpace,
+          state: "error",
+          errorMessage: error instanceof Error ? error.message : "无法读取同步空间",
+        },
+      }));
+    }
+  },
+  async createDefaultSyncSpace() {
+    snapshot.update((state) => ({
+      ...state,
+      syncSpace: {
+        ...state.syncSpace,
+        state: "creating",
+        errorMessage: null,
+      },
+    }));
+    try {
+      const space = await createLocalSyncSpace("默认空间");
+      snapshot.update((state) => ({
+        ...state,
+        syncSpace: {
+          state: "ready",
+          spaces: [space, ...state.syncSpace.spaces],
+          errorMessage: null,
+        },
+        connection: {
+          state: "online",
+          title: "已创建同步空间",
+          description: "空间密钥已保存到 Windows 凭据库，数据库只保存密钥引用。",
+        },
+      }));
+    } catch (error) {
+      snapshot.update((state) => ({
+        ...state,
+        syncSpace: {
+          ...state.syncSpace,
+          state: "error",
+          errorMessage: error instanceof Error ? error.message : "无法创建同步空间",
+        },
+        connection: {
+          state: "authFailed",
+          title: "创建同步空间失败",
+          description: error instanceof Error ? error.message : "无法创建同步空间",
+        },
       }));
     }
   },

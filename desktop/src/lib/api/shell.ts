@@ -7,6 +7,7 @@ import type {
   PocRecentEndpoint,
   PocTransportSummary,
   ShellSnapshot,
+  SyncSpaceSummary,
 } from "$lib/types/shell";
 
 interface ClipboardTextItem {
@@ -74,6 +75,14 @@ interface PocRecentEndpointDto {
   connectedAtMs: number;
 }
 
+interface SyncSpaceSummaryDto {
+  spaceId: string;
+  displayName: string;
+  keyVersion: number;
+  spaceKeyRef: string;
+  createdAtMs: number;
+}
+
 export function createInitialShellSnapshot(): ShellSnapshot {
   return {
     connection: {
@@ -119,6 +128,11 @@ export function createInitialShellSnapshot(): ShellSnapshot {
       lastError: null,
     },
     lastPocEndpoint: null,
+    syncSpace: {
+      state: "idle",
+      spaces: [],
+      errorMessage: null,
+    },
     syncEnabled: true,
   };
 }
@@ -177,6 +191,16 @@ export async function disconnectAllPocPeers(): Promise<number> {
 export async function loadPocRecentEndpoint(): Promise<PocRecentEndpoint | null> {
   const endpoint = await invoke<PocRecentEndpointDto | null>("load_poc_recent_endpoint");
   return endpoint ? toPocRecentEndpoint(endpoint) : null;
+}
+
+export async function createLocalSyncSpace(displayName: string): Promise<SyncSpaceSummary> {
+  const space = await invoke<SyncSpaceSummaryDto>("create_local_sync_space", { displayName });
+  return toSyncSpaceSummary(space);
+}
+
+export async function listLocalSyncSpaces(): Promise<SyncSpaceSummary[]> {
+  const spaces = await invoke<SyncSpaceSummaryDto[]>("list_local_sync_spaces");
+  return spaces.map(toSyncSpaceSummary);
 }
 
 export async function startPocTransport(): Promise<PocTransportSummary> {
@@ -293,6 +317,21 @@ function toPocRecentEndpoint(endpoint: PocRecentEndpointDto): PocRecentEndpoint 
       second: "2-digit",
     }),
     connectedAtMs: endpoint.connectedAtMs,
+  };
+}
+
+function toSyncSpaceSummary(space: SyncSpaceSummaryDto): SyncSpaceSummary {
+  return {
+    id: space.spaceId,
+    displayName: space.displayName,
+    keyVersion: space.keyVersion,
+    shortId: space.spaceId.slice(-8),
+    keyRefKind: space.spaceKeyRef.startsWith("credential://") ? "credential" : "unknown",
+    createdAt: new Date(space.createdAtMs).toLocaleTimeString("zh-CN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }),
   };
 }
 
