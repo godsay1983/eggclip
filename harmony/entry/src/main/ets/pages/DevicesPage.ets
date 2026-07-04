@@ -52,6 +52,7 @@ export struct DevicesPage {
   @State private connectionState: ConnectionState = ConnectionState.OFFLINE;
   @State private connectionTitle: string = '等待桌面端';
   @State private connectionDescription: string = '正在等待 mDNS 候选，也可以使用手动 IP';
+  @State private diagnosticsExpanded: boolean = false;
 
   aboutToAppear(): void {
     const hostContext = this.getUIContext().getHostContext();
@@ -70,13 +71,9 @@ export struct DevicesPage {
       Column({ space: EggClipSpacing.sectionGap }) {
         this.Header()
         PairingPage()
-        this.ConnectionCard()
-        this.RuntimeDeviceCard()
-        this.DiscoveryCard()
-        this.ManualTransportCard()
-        this.TroubleshootingCard()
         this.EmptyDeviceCard()
         this.DevicePolicyCard()
+        this.ConnectionDiagnosticsSection()
       }
       .width('100%')
       .padding({
@@ -100,13 +97,70 @@ export struct DevicesPage {
         .fontColor(EggClipColors.textPrimary)
         .width('100%')
 
-      Text('发现、连接和管理局域网内可信设备')
+      Text('先配对可信设备；配对后再通过局域网自动连接。')
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
         .width('100%')
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  private ConnectionDiagnosticsSection() {
+    Column({ space: 12 }) {
+      Row() {
+        Row({ space: 10 }) {
+          StatusDot({ state: this.connectionState })
+
+          Column({ space: 3 }) {
+            Text('连接诊断')
+              .fontSize(EggClipTypography.bodySize)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(EggClipColors.textPrimary)
+
+            Text(this.diagnosticsSummary())
+              .fontSize(EggClipTypography.captionSize)
+              .fontColor(EggClipColors.textSecondary)
+              .lineHeight(18)
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+        }
+        .layoutWeight(1)
+
+        Button(this.diagnosticsExpanded ? '收起' : '展开')
+          .height(32)
+          .fontSize(12)
+          .fontColor(EggClipColors.textSecondary)
+          .backgroundColor(EggClipColors.controlBackground)
+          .borderRadius(16)
+          .onClick(() => {
+            this.diagnosticsExpanded = !this.diagnosticsExpanded;
+          })
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Top)
+
+      Text('这里是开发期和排障入口：自动发现、手动 IP 和运行时 WebSocket 只说明网络可达，不代表设备已经可信。')
+        .width('100%')
+        .fontSize(EggClipTypography.captionSize)
+        .fontColor(EggClipColors.textSecondary)
+        .lineHeight(20)
+
+      if (this.diagnosticsExpanded) {
+        this.ConnectionCard()
+        this.RuntimeDeviceCard()
+        this.DiscoveryCard()
+        this.ManualTransportCard()
+        this.TroubleshootingCard()
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(EggClipSpacing.cardPadding)
+    .backgroundColor(EggClipColors.cardBackground)
+    .borderRadius(EggClipSpacing.radiusLarge)
   }
 
   @Builder
@@ -533,12 +587,12 @@ export struct DevicesPage {
         .fontColor(EggClipColors.primary)
 
       Column({ space: 6 }) {
-        Text('还没有可信设备')
+        Text('可信设备')
           .fontSize(20)
           .fontWeight(FontWeight.Bold)
           .fontColor(EggClipColors.textPrimary)
 
-        Text('当前连接入口仍是 POC 诊断能力；正式配对完成后，这里会显示设备名称、在线状态、公钥短指纹和最后在线时间。')
+        Text('还没有完成安全配对的设备。正式配对完成后，这里会显示设备名称、在线状态、公钥短指纹、最后在线时间和移除入口。')
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
           .textAlign(TextAlign.Center)
@@ -547,17 +601,10 @@ export struct DevicesPage {
       .width('100%')
       .alignItems(HorizontalAlign.Center)
 
-      Button('添加设备')
-        .width('100%')
-        .height(44)
-        .enabled(false)
-        .fontColor(EggClipColors.onPrimary)
-        .backgroundColor(EggClipColors.primary)
-        .borderRadius(22)
-
-      Text('配对流程会在安全握手完成后开放。')
+      Text('请使用上方“设备配对”导入桌面端邀请；自动发现和手动 IP 仅放在下方连接诊断里。')
         .fontSize(11)
         .fontColor(EggClipColors.textSecondary)
+        .textAlign(TextAlign.Center)
     }
     .width('100%')
     .alignItems(HorizontalAlign.Center)
@@ -698,5 +745,18 @@ export struct DevicesPage {
       return '应用在后台时会停止发现和连接；回到前台后再重新发现。';
     }
     return '先开始发现桌面端；如果没有候选地址，再使用手动 IP 回退。';
+  }
+
+  private diagnosticsSummary(): string {
+    if (this.transportState === PocLifecycleState.RUNNING) {
+      return `调试连接在线 · ${this.runtimeEndpointText()}`;
+    }
+    if (this.discoveryCandidates.length > 0) {
+      return `发现 ${this.discoveryCandidates.length} 个候选，需展开后选择连接`;
+    }
+    if (this.transportState === PocLifecycleState.FAILED || this.discoveryState === PocLifecycleState.FAILED) {
+      return '发现或连接失败，可展开查看手动 IP 和排障建议';
+    }
+    return '默认收起；mDNS 或模拟器网络异常时再展开使用';
   }
 }

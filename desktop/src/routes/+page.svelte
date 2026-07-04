@@ -96,25 +96,27 @@
     >
   </header>
 
-  <ClipboardCard
-    current={$shellSnapshot.current}
-    outbound={$shellSnapshot.outbound}
-    onRead={() => shellSnapshot.readLocalClipboard()}
-    onCopy={() => shellSnapshot.copyCurrentToClipboard()}
-    onSendPoc={() => shellSnapshot.sendCurrentToPocPeer($settingsSnapshot.settings.syncEnabled)}
-    sendDisabled={!$settingsSnapshot.settings.syncEnabled}
-    sendLabel={$settingsSnapshot.settings.syncEnabled ? "发送到 Harmony" : "同步已暂停"}
-  />
+  <div class="panel-main">
+    <ClipboardCard
+      current={$shellSnapshot.current}
+      outbound={$shellSnapshot.outbound}
+      onRead={() => shellSnapshot.readLocalClipboard()}
+      onCopy={() => shellSnapshot.copyCurrentToClipboard()}
+      onSendPoc={() => shellSnapshot.sendCurrentToPocPeer($settingsSnapshot.settings.syncEnabled)}
+      sendDisabled={!$settingsSnapshot.settings.syncEnabled}
+      sendLabel={$settingsSnapshot.settings.syncEnabled ? "发送到 Harmony" : "同步已暂停"}
+    />
 
-  <HistoryList
-    history={{
-      ...$shellSnapshot.history,
-      limit: $settingsSnapshot.settings.historyLimit,
-    }}
-    historyEnabled={$settingsSnapshot.settings.historyEnabled && $settingsSnapshot.settings.historyLimit > 0}
-    onClear={() => shellSnapshot.clearHistory()}
-    onDelete={(itemId) => shellSnapshot.deleteHistoryItem(itemId)}
-  />
+    <HistoryList
+      history={{
+        ...$shellSnapshot.history,
+        limit: $settingsSnapshot.settings.historyLimit,
+      }}
+      historyEnabled={$settingsSnapshot.settings.historyEnabled && $settingsSnapshot.settings.historyLimit > 0}
+      onClear={() => shellSnapshot.clearHistory()}
+      onDelete={(itemId) => shellSnapshot.deleteHistoryItem(itemId)}
+    />
+  </div>
 
   {#if settingsVisible}
     <section class="settings-popover" aria-label="设置">

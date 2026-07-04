@@ -24,6 +24,32 @@
   box-sizing: border-box;
 }
 
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(167, 122, 0, 0.38) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(167, 122, 0, 0.28);
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(167, 122, 0, 0.48);
+  background-clip: content-box;
+}
+
 html,
 body {
   width: 100%;
@@ -52,9 +78,20 @@ button {
   width: 100%;
   height: 100%;
   padding: 24px;
-  overflow-y: auto;
+  overflow: hidden;
   border: 1px solid rgba(167, 122, 0, 0.32);
   background: rgba(255, 248, 231, 0.92);
+}
+
+.panel-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
 }
 
 .brand-row,
@@ -270,6 +307,7 @@ footer {
 }
 
 .clipboard-card {
+  flex: 0 0 auto;
   padding: 20px;
   border-radius: 28px;
 }
@@ -384,8 +422,8 @@ footer {
 }
 
 .clipboard-placeholder {
-  min-height: 88px;
-  margin: 18px 0;
+  min-height: 72px;
+  margin: 14px 0;
   color: var(--muted);
   font-size: 14px;
   line-height: 1.7;
@@ -396,6 +434,7 @@ footer {
 .clipboard-placeholder.expanded {
   max-height: 260px;
   overflow: auto;
+  padding-right: 4px;
 }
 
 .clipboard-meta-row {
@@ -415,7 +454,7 @@ footer {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin: 0 0 16px;
+  margin: 0 0 12px;
   padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: 18px;
@@ -502,6 +541,10 @@ footer {
   border-radius: 24px;
 }
 
+.history-section {
+  flex: 0 0 auto;
+}
+
 .settings-popover {
   position: absolute;
   top: 78px;
@@ -510,6 +553,7 @@ footer {
   width: min(356px, calc(100% - 48px));
   max-height: calc(100% - 118px);
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 18px;
   border: 1px solid rgba(167, 122, 0, 0.18);
   border-radius: 26px;
@@ -937,8 +981,9 @@ footer {
 }
 
 footer {
+  flex: 0 0 auto;
   justify-content: space-between;
-  margin-top: auto;
+  margin-top: 0;
   padding-top: 14px;
   border-top: 1px solid var(--line);
 }
@@ -1013,6 +1058,20 @@ footer {
   background: rgba(120, 192, 145, 0.14);
 }
 
+:root[data-theme="dark"] * {
+  scrollbar-color: rgba(231, 190, 50, 0.42) transparent;
+}
+
+:root[data-theme="dark"] *::-webkit-scrollbar-thumb {
+  background: rgba(231, 190, 50, 0.3);
+  background-clip: content-box;
+}
+
+:root[data-theme="dark"] *::-webkit-scrollbar-thumb:hover {
+  background: rgba(231, 190, 50, 0.52);
+  background-clip: content-box;
+}
+
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]):not([data-theme="dark"]) {
     color: #f7f0e4;
@@ -1076,6 +1135,20 @@ footer {
   :root:not([data-theme="light"]):not([data-theme="dark"]) .status-label.online {
     color: #b8f1c9;
     background: rgba(120, 192, 145, 0.14);
+  }
+
+  :root:not([data-theme="light"]):not([data-theme="dark"]) * {
+    scrollbar-color: rgba(231, 190, 50, 0.42) transparent;
+  }
+
+  :root:not([data-theme="light"]):not([data-theme="dark"]) *::-webkit-scrollbar-thumb {
+    background: rgba(231, 190, 50, 0.3);
+    background-clip: content-box;
+  }
+
+  :root:not([data-theme="light"]):not([data-theme="dark"]) *::-webkit-scrollbar-thumb:hover {
+    background: rgba(231, 190, 50, 0.52);
+    background-clip: content-box;
   }
 }
 
