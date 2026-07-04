@@ -30,6 +30,7 @@ pub const PAIRING_SECRET_BYTES: usize = 32;
 pub const INITIAL_SPACE_KEY_VERSION: u32 = 1;
 pub const PAIRING_INVITATION_TTL_MS: u64 = 5 * 60 * 1000;
 pub const DEFAULT_SPACE_DISPLAY_NAME: &str = "默认空间";
+const PAIRING_INVITATION_EXPIRY_SWEEP_SECONDS: u64 = 60;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -173,6 +174,24 @@ pub fn copy_pairing_invitation(app: tauri::AppHandle, invitation: String) -> Res
         .map_err(|error| format!("无法复制配对邀请：{error}"))
 }
 
+pub fn start_pairing_invitation_expiry_task(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(
+            PAIRING_INVITATION_EXPIRY_SWEEP_SECONDS,
+        ));
+        loop {
+            interval.tick().await;
+            let Ok(timestamp_ms) = now_ms() else {
+                continue;
+            };
+            let Ok(path) = database_path(&app) else {
+                continue;
+            };
+            let _ = expire_pairing_invitations_at_path(&path, timestamp_ms);
+        }
+    });
+}
+
 pub fn create_sync_space_at_path<S: SecretBytesStore>(
     path: &Path,
     secret_store: &mut S,
@@ -199,6 +218,12 @@ pub fn list_sync_spaces_at_path(path: &Path) -> Result<Vec<SyncSpaceSummary>, Pa
     let connection =
         open_database(path).map_err(|error| PairingError::Database(error.to_string()))?;
     list_sync_spaces(&connection)
+}
+
+pub fn expire_pairing_invitations_at_path(path: &Path, now_ms: u64) -> Result<usize, PairingError> {
+    let connection =
+        open_database(path).map_err(|error| PairingError::Database(error.to_string()))?;
+    expire_pairing_invitations(&connection, now_ms)
 }
 
 pub fn ensure_default_sync_space_at_path<S: SecretBytesStore>(
@@ -310,6 +335,15 @@ pub fn list_sync_spaces(connection: &Connection) -> Result<Vec<SyncSpaceSummary>
             created_at_ms: record.space.created_at,
         })
         .collect())
+}
+
+pub fn expire_pairing_invitations(
+    connection: &Connection,
+    now_ms: u64,
+) -> Result<usize, PairingError> {
+    PairingInvitationRepository::new(connection)
+        .expire_before(now_ms)
+        .map_err(|error| PairingError::Database(error.to_string()))
 }
 
 pub fn create_pairing_invitation_for_space<S: SecretBytesStore>(
@@ -781,6 +815,38 @@ mod tests {
 
         assert_eq!(first_record.state, PairingInvitationState::Expired);
         assert_eq!(second_record.state, PairingInvitationState::Active);
+    }
+
+    #[test]
+    fn expiry_sweep_marks_only_elapsed_active_invitations() {
+        let mut connection = open_in_memory_database().expect("database should open");
+        let mut store = MemorySecretStore::default();
+        let space = create_sync_space(&mut connection, &mut store, "默认空间", 1_700_000_000_000)
+            .expect("space should be created");
+        let invitation = create_pairing_invitation_for_space(
+            &mut connection,
+            &mut store,
+            &space.space_id,
+            1_700_000_000_500,
+        )
+        .expect("invitation should be created");
+
+        assert_eq!(
+            expire_pairing_invitations(&connection, invitation.expires_at_ms - 1)
+                .expect("sweep before expiry should run"),
+            0
+        );
+        assert_eq!(
+            expire_pairing_invitations(&connection, invitation.expires_at_ms)
+                .expect("sweep at expiry should run"),
+            1
+        );
+        let stored = PairingInvitationRepository::new(&connection)
+            .get(Uuid::parse_str(&invitation.invitation_id).expect("invitation id should parse"))
+            .expect("invitation should query")
+            .expect("invitation should exist");
+
+        assert_eq!(stored.state, PairingInvitationState::Expired);
     }
 
     #[test]
