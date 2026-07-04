@@ -239,11 +239,11 @@ harmony/entry/src/main/ets/
 
 ### 邀请导入
 
-- [ ] 定义 `eggclip://pair` 邀请格式或等效版本化字符串。
+- [x] 定义 `eggclip://pair` 邀请格式或等效版本化字符串。
   - [x] HarmonyOS 已实现 `eggclip://pair?p=` 邀请 URI 解析，校验 app、版本、kind、spaceId、spaceKeyVersion、发行设备、公钥、256-bit pairingSecret 和过期时间。
   - [x] HarmonyOS 已兼容桌面端新增 `invitationId` 字段，解析结果保留该 ID 供后续正式握手消费回传。
 - [x] 已接入系统 Scan Kit 扫码入口，限制 QR_CODE，扫码结果复用现有内存导入校验路径。
-- [ ] 支持从剪贴文本/输入框导入邀请，但不得把邀请保存到历史。
+- [x] 支持从剪贴文本/输入框导入邀请，但不得把邀请保存到历史。
   - [x] 已支持输入框导入邀请并只做内存解析，不写入 RDB 或本机历史。
   - [x] PairingPage 已接入真实 PasteButton 导入入口，用户授权后读取纯文本邀请并立即校验，不保存到历史或 RDB。
   - [x] PairingPage 已接入扫码导入入口，扫码文本不写入 RDB 或本机历史，直接进入邀请解析与确认码流程。
@@ -254,8 +254,9 @@ harmony/entry/src/main/ets/
 
 - [ ] 使用 128/256 位一次性 `pairingSecret` 建立配对通道。
 - [ ] 完成设备身份交换和握手 transcript 验证。
-- [ ] 显示六位人工确认码供双方核对，但不把它当成唯一秘密。
+- [x] 显示六位人工确认码供双方核对，但不把它当成唯一秘密。
   - [x] PairingPage 已显示六位人工确认码，并要求用户点击“确认码一致，继续配对”后才进入 pending；确认码不作为唯一秘密。
+  - [x] PairingStore 确认后会从 UI snapshot 中清空完整邀请文本，只保留摘要和内存待握手材料。
 - [ ] 安全接收 `spaceKey` 和成员信息。
 - [ ] 成功后持久化 trusted device 并清理邀请秘密。
 - [ ] 拒绝过期、重复消费、身份不匹配和空间不匹配邀请。

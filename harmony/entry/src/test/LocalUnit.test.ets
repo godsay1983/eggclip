@@ -1052,12 +1052,19 @@ export default function localUnitTest() {
       const store = new PairingStore();
       store.updateInvitationText(PAIRING_INVITATION_FIXTURE);
       store.parseCurrent(1700000000000);
+      expect(store.hasPendingHandshakeMaterial()).assertEqual(false);
       const pending = store.confirmCodeMatched();
 
       expect(pending.state).assertEqual(PairingStoreState.PENDING);
+      expect(pending.invitationText).assertEqual('');
       expect(pending.summary?.confirmationCode).assertEqual('574920');
-      expect(pending.statusText.indexOf('等待接入身份交换') >= 0).assertEqual(true);
+      expect(pending.statusText.indexOf('邀请 secret 已从可见输入中清理') >= 0).assertEqual(true);
       expect(pending.error === null).assertEqual(true);
+      expect(store.hasPendingHandshakeMaterial()).assertEqual(true);
+
+      const cleared = store.clear();
+      expect(cleared.state).assertEqual(PairingStoreState.IDLE);
+      expect(store.hasPendingHandshakeMaterial()).assertEqual(false);
     });
 
     it('importsPairingInvitationTextThroughStoreWithoutPersistenceSideEffects', 0, () => {

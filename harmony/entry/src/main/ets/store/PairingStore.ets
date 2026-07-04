@@ -1,5 +1,6 @@
 import {
   PairingInvitationError,
+  PairingInvitationPayload,
   PairingInvitationParseResult,
   PairingInvitationService,
   PairingInvitationSummary
@@ -23,12 +24,18 @@ export interface PairingStoreSnapshot {
 export class PairingStore {
   private readonly service: PairingInvitationService = new PairingInvitationService();
   private currentSnapshot: PairingStoreSnapshot = createInitialPairingSnapshot();
+  private pendingPayload: PairingInvitationPayload | null = null;
 
   snapshot(): PairingStoreSnapshot {
     return cloneSnapshot(this.currentSnapshot);
   }
 
+  hasPendingHandshakeMaterial(): boolean {
+    return this.currentSnapshot.state === PairingStoreState.PENDING && this.pendingPayload !== null;
+  }
+
   updateInvitationText(value: string): PairingStoreSnapshot {
+    this.pendingPayload = null;
     this.currentSnapshot = {
       state: PairingStoreState.IDLE,
       invitationText: value,
@@ -57,7 +64,8 @@ export class PairingStore {
   }
 
   confirmCodeMatched(): PairingStoreSnapshot {
-    if (this.currentSnapshot.summary === null) {
+    if (this.currentSnapshot.summary === null || this.pendingPayload === null) {
+      this.pendingPayload = null;
       this.currentSnapshot = {
         state: PairingStoreState.ERROR,
         invitationText: this.currentSnapshot.invitationText,
@@ -69,8 +77,8 @@ export class PairingStore {
     }
     this.currentSnapshot = {
       state: PairingStoreState.PENDING,
-      invitationText: this.currentSnapshot.invitationText,
-      statusText: '已确认六位码一致。等待接入身份交换、握手和 spaceKey 安全接收。',
+      invitationText: '',
+      statusText: '已确认六位码一致。邀请 secret 已从可见输入中清理，等待接入身份交换、握手和 spaceKey 安全接收。',
       summary: cloneSummary(this.currentSnapshot.summary),
       error: null
     };
@@ -78,12 +86,14 @@ export class PairingStore {
   }
 
   clear(): PairingStoreSnapshot {
+    this.pendingPayload = null;
     this.currentSnapshot = createInitialPairingSnapshot();
     return this.snapshot();
   }
 
   private snapshotFromResult(result: PairingInvitationParseResult): PairingStoreSnapshot {
-    if (result.ok && result.summary !== undefined) {
+    if (result.ok && result.summary !== undefined && result.payload !== undefined) {
+      this.pendingPayload = clonePayload(result.payload);
       return {
         state: PairingStoreState.READY,
         invitationText: this.currentSnapshot.invitationText,
@@ -92,6 +102,7 @@ export class PairingStore {
         error: null
       };
     }
+    this.pendingPayload = null;
     return {
       state: PairingStoreState.ERROR,
       invitationText: this.currentSnapshot.invitationText,
@@ -110,6 +121,27 @@ export function createInitialPairingSnapshot(): PairingStoreSnapshot {
     summary: null,
     error: null
   };
+}
+
+function clonePayload(payload: PairingInvitationPayload): PairingInvitationPayload {
+  const clone: PairingInvitationPayload = {
+    app: payload.app,
+    version: payload.version,
+    kind: payload.kind,
+    spaceId: payload.spaceId,
+    spaceKeyVersion: payload.spaceKeyVersion,
+    issuerDeviceId: payload.issuerDeviceId,
+    issuerIdentityPublicKey: payload.issuerIdentityPublicKey,
+    pairingSecret: payload.pairingSecret,
+    expiresAtMs: payload.expiresAtMs
+  };
+  if (payload.invitationId !== undefined) {
+    clone.invitationId = payload.invitationId;
+  }
+  if (payload.issuerDeviceName !== undefined) {
+    clone.issuerDeviceName = payload.issuerDeviceName;
+  }
+  return clone;
 }
 
 function cloneSnapshot(snapshot: PairingStoreSnapshot): PairingStoreSnapshot {

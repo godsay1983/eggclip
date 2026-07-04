@@ -188,7 +188,7 @@ export struct PairingPage {
         })
 
       if (this.snapshot.state === PairingStoreState.PENDING) {
-        Text('当前只推进到内存 pending 状态，不创建可信设备、不保存邀请 secret、不接收 spaceKey。正式握手和 HUKS 接入后会继续完成配对。')
+        Text('当前只推进到内存 pending 状态，已从可见输入中清理完整邀请；暂不创建可信设备、不保存邀请 secret、不接收 spaceKey。正式握手和 HUKS 接入后会继续完成配对。')
           .width('100%')
           .fontSize(11)
           .fontColor(EggClipColors.textSecondary)
