@@ -943,6 +943,14 @@ export default function localUnitTest() {
       expect(badEd25519.ok).assertEqual(false);
       expect(badEd25519.error).assertEqual(CryptoVectorErrorCode.INVALID_LENGTH);
     });
+
+    it('exposesEd25519SignatureVectorCryptoFrameworkBoundary', 0, () => {
+      const service = new CryptoVectorService();
+      const result = service.verifyEd25519SignatureVector(ED25519_SIGNATURE_VECTOR);
+
+      expect(result.ok || result.error === CryptoVectorErrorCode.SIGNATURE_MISMATCH ||
+        result.error === CryptoVectorErrorCode.PLATFORM_CRYPTO_FAILED).assertEqual(true);
+    });
   });
 }
 

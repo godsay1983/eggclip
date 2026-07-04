@@ -6,6 +6,13 @@ use std::collections::HashMap;
 use rusqlite::Connection;
 use serde::Serialize;
 use uuid::Uuid;
+#[cfg(windows)]
+use windows_sys::Win32::{
+    Foundation::{GetLastError, ERROR_NOT_FOUND},
+    Security::Credentials::{
+        CredFree, CredReadW, CredWriteW, CREDENTIALW, CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC,
+    },
+};
 
 use crate::{
     crypto::{
@@ -74,6 +81,9 @@ pub fn load_local_device_identity(
     app: tauri::AppHandle,
 ) -> Result<LocalDeviceIdentitySummary, String> {
     let path = database_path(&app)?;
+    #[cfg(windows)]
+    let mut store = WindowsCredentialIdentitySecretStore;
+    #[cfg(not(windows))]
     let mut store = UnavailableIdentitySecretStore;
     ensure_local_device_identity_at_path(&path, &mut store, now_ms()?)
         .map_err(|error| format!("无法加载本机设备身份：{error}"))
@@ -143,13 +153,14 @@ fn create_local_identity<S: IdentitySecretStore>(
     device_id: Uuid,
     now_ms: u64,
 ) -> Result<LocalDeviceIdentitySummary, IdentityError> {
-    let seed = random_ed25519_seed()?;
+    let mut seed = random_ed25519_seed()?;
     let identity = Ed25519Identity::from_seed(seed);
     let public_key = identity.public_key();
     let identity_public_key = encode_base64url(&public_key);
     let private_key_ref = format!("credential://eggclip/device-identity/{device_id}");
 
     secret_store.save_seed(&private_key_ref, seed)?;
+    seed.fill(0);
 
     let settings = SettingsRepository::new(connection);
     settings
@@ -193,8 +204,104 @@ fn parse_created_at(value: &str) -> Result<u64, IdentityError> {
         .map_err(|_| IdentityError::InvalidMetadata("identity createdAt".to_string()))
 }
 
+#[cfg(windows)]
+pub struct WindowsCredentialIdentitySecretStore;
+
+#[cfg(windows)]
+impl IdentitySecretStore for WindowsCredentialIdentitySecretStore {
+    fn load_seed(
+        &self,
+        private_key_ref: &str,
+    ) -> Result<Option<[u8; ED25519_PRIVATE_SEED_BYTES]>, IdentityError> {
+        let target_name = wide_null(private_key_ref);
+        let mut credential: *mut CREDENTIALW = std::ptr::null_mut();
+        let read_ok =
+            unsafe { CredReadW(target_name.as_ptr(), CRED_TYPE_GENERIC, 0, &mut credential) };
+
+        if read_ok == 0 {
+            let error = unsafe { GetLastError() };
+            if error == ERROR_NOT_FOUND {
+                return Ok(None);
+            }
+            return Err(IdentityError::KeyStore(format!(
+                "Windows Credential Manager read failed: {error}"
+            )));
+        }
+
+        let credential = CredentialHandle(credential);
+        let credential_ref = unsafe { &*credential.0 };
+        if credential_ref.CredentialBlobSize as usize != ED25519_PRIVATE_SEED_BYTES {
+            return Err(IdentityError::KeyStore(
+                "stored identity seed has invalid length".to_string(),
+            ));
+        }
+        if credential_ref.CredentialBlob.is_null() {
+            return Err(IdentityError::MissingPrivateKey);
+        }
+
+        let mut seed = [0u8; ED25519_PRIVATE_SEED_BYTES];
+        let source = unsafe {
+            std::slice::from_raw_parts(
+                credential_ref.CredentialBlob,
+                credential_ref.CredentialBlobSize as usize,
+            )
+        };
+        seed.copy_from_slice(source);
+        Ok(Some(seed))
+    }
+
+    fn save_seed(
+        &mut self,
+        private_key_ref: &str,
+        seed: [u8; ED25519_PRIVATE_SEED_BYTES],
+    ) -> Result<(), IdentityError> {
+        let mut target_name = wide_null(private_key_ref);
+        let mut user_name = wide_null("EggClip");
+        let mut credential_blob = seed;
+        let credential = CREDENTIALW {
+            Type: CRED_TYPE_GENERIC,
+            TargetName: target_name.as_mut_ptr(),
+            CredentialBlobSize: credential_blob.len() as u32,
+            CredentialBlob: credential_blob.as_mut_ptr(),
+            Persist: CRED_PERSIST_LOCAL_MACHINE,
+            UserName: user_name.as_mut_ptr(),
+            ..Default::default()
+        };
+
+        let write_ok = unsafe { CredWriteW(&credential, 0) };
+        credential_blob.fill(0);
+        if write_ok == 0 {
+            let error = unsafe { GetLastError() };
+            return Err(IdentityError::KeyStore(format!(
+                "Windows Credential Manager write failed: {error}"
+            )));
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+struct CredentialHandle(*mut CREDENTIALW);
+
+#[cfg(windows)]
+impl Drop for CredentialHandle {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe { CredFree(self.0.cast()) };
+        }
+    }
+}
+
+#[cfg(windows)]
+fn wide_null(value: &str) -> Vec<u16> {
+    value.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+#[cfg(not(windows))]
 struct UnavailableIdentitySecretStore;
 
+#[cfg(not(windows))]
 impl IdentitySecretStore for UnavailableIdentitySecretStore {
     fn load_seed(
         &self,

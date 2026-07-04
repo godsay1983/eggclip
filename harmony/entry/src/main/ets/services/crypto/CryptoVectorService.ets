@@ -1,8 +1,12 @@
+import cryptoFramework from '@ohos.security.cryptoFramework';
+
 export enum CryptoVectorErrorCode {
   INVALID_JSON = 'invalidJson',
   INVALID_FIELD = 'invalidField',
   INVALID_BASE64URL = 'invalidBase64url',
   INVALID_LENGTH = 'invalidLength',
+  PLATFORM_CRYPTO_FAILED = 'platformCryptoFailed',
+  SIGNATURE_MISMATCH = 'signatureMismatch',
   REPLAY = 'replay'
 }
 
@@ -105,6 +109,48 @@ export class CryptoVectorService {
       requireDecodedLength(publicKey.value, 32, 'publicKey'),
       requireDecodedLength(signature.value, 64, 'signature')
     ]);
+  }
+
+  verifyEd25519SignatureVector(input: string): CryptoVectorValidationResult {
+    const shape = this.validateEd25519SignatureVector(input);
+    if (!shape.ok) {
+      return shape;
+    }
+
+    const vector = parseJson<Ed25519SignatureVector>(input);
+    if (vector === null || typeof vector.publicKey !== 'string' ||
+      typeof vector.signature !== 'string' || typeof vector.message !== 'string') {
+      return { ok: false, error: CryptoVectorErrorCode.INVALID_FIELD, field: 'ed25519' };
+    }
+
+    const publicKey = decodeBase64Url(vector.publicKey);
+    const signature = decodeBase64Url(vector.signature);
+    if (publicKey === null || signature === null) {
+      return { ok: false, error: CryptoVectorErrorCode.INVALID_BASE64URL, field: 'ed25519' };
+    }
+
+    const attempts: Ed25519ImportAttempt[] = [
+      { algName: 'Ed25519', keyFormat: Ed25519KeyFormat.SPKI_DER },
+      { algName: 'ED25519', keyFormat: Ed25519KeyFormat.SPKI_DER },
+      { algName: 'Ed25519', endian: BigIntEndian.LITTLE },
+      { algName: 'Ed25519', endian: BigIntEndian.BIG },
+      { algName: 'ED25519', endian: BigIntEndian.LITTLE },
+      { algName: 'ED25519', endian: BigIntEndian.BIG }
+    ];
+
+    for (const attempt of attempts) {
+      let result = false;
+      if (attempt.keyFormat === Ed25519KeyFormat.SPKI_DER) {
+        result = this.verifyEd25519WithSpki(attempt.algName, publicKey, vector.message, signature);
+      } else if (attempt.endian !== undefined) {
+        result = this.verifyEd25519WithSpec(attempt.algName, publicKey, vector.message, signature, attempt.endian);
+      }
+      if (result === true) {
+        return { ok: true };
+      }
+    }
+
+    return { ok: false, error: CryptoVectorErrorCode.SIGNATURE_MISMATCH, field: 'signature' };
   }
 
   validateX25519SharedSecretVector(input: string): CryptoVectorValidationResult {
@@ -223,6 +269,61 @@ export class CryptoVectorService {
     }
     return { ok: true };
   }
+
+  private verifyEd25519WithSpec(
+    algName: string,
+    publicKeyBytes: Uint8Array,
+    message: string,
+    signatureBytes: Uint8Array,
+    endian: BigIntEndian
+  ): boolean {
+    try {
+      const publicKeySpec: cryptoFramework.ED25519PubKeySpec = {
+        algName,
+        specType: cryptoFramework.AsyKeySpecType.PUBLIC_KEY_SPEC,
+        pk: bytesToBigInt(publicKeyBytes, endian)
+      };
+      const generator = cryptoFramework.createAsyKeyGeneratorBySpec(publicKeySpec);
+      const publicKey = generator.generatePubKeySync();
+      const verifier = cryptoFramework.createVerify(algName);
+      verifier.initSync(publicKey);
+      return verifier.verifySync({ data: utf8Encode(message) }, { data: signatureBytes });
+    } catch (_) {
+      return false;
+    }
+  }
+
+  private verifyEd25519WithSpki(
+    algName: string,
+    publicKeyBytes: Uint8Array,
+    message: string,
+    signatureBytes: Uint8Array
+  ): boolean {
+    try {
+      const generator = cryptoFramework.createAsyKeyGenerator(algName);
+      const keyPair = generator.convertKeySync({ data: ed25519SpkiDer(publicKeyBytes) }, null);
+      const verifier = cryptoFramework.createVerify(algName);
+      verifier.initSync(keyPair.pubKey);
+      return verifier.verifySync({ data: utf8Encode(message) }, { data: signatureBytes });
+    } catch (_) {
+      return false;
+    }
+  }
+}
+
+enum BigIntEndian {
+  BIG,
+  LITTLE
+}
+
+enum Ed25519KeyFormat {
+  SPKI_DER
+}
+
+interface Ed25519ImportAttempt {
+  algName: string;
+  endian?: BigIntEndian;
+  keyFormat?: Ed25519KeyFormat;
 }
 
 export function sessionNonce(direction: SessionDirection, counter: number): Uint8Array {
@@ -305,6 +406,64 @@ function requireDecodedLength(value: string, expectedLength: number, field: stri
     return { ok: false, error: CryptoVectorErrorCode.INVALID_LENGTH, field };
   }
   return { ok: true };
+}
+
+function bytesToBigInt(bytes: Uint8Array, endian: BigIntEndian): bigint {
+  let result = BigInt(0);
+  if (endian === BigIntEndian.BIG) {
+    for (let index = 0; index < bytes.length; index += 1) {
+      result = (result << BigInt(8)) + BigInt(bytes[index]);
+    }
+    return result;
+  }
+
+  for (let index = bytes.length - 1; index >= 0; index -= 1) {
+    result = (result << BigInt(8)) + BigInt(bytes[index]);
+  }
+  return result;
+}
+
+function utf8Encode(value: string): Uint8Array {
+  const bytes: number[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code <= 0x7f) {
+      bytes.push(code);
+    } else if (code <= 0x7ff) {
+      bytes.push(0xc0 | (code >> 6));
+      bytes.push(0x80 | (code & 0x3f));
+    } else if (
+      code >= 0xd800 &&
+      code <= 0xdbff &&
+      index + 1 < value.length &&
+      value.charCodeAt(index + 1) >= 0xdc00 &&
+      value.charCodeAt(index + 1) <= 0xdfff
+    ) {
+      const next = value.charCodeAt(index + 1);
+      const scalar = 0x10000 + (((code - 0xd800) << 10) | (next - 0xdc00));
+      bytes.push(0xf0 | (scalar >> 18));
+      bytes.push(0x80 | ((scalar >> 12) & 0x3f));
+      bytes.push(0x80 | ((scalar >> 6) & 0x3f));
+      bytes.push(0x80 | (scalar & 0x3f));
+      index += 1;
+    } else {
+      bytes.push(0xe0 | (code >> 12));
+      bytes.push(0x80 | ((code >> 6) & 0x3f));
+      bytes.push(0x80 | (code & 0x3f));
+    }
+  }
+  return new Uint8Array(bytes);
+}
+
+function ed25519SpkiDer(publicKey: Uint8Array): Uint8Array {
+  const prefix = new Uint8Array([
+    0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65,
+    0x70, 0x03, 0x21, 0x00
+  ]);
+  const output = new Uint8Array(prefix.length + publicKey.length);
+  output.set(prefix, 0);
+  output.set(publicKey, prefix.length);
+  return output;
 }
 
 export function decodeBase64Url(value: string): Uint8Array | null {

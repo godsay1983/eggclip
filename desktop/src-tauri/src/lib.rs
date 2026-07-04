@@ -73,6 +73,7 @@ pub fn run() {
             history::delete_clipboard_history_item,
             history::get_clipboard_history_used,
             history::list_clipboard_history_preview,
+            identity::load_local_device_identity,
             settings::load_app_settings,
             settings::save_app_settings,
             transport::connect_poc_peer,

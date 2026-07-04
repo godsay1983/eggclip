@@ -63,7 +63,7 @@ desktop/
 
 - [x] 复用托盘创建、左键显隐、关闭转隐藏和失焦隐藏模式。
 - [x] 复用多显示器面板定位和 DPI 计算逻辑。
-- [ ] 复用单实例、开机启动和系统凭据库接入模式。
+- [x] 复用单实例、开机启动和系统凭据库接入模式。
 - [ ] 复用 SQLite WAL、migration runner 和参数绑定模式。
 - [x] 复用 TypeScript API / store / component 分层。
 - [x] 复用主题 token 和发布检查结构，不复制 Todo、提醒或 S3 业务。
@@ -187,8 +187,10 @@ desktop/
 - [ ] 生成 Ed25519 长期身份密钥。
   - [x] Rust 完成基于测试 seed 的 Ed25519 签名/验签基元。
   - [x] 建立生产随机 Ed25519 身份密钥生成和本机身份元数据边界；SQLite 只保存公钥和外部密钥引用。
-  - [ ] 身份密钥接入系统凭据库存取。
+  - [x] 身份密钥接入 Windows Credential Manager 存取；Tauri 命令已使用凭据库创建/加载本机身份。
 - [ ] 使用系统凭据库保存私钥和 `spaceKey`。
+  - [x] 本机 Ed25519 身份 seed 已保存到 Windows Credential Manager，SQLite 只保存公钥和 `credential://` 引用。
+  - [ ] `spaceKey` 保存仍待配对/空间创建流程接入。
 - [ ] SQLite 只保存公钥、密钥版本和加密引用。
 - [ ] 实现密钥加载失败、凭据缺失和凭据删除处理。
 - [ ] 日志过滤器拒绝输出正文、摘要、邀请和密钥。
