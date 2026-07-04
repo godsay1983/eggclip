@@ -3,6 +3,8 @@ import {
   AuthRole
 } from '../../models/ProtocolModels';
 import {
+  CryptoVectorErrorCode,
+  CryptoVectorService,
   decodeBase64Url
 } from '../crypto/CryptoVectorService';
 import {
@@ -16,16 +18,20 @@ export enum PairingAuthProofValidationError {
   ROLE_MISMATCH = 'roleMismatch',
   TRANSCRIPT_HASH_MISMATCH = 'transcriptHashMismatch',
   INVALID_SIGNATURE = 'invalidSignature',
-  INVALID_TRANSCRIPT = 'invalidTranscript'
+  INVALID_TRANSCRIPT = 'invalidTranscript',
+  SIGNATURE_VERIFY_FAILED = 'signatureVerifyFailed'
 }
 
 export interface PairingAuthProofValidationResult {
   ok: boolean;
   error?: PairingAuthProofValidationError;
+  cryptoError?: CryptoVectorErrorCode;
   field?: string;
 }
 
 export class PairingAuthProofValidationService {
+  private readonly crypto: CryptoVectorService = new CryptoVectorService();
+
   validatePayloadAgainstTranscript(
     payload: AuthProofPayload,
     expectedRole: AuthRole,
@@ -44,6 +50,33 @@ export class PairingAuthProofValidationService {
     const signature = decodeBase64Url(payload.signature);
     if (signature === null || signature.length !== 64) {
       return failed(PairingAuthProofValidationError.INVALID_SIGNATURE, 'signature');
+    }
+    return { ok: true };
+  }
+
+  verifyPayloadSignatureAgainstTranscript(
+    payload: AuthProofPayload,
+    expectedRole: AuthRole,
+    transcript: PairingAuthTranscriptDraft,
+    remoteIdentityPublicKey: string
+  ): PairingAuthProofValidationResult {
+    const shape = this.validatePayloadAgainstTranscript(payload, expectedRole, transcript);
+    if (!shape.ok) {
+      return shape;
+    }
+
+    const verified = this.crypto.verifyEd25519Signature(
+      remoteIdentityPublicKey,
+      transcript.canonicalTranscript,
+      payload.signature
+    );
+    if (!verified.ok) {
+      return {
+        ok: false,
+        error: PairingAuthProofValidationError.SIGNATURE_VERIFY_FAILED,
+        cryptoError: verified.error,
+        field: verified.field
+      };
     }
     return { ok: true };
   }

@@ -216,6 +216,7 @@ harmony/entry/src/main/ets/
   - [x] 本地 SDK 类型已确认存在 CryptoFramework/HUKS Ed25519 相关入口。
   - [x] AUTH_PROOF canonical transcript 构造已与 Rust/fixture 对齐。
   - [x] 建立 Ed25519 CryptoFramework 验签导入边界，覆盖 SPKI DER 和 ED25519 KeySpec 尝试路径；本地单元环境尚未验过 RFC 8032 向量。
+  - [x] 抽出通用 `verifyEd25519Signature(publicKey, message, signature)` 入口，并接入 AUTH_PROOF 验签边界；真机算法名/导入格式确认仍待完成。
   - [ ] 接入 CryptoFramework/HUKS Ed25519 真验签。
   - [ ] 在 HarmonyOS 6.1 真机上确认 Ed25519 算法名、公钥导入格式和空消息 one-shot 验签行为。
 - [ ] ArkTS 实现通过 X25519/HKDF 派生向量。

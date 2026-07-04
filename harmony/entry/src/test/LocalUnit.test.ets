@@ -1368,6 +1368,60 @@ export default function localUnitTest() {
       ).error).assertEqual(PairingAuthProofValidationError.INVALID_SIGNATURE);
     });
 
+    it('exposesAuthProofEd25519VerificationBoundary', 0, () => {
+      const parser = new ProtocolParser();
+      const result = parser.parseEnvelope(AUTH_PROOF_FIXTURE);
+      if (!result.ok || result.envelope === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      const proof = parser.parseAuthProofPayload(result.envelope.payload);
+      if (!proof.ok || proof.payload === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      const transcript = canonicalAuthTranscript({
+        role: AuthRole.CLIENT,
+        spaceId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
+        localDeviceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
+        remoteDeviceId: '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        localIdentityPublicKey: '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo',
+        remoteIdentityPublicKey: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        localEphemeralPublicKey: 'hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo',
+        remoteEphemeralPublicKey: '3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08',
+        pairingContext: 'trusted-device:018ff6ef-c394-7d08-8b99-4b7d10f2767a'
+      });
+      if (transcript === null) {
+        expect(false).assertEqual(true);
+        return;
+      }
+
+      const validator = new PairingAuthProofValidationService();
+      const verified = validator.verifyPayloadSignatureAgainstTranscript(
+        proof.payload,
+        AuthRole.CLIENT,
+        {
+          input: {
+            role: AuthRole.CLIENT,
+            spaceId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
+            localDeviceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
+            remoteDeviceId: '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+            localIdentityPublicKey: '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo',
+            remoteIdentityPublicKey: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+            localEphemeralPublicKey: 'hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo',
+            remoteEphemeralPublicKey: '3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08',
+            pairingContext: 'trusted-device:018ff6ef-c394-7d08-8b99-4b7d10f2767a'
+          },
+          canonicalTranscript: transcript
+        },
+        '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo'
+      );
+      expect(verified.ok || verified.error === PairingAuthProofValidationError.SIGNATURE_VERIFY_FAILED)
+        .assertEqual(true);
+      expect(verified.error === PairingAuthProofValidationError.INVALID_SIGNATURE).assertEqual(false);
+      expect(verified.error === PairingAuthProofValidationError.TRANSCRIPT_HASH_MISMATCH).assertEqual(false);
+    });
+
     it('orchestratesClientPairingHandshakeUntilAuthProofFrame', 0, () => {
       const store = new PairingStore();
       store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);

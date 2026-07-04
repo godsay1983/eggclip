@@ -123,10 +123,24 @@ export class CryptoVectorService {
       return { ok: false, error: CryptoVectorErrorCode.INVALID_FIELD, field: 'ed25519' };
     }
 
-    const publicKey = decodeBase64Url(vector.publicKey);
-    const signature = decodeBase64Url(vector.signature);
+    return this.verifyEd25519Signature(vector.publicKey, vector.message, vector.signature);
+  }
+
+  verifyEd25519Signature(
+    publicKeyBase64Url: string,
+    message: string,
+    signatureBase64Url: string
+  ): CryptoVectorValidationResult {
+    const publicKey = decodeBase64Url(publicKeyBase64Url);
+    const signature = decodeBase64Url(signatureBase64Url);
     if (publicKey === null || signature === null) {
       return { ok: false, error: CryptoVectorErrorCode.INVALID_BASE64URL, field: 'ed25519' };
+    }
+    if (publicKey.length !== 32) {
+      return { ok: false, error: CryptoVectorErrorCode.INVALID_LENGTH, field: 'publicKey' };
+    }
+    if (signature.length !== 64) {
+      return { ok: false, error: CryptoVectorErrorCode.INVALID_LENGTH, field: 'signature' };
     }
 
     const attempts: Ed25519ImportAttempt[] = [
@@ -141,9 +155,9 @@ export class CryptoVectorService {
     for (const attempt of attempts) {
       let result = false;
       if (attempt.keyFormat === Ed25519KeyFormat.SPKI_DER) {
-        result = this.verifyEd25519WithSpki(attempt.algName, publicKey, vector.message, signature);
+        result = this.verifyEd25519WithSpki(attempt.algName, publicKey, message, signature);
       } else if (attempt.endian !== undefined) {
-        result = this.verifyEd25519WithSpec(attempt.algName, publicKey, vector.message, signature, attempt.endian);
+        result = this.verifyEd25519WithSpec(attempt.algName, publicKey, message, signature, attempt.endian);
       }
       if (result === true) {
         return { ok: true };
