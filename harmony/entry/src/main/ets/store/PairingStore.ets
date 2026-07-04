@@ -8,6 +8,7 @@ import {
 export enum PairingStoreState {
   IDLE = 'idle',
   READY = 'ready',
+  PENDING = 'pending',
   ERROR = 'error'
 }
 
@@ -53,6 +54,27 @@ export class PairingStore {
       error: null
     };
     return this.parseCurrent(nowMs);
+  }
+
+  confirmCodeMatched(): PairingStoreSnapshot {
+    if (this.currentSnapshot.summary === null) {
+      this.currentSnapshot = {
+        state: PairingStoreState.ERROR,
+        invitationText: this.currentSnapshot.invitationText,
+        statusText: '请先导入并校验有效邀请，再继续配对。',
+        summary: null,
+        error: PairingInvitationError.INVALID_PAYLOAD
+      };
+      return this.snapshot();
+    }
+    this.currentSnapshot = {
+      state: PairingStoreState.PENDING,
+      invitationText: this.currentSnapshot.invitationText,
+      statusText: '已确认六位码一致。等待接入身份交换、握手和 spaceKey 安全接收。',
+      summary: cloneSummary(this.currentSnapshot.summary),
+      error: null
+    };
+    return this.snapshot();
   }
 
   clear(): PairingStoreSnapshot {

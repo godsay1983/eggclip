@@ -1023,6 +1023,23 @@ export default function localUnitTest() {
       expect(cleared.summary === null).assertEqual(true);
     });
 
+    it('movesPairingStoreToPendingOnlyAfterManualCodeConfirmation', 0, () => {
+      const emptyStore = new PairingStore();
+      const rejected = emptyStore.confirmCodeMatched();
+      expect(rejected.state).assertEqual(PairingStoreState.ERROR);
+      expect(rejected.summary === null).assertEqual(true);
+
+      const store = new PairingStore();
+      store.updateInvitationText(PAIRING_INVITATION_FIXTURE);
+      store.parseCurrent(1700000000000);
+      const pending = store.confirmCodeMatched();
+
+      expect(pending.state).assertEqual(PairingStoreState.PENDING);
+      expect(pending.summary?.confirmationCode).assertEqual('066442');
+      expect(pending.statusText.indexOf('等待接入身份交换') >= 0).assertEqual(true);
+      expect(pending.error === null).assertEqual(true);
+    });
+
     it('importsPairingInvitationTextThroughStoreWithoutPersistenceSideEffects', 0, () => {
       const store = new PairingStore();
       const parsed = store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);

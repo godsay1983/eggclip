@@ -162,6 +162,25 @@ export struct PairingPage {
       .backgroundColor(EggClipColors.controlBackground)
       .borderRadius(16)
       .alignItems(HorizontalAlign.Center)
+
+      Button(this.snapshot.state === PairingStoreState.PENDING ? '等待正式配对接入' : '确认码一致，继续配对')
+        .width('100%')
+        .height(42)
+        .enabled(this.snapshot.state === PairingStoreState.READY)
+        .fontColor(EggClipColors.onPrimary)
+        .backgroundColor(this.snapshot.state === PairingStoreState.READY ? EggClipColors.primary : EggClipColors.textSecondary)
+        .borderRadius(21)
+        .onClick(() => {
+          this.snapshot = this.pairingStore.confirmCodeMatched();
+        })
+
+      if (this.snapshot.state === PairingStoreState.PENDING) {
+        Text('当前只推进到内存 pending 状态，不创建可信设备、不保存邀请 secret、不接收 spaceKey。正式握手和 HUKS 接入后会继续完成配对。')
+          .width('100%')
+          .fontSize(11)
+          .fontColor(EggClipColors.textSecondary)
+          .lineHeight(18)
+      }
     }
     .width('100%')
     .padding(12)
@@ -209,6 +228,9 @@ export struct PairingPage {
     if (this.snapshot.state === PairingStoreState.READY) {
       return '有效邀请';
     }
+    if (this.snapshot.state === PairingStoreState.PENDING) {
+      return '待握手';
+    }
     if (this.snapshot.state === PairingStoreState.ERROR) {
       return '校验失败';
     }
@@ -218,6 +240,9 @@ export struct PairingPage {
   private statusColor(): ResourceColor {
     if (this.snapshot.state === PairingStoreState.READY) {
       return EggClipColors.statusOnline;
+    }
+    if (this.snapshot.state === PairingStoreState.PENDING) {
+      return EggClipColors.primary;
     }
     if (this.snapshot.state === PairingStoreState.ERROR) {
       return Color.Red;
