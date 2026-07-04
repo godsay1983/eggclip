@@ -131,6 +131,7 @@ function cloneSummary(summary: PairingInvitationSummary | null): PairingInvitati
     spaceId: summary.spaceId,
     spaceShortId: summary.spaceShortId,
     spaceKeyVersion: summary.spaceKeyVersion,
+    issuerDeviceName: summary.issuerDeviceName,
     issuerDeviceId: summary.issuerDeviceId,
     issuerShortFingerprint: summary.issuerShortFingerprint,
     expiresAtMs: summary.expiresAtMs,

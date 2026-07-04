@@ -110,6 +110,7 @@ export interface PairingInvitationSummary {
   invitationString: string;
   expiresAt: string;
   expiresInSeconds: number;
+  issuerDeviceName: string;
   issuerDeviceId: string;
   issuerShortFingerprint: string;
   confirmationCode: string;

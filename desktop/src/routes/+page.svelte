@@ -317,7 +317,8 @@
                 </p>
               {/if}
               <p>
-                发行设备 #{$shellSnapshot.syncSpace.invitation.issuerShortFingerprint}。邀请字符串包含一次性秘密，不在界面展开明文；请只发给要配对的设备。
+                发行设备 {$shellSnapshot.syncSpace.invitation.issuerDeviceName} ·
+                #{$shellSnapshot.syncSpace.invitation.issuerShortFingerprint}。邀请字符串包含一次性秘密，不在界面展开明文；请只发给要配对的设备。
               </p>
             </div>
           {/if}

@@ -143,7 +143,7 @@ export struct PairingPage {
   private InvitationSummaryCard(summary: PairingInvitationSummary) {
     Column({ space: 10 }) {
       this.SummaryRow('同步空间', `#${summary.spaceShortId} · key v${summary.spaceKeyVersion}`)
-      this.SummaryRow('发行设备', `#${summary.issuerShortFingerprint}`)
+      this.SummaryRow('发行设备', `${summary.issuerDeviceName} · #${summary.issuerShortFingerprint}`)
       this.SummaryRow('剩余时间', `${summary.expiresInSeconds} 秒`)
 
       Column({ space: 4 }) {

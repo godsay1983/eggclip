@@ -203,6 +203,7 @@ desktop/
   - [x] 桌面端启动时已接入默认同步空间幂等初始化：已有空间则复用，没有空间才创建“默认空间”和 256-bit `spaceKey`。
 - [ ] 创建 5 分钟过期、一次性使用的高熵邀请。
   - [x] 桌面端已能基于同步空间生成 5 分钟过期的高熵配对邀请草稿，包含 256-bit pairing secret、发行设备身份公钥和六位人工确认码。
+  - [x] 邀请 payload 已附带本机设备显示名称，供鸿蒙端配对确认页展示；该字段只作 UI 提示，不参与身份认证。
   - [x] 桌面端已增加邀请注册表 migration 和 repository，生成邀请时登记 `invitationId`、过期时间和 secret verifier，不保存原始 pairing secret。
   - [x] 桌面端已实现本地消费骨架：拒绝过期、重复消费和错误 pairing secret，并将成功消费标记为 consumed。
   - [x] 桌面端生成新邀请前会机会性标记已过期 active 邀请，避免旧邀请长期保持 active 状态。

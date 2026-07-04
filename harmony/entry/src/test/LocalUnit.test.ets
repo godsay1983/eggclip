@@ -991,6 +991,7 @@ export default function localUnitTest() {
       expect(result.payload?.spaceKeyVersion).assertEqual(1);
       expect(result.payload?.pairingSecret).assertEqual('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
       expect(result.summary?.spaceShortId).assertEqual('10f2767a');
+      expect(result.summary?.issuerDeviceName).assertEqual('桌面端 #11qYAYKx');
       expect(result.summary?.issuerShortFingerprint).assertEqual('11qYAYKx');
       expect(result.summary?.expiresInSeconds).assertEqual(300);
       expect(result.summary?.confirmationCode).assertEqual('574920');

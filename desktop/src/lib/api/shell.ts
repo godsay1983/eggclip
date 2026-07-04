@@ -91,6 +91,7 @@ interface PairingInvitationSummaryDto {
   invitation: string;
   expiresAtMs: number;
   expiresInSeconds: number;
+  issuerDeviceName: string;
   issuerDeviceId: string;
   issuerShortFingerprint: string;
   confirmationCode: string;
@@ -384,6 +385,7 @@ function toPairingInvitationSummary(
       second: "2-digit",
     }),
     expiresInSeconds: invitation.expiresInSeconds,
+    issuerDeviceName: invitation.issuerDeviceName,
     issuerDeviceId: invitation.issuerDeviceId,
     issuerShortFingerprint: invitation.issuerShortFingerprint,
     confirmationCode: invitation.confirmationCode,

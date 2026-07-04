@@ -50,6 +50,7 @@ pub struct PairingInvitationSummary {
     pub invitation: String,
     pub expires_at_ms: u64,
     pub expires_in_seconds: u64,
+    pub issuer_device_name: String,
     pub issuer_device_id: String,
     pub issuer_short_fingerprint: String,
     pub confirmation_code: String,
@@ -64,6 +65,7 @@ struct PairingInvitationPayload {
     invitation_id: String,
     space_id: String,
     space_key_version: u32,
+    issuer_device_name: String,
     issuer_device_id: String,
     issuer_identity_public_key: String,
     pairing_secret: String,
@@ -336,6 +338,7 @@ pub fn create_pairing_invitation_for_space<S: SecretBytesStore>(
     let pairing_secret_encoded = encode_base64url(&pairing_secret);
     let secret_verifier = pairing_secret_verifier(invitation_id, &pairing_secret);
     let expires_at_ms = now_ms.saturating_add(PAIRING_INVITATION_TTL_MS);
+    let issuer_device_name = local_device_display_name();
     let payload = PairingInvitationPayload {
         app: "eggclip".to_string(),
         version: 1,
@@ -343,6 +346,7 @@ pub fn create_pairing_invitation_for_space<S: SecretBytesStore>(
         invitation_id: invitation_id.to_string(),
         space_id: space.space.space_id.to_string(),
         space_key_version: space.space.key_version,
+        issuer_device_name: issuer_device_name.clone(),
         issuer_device_id: identity.device_id.clone(),
         issuer_identity_public_key: identity.identity_public_key.clone(),
         pairing_secret: pairing_secret_encoded,
@@ -377,6 +381,7 @@ pub fn create_pairing_invitation_for_space<S: SecretBytesStore>(
         invitation,
         expires_at_ms,
         expires_in_seconds: PAIRING_INVITATION_TTL_MS / 1000,
+        issuer_device_name,
         issuer_device_id: identity.device_id,
         issuer_short_fingerprint: identity.identity_public_key.chars().take(8).collect(),
         confirmation_code,
@@ -457,6 +462,23 @@ fn space_key_ref(space_id: Uuid, key_version: u32) -> String {
     format!("credential://eggclip/space-key/{space_id}/v{key_version}")
 }
 
+fn local_device_display_name() -> String {
+    let raw = std::env::var("COMPUTERNAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .unwrap_or_else(|_| "Windows 桌面".to_string());
+    let normalized: String = raw
+        .trim()
+        .chars()
+        .filter(|character| !character.is_control())
+        .take(32)
+        .collect();
+    if normalized.is_empty() {
+        "Windows 桌面".to_string()
+    } else {
+        normalized
+    }
+}
+
 fn pairing_secret_store_error(error: SecretStoreError) -> PairingError {
     PairingError::KeyStore(error.to_string())
 }
@@ -512,6 +534,8 @@ fn validate_pairing_invitation_uri(invitation: &str) -> Result<(), PairingError>
         || decoded.kind != "pairingInvitation"
         || Uuid::parse_str(&decoded.invitation_id).is_err()
         || Uuid::parse_str(&decoded.space_id).is_err()
+        || decoded.issuer_device_name.trim().is_empty()
+        || decoded.issuer_device_name.chars().count() > 32
         || Uuid::parse_str(&decoded.issuer_device_id).is_err()
         || decode_base64url(&decoded.pairing_secret)
             .map(|secret| secret.len() != PAIRING_SECRET_BYTES)
@@ -675,6 +699,8 @@ mod tests {
         Uuid::parse_str(&invitation.invitation_id).expect("invitation id should be a UUID");
         assert_eq!(payload.space_id, space.space_id);
         assert_eq!(payload.space_key_version, INITIAL_SPACE_KEY_VERSION);
+        assert!(!invitation.issuer_device_name.trim().is_empty());
+        assert_eq!(payload.issuer_device_name, invitation.issuer_device_name);
         assert_eq!(
             decode_base64url_pairing_secret(&payload.pairing_secret).len(),
             PAIRING_SECRET_BYTES

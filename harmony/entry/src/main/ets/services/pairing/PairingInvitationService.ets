@@ -22,6 +22,7 @@ export interface PairingInvitationPayload {
   invitationId?: string;
   spaceId: string;
   spaceKeyVersion: number;
+  issuerDeviceName?: string;
   issuerDeviceId: string;
   issuerIdentityPublicKey: string;
   pairingSecret: string;
@@ -33,6 +34,7 @@ export interface PairingInvitationSummary {
   spaceId: string;
   spaceShortId: string;
   spaceKeyVersion: number;
+  issuerDeviceName: string;
   issuerDeviceId: string;
   issuerShortFingerprint: string;
   expiresAtMs: number;
@@ -114,6 +116,7 @@ function parsePayloadJson(payloadText: string): PairingInvitationPayload | null 
       invitationId: readOptionalString(value, 'invitationId'),
       spaceId: readString(value, 'spaceId'),
       spaceKeyVersion: readNumber(value, 'spaceKeyVersion'),
+      issuerDeviceName: readOptionalString(value, 'issuerDeviceName'),
       issuerDeviceId: readString(value, 'issuerDeviceId'),
       issuerIdentityPublicKey: readString(value, 'issuerIdentityPublicKey'),
       pairingSecret: readString(value, 'pairingSecret'),
@@ -143,6 +146,9 @@ function validatePayload(payload: PairingInvitationPayload, nowMs: number): Pair
   if (!Number.isSafeInteger(payload.spaceKeyVersion) || payload.spaceKeyVersion <= 0) {
     return invalidField('spaceKeyVersion');
   }
+  if (payload.issuerDeviceName !== undefined && normalizeIssuerDeviceName(payload.issuerDeviceName) === null) {
+    return invalidField('issuerDeviceName');
+  }
   if (!isUuid(payload.issuerDeviceId)) {
     return invalidField('issuerDeviceId');
   }
@@ -167,6 +173,7 @@ function buildSummary(payload: PairingInvitationPayload, nowMs: number, payloadB
     spaceId: payload.spaceId,
     spaceShortId: payload.spaceId.substring(payload.spaceId.length - 8),
     spaceKeyVersion: payload.spaceKeyVersion,
+    issuerDeviceName: normalizeIssuerDeviceName(payload.issuerDeviceName) ?? `桌面端 #${payload.issuerIdentityPublicKey.substring(0, 8)}`,
     issuerDeviceId: payload.issuerDeviceId,
     issuerShortFingerprint: payload.issuerIdentityPublicKey.substring(0, 8),
     expiresAtMs: payload.expiresAtMs,
@@ -219,6 +226,27 @@ function hasBase64UrlLength(value: string, expectedBytes: number): boolean {
 
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
+}
+
+function normalizeIssuerDeviceName(value: string | undefined): string | null {
+  if (value === undefined) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  let normalized = '';
+  for (let index = 0; index < trimmed.length && normalized.length < 32; index += 1) {
+    const code = trimmed.charCodeAt(index);
+    if (code >= 0x20 && code !== 0x7f) {
+      normalized += trimmed.charAt(index);
+    }
+  }
+  if (normalized.length === 0 || normalized.length !== trimmed.length) {
+    return null;
+  }
+  return normalized;
 }
 
 function sha256(input: Uint8Array): Uint8Array {
