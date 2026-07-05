@@ -4,6 +4,9 @@ use std::{collections::HashMap, net::Ipv4Addr, str::FromStr, sync::Mutex, time::
 
 use crate::{
     clipboard::{ClipboardText, ClipboardTextError},
+    crypto::{encode_base64url, X25519Secret, X25519_PRIVATE_KEY_BYTES},
+    pairing::{accept_pairing_client_hello, PairingServerHelloDraft},
+    protocol::{parse_envelope, MessageType, ProtocolEnvelope},
     settings::{database_path, now_ms},
     storage::{open_database, repositories::SettingsRepository},
 };
@@ -17,6 +20,7 @@ use tokio::{
     time::timeout,
 };
 use tokio_tungstenite::{connect_async, tungstenite::Message, WebSocketStream};
+use uuid::Uuid;
 
 pub use session::{
     AuthenticatedTransportSession, HandshakeFrame, HandshakeFrameOutcome,
@@ -31,7 +35,17 @@ const POC_RECENT_ENDPOINT_KEY: &str = "pocRecentEndpoint";
 pub struct PocTransportRuntime {
     server: Mutex<Option<PocServerHandle>>,
     peers: Mutex<HashMap<String, mpsc::UnboundedSender<Message>>>,
+    pairing_handshakes: Mutex<HashMap<String, PairingServerHandshakeRuntimeState>>,
     diagnostics: Mutex<PocTransportDiagnostics>,
+}
+
+#[allow(dead_code)]
+struct PairingServerHandshakeRuntimeState {
+    invitation_id: String,
+    peer_device_id: String,
+    peer_identity_public_key: String,
+    pairing_context: String,
+    server_ephemeral_secret: X25519Secret,
 }
 
 struct PocServerHandle {
@@ -326,6 +340,9 @@ fn disconnect_all_poc_peers_with_runtime(runtime: &PocTransportRuntime) -> Resul
         let _ = sender.send(Message::Close(None));
     }
     peers.clear();
+    if let Ok(mut handshakes) = runtime.pairing_handshakes.lock() {
+        handshakes.clear();
+    }
     Ok(count)
 }
 
@@ -510,7 +527,7 @@ where
     let (mut write, mut read) = websocket.split();
     let (outgoing_tx, mut outgoing_rx) = mpsc::unbounded_channel::<Message>();
     if let Ok(mut peers) = app.state::<PocTransportRuntime>().peers.lock() {
-        peers.insert(peer.clone(), outgoing_tx);
+        peers.insert(peer.clone(), outgoing_tx.clone());
     }
 
     let write_peer = peer.clone();
@@ -547,6 +564,18 @@ where
                         byte_len,
                     },
                 );
+                match try_accept_pairing_client_hello(&app, &peer, &text) {
+                    PairingClientHelloRoute::Handled(server_hello_frame) => {
+                        record_poc_frame_result(&app, Ok(()));
+                        let _ = outgoing_tx.send(Message::Text(server_hello_frame.into()));
+                        continue;
+                    }
+                    PairingClientHelloRoute::Rejected => {
+                        record_poc_frame_result(&app, Err(PocRejectionReason::InvalidMessage));
+                        break;
+                    }
+                    PairingClientHelloRoute::NotPairing => {}
+                }
                 match parse_poc_clipboard_text_message(&text) {
                     Ok(item) => {
                         record_poc_frame_result(&app, Ok(()));
@@ -578,8 +607,102 @@ where
     if let Ok(mut peers) = app.state::<PocTransportRuntime>().peers.lock() {
         peers.remove(&peer);
     }
+    if let Ok(mut handshakes) = app.state::<PocTransportRuntime>().pairing_handshakes.lock() {
+        handshakes.remove(&peer);
+    }
     write_task.abort();
     let _ = app.emit("transport://poc-peer-disconnected", PocPeerEvent { peer });
+}
+
+enum PairingClientHelloRoute {
+    Handled(String),
+    Rejected,
+    NotPairing,
+}
+
+fn try_accept_pairing_client_hello(
+    app: &AppHandle,
+    peer: &str,
+    text: &str,
+) -> PairingClientHelloRoute {
+    if !is_pairing_client_hello_frame(text) {
+        return PairingClientHelloRoute::NotPairing;
+    }
+
+    let path = match database_path(app) {
+        Ok(path) => path,
+        Err(_) => return PairingClientHelloRoute::Rejected,
+    };
+    let mut connection = match open_database(path) {
+        Ok(connection) => connection,
+        Err(_) => return PairingClientHelloRoute::Rejected,
+    };
+    #[cfg(windows)]
+    let mut store = crate::secret_store::WindowsCredentialSecretStore;
+    #[cfg(not(windows))]
+    let mut store = crate::secret_store::UnavailableSecretStore;
+
+    let server_ephemeral_secret = match random_x25519_secret() {
+        Ok(secret) => secret,
+        Err(_) => return PairingClientHelloRoute::Rejected,
+    };
+    let server_ephemeral_public_key = encode_base64url(&server_ephemeral_secret.public_key());
+    let message_id = Uuid::now_v7().to_string();
+    let timestamp_ms = match now_ms() {
+        Ok(timestamp) => timestamp,
+        Err(_) => return PairingClientHelloRoute::Rejected,
+    };
+
+    let draft = match accept_pairing_client_hello(
+        &mut connection,
+        &mut store,
+        text,
+        &server_ephemeral_public_key,
+        &message_id,
+        timestamp_ms,
+    ) {
+        Ok(draft) => draft,
+        Err(_) => return PairingClientHelloRoute::Rejected,
+    };
+
+    if remember_pairing_handshake(app, peer, &draft, server_ephemeral_secret).is_err() {
+        return PairingClientHelloRoute::Rejected;
+    }
+    PairingClientHelloRoute::Handled(draft.server_hello_frame)
+}
+
+fn is_pairing_client_hello_frame(text: &str) -> bool {
+    matches!(
+        parse_envelope(text),
+        Ok(ProtocolEnvelope::PreAuth(envelope)) if envelope.message_type == MessageType::ClientHello
+    )
+}
+
+fn random_x25519_secret() -> Result<X25519Secret, ()> {
+    let mut private_key = [0u8; X25519_PRIVATE_KEY_BYTES];
+    getrandom::getrandom(&mut private_key).map_err(|_| ())?;
+    Ok(X25519Secret::from_private_key(private_key))
+}
+
+fn remember_pairing_handshake(
+    app: &AppHandle,
+    peer: &str,
+    draft: &PairingServerHelloDraft,
+    server_ephemeral_secret: X25519Secret,
+) -> Result<(), ()> {
+    let runtime = app.state::<PocTransportRuntime>();
+    let mut handshakes = runtime.pairing_handshakes.lock().map_err(|_| ())?;
+    handshakes.insert(
+        peer.to_owned(),
+        PairingServerHandshakeRuntimeState {
+            invitation_id: draft.invitation_id.clone(),
+            peer_device_id: draft.peer_device_id.clone(),
+            peer_identity_public_key: draft.peer_identity_public_key.clone(),
+            pairing_context: draft.pairing_context.clone(),
+            server_ephemeral_secret,
+        },
+    );
+    Ok(())
 }
 
 fn serialize_poc_server_message(message: &PocServerMessage) -> Result<String, String> {
