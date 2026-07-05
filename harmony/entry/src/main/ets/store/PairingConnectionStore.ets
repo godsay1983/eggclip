@@ -13,9 +13,7 @@ import {
   JsonObject,
   MessageType
 } from '../models/ProtocolModels';
-import { decodeBase64Url } from '../services/crypto/CryptoVectorService';
 import { LocalDeviceIdentityService } from '../services/crypto/LocalDeviceIdentityService';
-import { SpaceKeyReferenceService } from '../services/crypto/SpaceKeyReferenceService';
 import {
   PairingClientNetworkHandshakeError,
   PairingClientNetworkHandshakeService
@@ -25,6 +23,7 @@ import {
   ProtocolTransportFrameResult,
   ProtocolTransportSession
 } from '../services/transport/ProtocolTransportSession';
+import { SpaceKeyDeliveryService } from '../services/pairing/SpaceKeyDeliveryService';
 import { WebSocketTransportService } from '../services/transport/WebSocketTransportService';
 import {
   PairingGeneratedHandshakeMaterialResult,
@@ -344,31 +343,16 @@ class PairingConnectionStore {
       payload === undefined) {
       return false;
     }
-    const spaceId = readString(payload, 'spaceId');
-    const spaceKey = readString(payload, 'spaceKey');
-    const delivery = readString(payload, 'delivery');
-    const keyVersion = readNumber(payload, 'keyVersion');
-    if (spaceId !== this.pendingTrustDraft.spaceId || delivery !== 'pairing-v1') {
+    const delivery = new SpaceKeyDeliveryService().acceptInitialDelivery({
+      payload,
+      expectedSpaceId: this.pendingTrustDraft.spaceId,
+      expectedKeyVersion: this.pendingTrustDraft.spaceKeyVersion
+    });
+    if (!delivery.ok) {
       return false;
     }
-    if (!Number.isSafeInteger(keyVersion) || keyVersion !== this.pendingTrustDraft.spaceKeyVersion) {
-      return false;
-    }
-    const decoded = decodeBase64Url(spaceKey);
-    if (decoded === null) {
-      return false;
-    }
-    const referenceService = new SpaceKeyReferenceService();
-    const inspected = referenceService.inspectImportedSpaceKey(decoded);
-    if (!inspected.ok) {
-      decoded.fill(0);
-      return false;
-    }
-    decoded.fill(0);
-    const alias = referenceService.buildHuksAlias(spaceId, keyVersion);
-    if (!alias.ok || alias.alias.length <= 0) {
-      return false;
-    }
+    const spaceId = this.pendingTrustDraft.spaceId;
+    const keyVersion = this.pendingTrustDraft.spaceKeyVersion;
     const serverHello = this.pendingTrustServerHello;
     const pairingRepository = new PairingRdbRepository(this.context);
     try {
@@ -381,7 +365,7 @@ class PairingConnectionStore {
             state: SpaceState.ACTIVE,
             createdAt: nowMs
           },
-          encryptedSpaceKeyRef: alias.alias,
+          encryptedSpaceKeyRef: delivery.encryptedSpaceKeyRef,
           updatedAt: nowMs
         },
         device: {
@@ -494,16 +478,6 @@ function nextMessageId(): string {
 
 function shortId(value: string): string {
   return value.length >= 8 ? value.slice(0, 8) : value;
-}
-
-function readString(payload: JsonObject, field: string): string {
-  const value = payload[field];
-  return typeof value === 'string' ? value : '';
-}
-
-function readNumber(payload: JsonObject, field: string): number {
-  const value = payload[field];
-  return typeof value === 'number' ? value : Number.NaN;
 }
 
 function normalizeUuid(value: string, nowMs: number, randomValue: number): string {

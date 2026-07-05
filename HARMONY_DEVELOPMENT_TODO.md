@@ -300,6 +300,7 @@ harmony/entry/src/main/ets/
   - [x] PairingStore 确认后会从 UI snapshot 中清空完整邀请文本，只保留摘要和内存待握手材料。
 - [ ] 安全接收 `spaceKey` 和成员信息。
   - [x] HarmonyOS 已在 AUTH_OK 后通过认证 session 解密 `SPACE_KEY_ROTATED`，校验 spaceId/keyVersion/32 字节 key，并只把 `huks://` alias 写入 RDB。
+  - [x] 已抽出 `SpaceKeyDeliveryService` 覆盖 `SPACE_KEY_ROTATED` payload 校验边界，单测覆盖缺失 payload、spaceId/keyVersion/delivery 不匹配和 key 长度错误。
   - [ ] 将解密出的 `spaceKey` 真正导入 HUKS/等效安全存储；当前只完成 alias 占位和明文数组清零。
 - [ ] 成功后持久化 trusted device 并清理邀请秘密。
   - [x] HarmonyOS 在 AUTH_OK 后不提前落库，收到 `SPACE_KEY_ROTATED` 后用 transaction 同时保存同步空间 key 引用和桌面端 trusted device。

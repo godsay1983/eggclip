@@ -94,6 +94,11 @@ import {
   PairingAuthProofValidationService
 } from '../main/ets/services/pairing/PairingAuthProofValidationService';
 import {
+  SpaceKeyDeliveryError,
+  SpaceKeyDeliveryInput,
+  SpaceKeyDeliveryService
+} from '../main/ets/services/pairing/SpaceKeyDeliveryService';
+import {
   PairingClientNetworkHandshakeError,
   PairingClientNetworkHandshakePhase,
   PairingClientNetworkHandshakeService
@@ -165,6 +170,7 @@ import {
   AuthRole,
   Capability,
   ContentType,
+  JsonObject,
   MessageType,
   ProtocolEnvelopeKind,
   ProtocolErrorCode,
@@ -624,6 +630,51 @@ export default function localUnitTest() {
         }
       }
       expect(containsRawKey).assertEqual(false);
+    });
+
+    it('acceptsEncryptedSpaceKeyDeliveryPayloadWithoutReturningRawKey', 0, () => {
+      const spaceId = '018ff6ef-c394-7d08-8b99-4b7d10f2767a';
+      const service = new SpaceKeyDeliveryService();
+      const result = service.acceptInitialDelivery(spaceKeyDeliveryInput(
+        spaceKeyDeliveryPayload(spaceId, INITIAL_SPACE_KEY_VERSION, SPACE_KEY_BYTES, 'pairing-v1'),
+        spaceId,
+        INITIAL_SPACE_KEY_VERSION
+      ));
+
+      expect(result.ok).assertEqual(true);
+      expect(result.encryptedSpaceKeyRef).assertEqual(`huks://eggclip/space-key/${spaceId}/v1`);
+      expect(JSON.stringify(result).indexOf('spaceKey')).assertEqual(-1);
+    });
+
+    it('rejectsInvalidEncryptedSpaceKeyDeliveryPayloads', 0, () => {
+      const spaceId = '018ff6ef-c394-7d08-8b99-4b7d10f2767a';
+      const service = new SpaceKeyDeliveryService();
+
+      expect(service.acceptInitialDelivery(spaceKeyDeliveryInput(
+        undefined,
+        spaceId,
+        INITIAL_SPACE_KEY_VERSION
+      )).error).assertEqual(SpaceKeyDeliveryError.MISSING_PAYLOAD);
+      expect(service.acceptInitialDelivery(spaceKeyDeliveryInput(
+        spaceKeyDeliveryPayload('018ff6ef-c394-7d08-8b99-4b7d10f2767b', INITIAL_SPACE_KEY_VERSION, SPACE_KEY_BYTES, 'pairing-v1'),
+        spaceId,
+        INITIAL_SPACE_KEY_VERSION
+      )).error).assertEqual(SpaceKeyDeliveryError.INVALID_SPACE_ID);
+      expect(service.acceptInitialDelivery(spaceKeyDeliveryInput(
+        spaceKeyDeliveryPayload(spaceId, 2, SPACE_KEY_BYTES, 'pairing-v1'),
+        spaceId,
+        INITIAL_SPACE_KEY_VERSION
+      )).error).assertEqual(SpaceKeyDeliveryError.INVALID_KEY_VERSION);
+      expect(service.acceptInitialDelivery(spaceKeyDeliveryInput(
+        spaceKeyDeliveryPayload(spaceId, INITIAL_SPACE_KEY_VERSION, SPACE_KEY_BYTES, 'unexpected'),
+        spaceId,
+        INITIAL_SPACE_KEY_VERSION
+      )).error).assertEqual(SpaceKeyDeliveryError.INVALID_DELIVERY);
+      expect(service.acceptInitialDelivery(spaceKeyDeliveryInput(
+        spaceKeyDeliveryPayload(spaceId, INITIAL_SPACE_KEY_VERSION, SPACE_KEY_BYTES - 1, 'pairing-v1'),
+        spaceId,
+        INITIAL_SPACE_KEY_VERSION
+      )).error).assertEqual(SpaceKeyDeliveryError.INVALID_SPACE_KEY);
     });
 
     it('buildsRetentionRepositoryCommandsForHistoryPolicy', 0, () => {
@@ -2555,6 +2606,36 @@ export default function localUnitTest() {
 }
 
 const FAKE_LOCAL_IDENTITY_PUBLIC_KEY: string = '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo';
+
+function spaceKeyDeliveryPayload(
+  spaceId: string,
+  keyVersion: number,
+  keyBytes: number,
+  delivery: string
+): JsonObject {
+  const encodedKey = encodeBase64Url(new Uint8Array(keyBytes));
+  return JSON.parse(`{"spaceId":"${spaceId}","keyVersion":${keyVersion},"spaceKey":"${encodedKey}","delivery":"${delivery}"}`) as JsonObject;
+}
+
+function spaceKeyDeliveryInput(
+  payload: JsonObject | undefined,
+  expectedSpaceId: string,
+  expectedKeyVersion: number
+): SpaceKeyDeliveryInput {
+  return new FakeSpaceKeyDeliveryInput(payload, expectedSpaceId, expectedKeyVersion);
+}
+
+class FakeSpaceKeyDeliveryInput implements SpaceKeyDeliveryInput {
+  payload?: JsonObject;
+  expectedSpaceId: string;
+  expectedKeyVersion: number;
+
+  constructor(payload: JsonObject | undefined, expectedSpaceId: string, expectedKeyVersion: number) {
+    this.payload = payload;
+    this.expectedSpaceId = expectedSpaceId;
+    this.expectedKeyVersion = expectedKeyVersion;
+  }
+}
 
 class FakeLocalDeviceIdentityMetadataGateway implements LocalDeviceIdentityMetadataGateway {
   savedPublicKey: string = '';
