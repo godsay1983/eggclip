@@ -51,6 +51,7 @@ import {
   PairingInvitationService
 } from '../main/ets/services/pairing/PairingInvitationService';
 import {
+  PairingHandshakeDraft,
   PairingHandshakeDraftError,
   PairingHandshakeDraftService
 } from '../main/ets/services/pairing/PairingHandshakeDraftService';
@@ -62,6 +63,11 @@ import {
   PairingAuthProofValidationError,
   PairingAuthProofValidationService
 } from '../main/ets/services/pairing/PairingAuthProofValidationService';
+import {
+  PairingClientNetworkHandshakeError,
+  PairingClientNetworkHandshakePhase,
+  PairingClientNetworkHandshakeService
+} from '../main/ets/services/pairing/PairingClientNetworkHandshakeService';
 import {
   PairingStore,
   PairingStoreState
@@ -1584,6 +1590,64 @@ export default function localUnitTest() {
       expect(result.error).assertEqual(PairingClientHandshakeError.AUTH_PROOF_NOT_SENT);
     });
 
+    it('orchestratesClientNetworkHandshakeFramesUntilProtocolSessionIsReady', 0, () => {
+      const draft = pairingDraftFixture();
+      if (draft === null) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      const service = new PairingClientNetworkHandshakeService();
+
+      const started = service.start(draft, '018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01', 0);
+      expect(started.ok).assertEqual(true);
+      expect(started.phase).assertEqual(PairingClientNetworkHandshakePhase.CLIENT_HELLO_READY);
+      expect((started.outgoingFrame?.indexOf('CLIENT_HELLO') ?? -1) >= 0).assertEqual(true);
+
+      const proof = service.acceptServerHelloAndBuildAuthProof(
+        SERVER_HELLO_FRAME_FOR_PAIRING_FIXTURE,
+        TEST_ED25519_SIGNATURE,
+        '018ff6f1-1d2a-725d-8d1a-894d2f5b0a42',
+        2
+      );
+      expect(proof.ok).assertEqual(true);
+      expect(proof.phase).assertEqual(PairingClientNetworkHandshakePhase.WAITING_AUTH_OK);
+      expect((proof.outgoingFrame?.indexOf('AUTH_PROOF') ?? -1) >= 0).assertEqual(true);
+
+      const authenticated = service.acceptAuthOkAndCreateTransportSession(
+        AUTH_OK_FIXTURE,
+        'Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I',
+        'RWdnQ2xpcCB2MSB0ZXN0IGhhbmRzaGFrZSBzYWx0'
+      );
+      expect(authenticated.ok).assertEqual(true);
+      expect(authenticated.phase).assertEqual(PairingClientNetworkHandshakePhase.AUTHENTICATED);
+      expect(authenticated.transportSession?.state()).assertEqual(ProtocolSessionState.AUTHENTICATED);
+      expect(service.phase()).assertEqual(PairingClientNetworkHandshakePhase.AUTHENTICATED);
+    });
+
+    it('rejectsClientNetworkHandshakeFramesOutOfOrder', 0, () => {
+      const draft = pairingDraftFixture();
+      if (draft === null) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      const service = new PairingClientNetworkHandshakeService();
+
+      const earlyAuthOk = service.acceptAuthOkAndCreateTransportSession(
+        AUTH_OK_FIXTURE,
+        'Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I',
+        'RWdnQ2xpcCB2MSB0ZXN0IGhhbmRzaGFrZSBzYWx0'
+      );
+      expect(earlyAuthOk.ok).assertEqual(false);
+      expect(earlyAuthOk.error).assertEqual(PairingClientNetworkHandshakeError.INVALID_PHASE);
+      expect(earlyAuthOk.phase).assertEqual(PairingClientNetworkHandshakePhase.IDLE);
+
+      const started = service.start(draft, '018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01', 0);
+      expect(started.ok).assertEqual(true);
+      const duplicateStart = service.start(draft, '018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f02', 0);
+      expect(duplicateStart.ok).assertEqual(false);
+      expect(duplicateStart.error).assertEqual(PairingClientNetworkHandshakeError.INVALID_PHASE);
+    });
+
     it('rejectsClientPairingHandshakeWhenServerHelloIdentityDiffersFromInvitation', 0, () => {
       const store = new PairingStore();
       store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);
@@ -1771,6 +1835,19 @@ interface EncryptedCiphertextFixture {
   aad: string;
   body: string;
   tag: string;
+}
+
+function pairingDraftFixture(): PairingHandshakeDraft | null {
+  const store = new PairingStore();
+  store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);
+  store.confirmCodeMatched();
+  const draft = store.buildPendingClientHandshakeDraft(
+    '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+    '3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08',
+    'hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo',
+    1700000000000
+  );
+  return draft.ok && draft.draft !== undefined ? draft.draft : null;
 }
 
 const PAIRING_INVITATION_FIXTURE: string = 'eggclip://pair?p=eyJhcHAiOiJlZ2djbGlwIiwidmVyc2lvbiI6MSwia2luZCI6InBhaXJpbmdJbnZpdGF0aW9uIiwiaW52aXRhdGlvbklkIjoiMDE4ZmY2ZjAtMTExMS03MjIyLTgzMzMtMTIzNDU2Nzg5YWJjIiwic3BhY2VJZCI6IjAxOGZmNmVmLWMzOTQtN2QwOC04Yjk5LTRiN2QxMGYyNzY3YSIsInNwYWNlS2V5VmVyc2lvbiI6MSwiaXNzdWVyRGV2aWNlSWQiOiIwMThmZjZmMC0wYTNiLTc4MTUtYTRkYi0zZWI2ZTIzZDkzMzgiLCJpc3N1ZXJJZGVudGl0eVB1YmxpY0tleSI6IjExcVlBWUt4Q3JmVlNfN1R5V1FIT2c3aGN2UGFwaU1scndJYWFwY0hVcm8iLCJwYWlyaW5nU2VjcmV0IjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsImV4cGlyZXNBdE1zIjoxNzAwMDAwMzAwMDAwfQ';
