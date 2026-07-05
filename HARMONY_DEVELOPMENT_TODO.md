@@ -226,8 +226,9 @@ harmony/entry/src/main/ets/
   - [x] 已新增 `SessionKeyDerivationService`，基于已得到的 X25519 `sharedSecret` 和 `transcriptSalt` 派生 client-to-server / server-to-client session key，并通过固定向量校验。
   - [x] 已接入 CryptoFramework X25519 key agreement 平台边界，覆盖 32 字节 base64url 输入校验、临时密钥输出和 shared secret fixture 校验/平台失败分类。
   - [x] `PairingClientHandshakeSessionService` 已支持在内存 session 中保存本机临时私钥，并在 AUTH_OK 前使用 SERVER_HELLO ephemeral public key 派生真实 sharedSecret。
+  - [x] `PairingStore` 已新增 `buildPendingClientHandshakeMaterial`，在 pending 邀请确认后自动生成 X25519 临时 keypair 并构造 CLIENT_HELLO draft；临时私钥只作为返回值交给后续网络握手，不进入 snapshot/draft。
   - [ ] 在 HarmonyOS 6.1 真机上确认 X25519 KeySpec 字节序、算法名和 shared secret 输出与 Rust 向量一致。
-  - [ ] 将临时 keypair 自动生成接入配对入口，避免 UI/store 继续传入测试 ephemeral public key。
+  - [ ] 将页面/网络配对入口接入本机真实 identityPublicKey、自动生成的临时 keypair 和新握手入口。
 - [ ] ArkTS 实现通过 AES-GCM 加解密和篡改拒绝向量。
   - [x] 本地 SDK 类型已确认存在 AES-GCM 参数入口。
   - [x] AES-GCM frame 字段、nonce 和 AAD 规则已有 ArkTS 校验基础。
@@ -299,13 +300,14 @@ harmony/entry/src/main/ets/
 - [ ] X25519 建立临时共享秘密。
   - [x] 已新增 CryptoFramework X25519 服务边界，可生成 32 字节临时密钥并基于 peer public key 派生 shared secret；本地单测覆盖成功向量或平台失败分类。
   - [x] 已将 X25519 服务接入 `PairingClientHandshakeSessionService` 和 `PairingClientNetworkHandshakeService`，可用内存临时私钥替换外部传入的测试 sharedSecret。
-  - [ ] 将配对入口改为自动生成临时 keypair 并调用新入口。
+  - [x] `PairingStore` 已能在 pending 配对材料生成时自动创建临时 keypair，并拒绝把私钥写入 snapshot/draft。
+  - [ ] 将自动生成的配对材料接入真实 WebSocket 握手发送路径。
 - [ ] Ed25519 验证设备身份和空间绑定。
   - [x] 固定 canonical AUTH_PROOF transcript 并在 ArkTS 校验构造结果。
   - [ ] 真实 Ed25519 验签待接 CryptoFramework/HUKS。
 - [ ] HKDF 派生双向会话密钥。
   - [x] 固定共享 session key 向量并在 ArkTS 校验字段、长度和 nonce 规则。
-  - [x] 已接入 ArkTS HKDF-SHA-256 session key 派生边界，输入 sharedSecret/transcriptSalt 后输出双向 session key；真实 X25519 sharedSecret 计算已具备服务边界，握手接线仍待完成。
+  - [x] 已接入 ArkTS HKDF-SHA-256 session key 派生边界，输入 sharedSecret/transcriptSalt 后输出双向 session key；真实 X25519 sharedSecret 计算已具备服务和 store 入口边界，真实网络握手接线仍待完成。
   - [ ] 真实 CryptoFramework HKDF 未接入。
 - [ ] AES-256-GCM 解密认证后业务帧。
   - [x] 已新增 ArkTS AES-GCM 解密服务边界；`ProtocolTransportSession` 已接入可选 session keys 的 AAD 校验、解密和 decrypted payload 输出。

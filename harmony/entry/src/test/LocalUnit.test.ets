@@ -1195,6 +1195,37 @@ export default function localUnitTest() {
       expect(serialized.indexOf('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')).assertEqual(-1);
     });
 
+    it('buildsPendingClientHandshakeMaterialWithGeneratedEphemeralKeyPairWhenAvailable', 0, () => {
+      const emptyStore = new PairingStore();
+      const missing = emptyStore.buildPendingClientHandshakeMaterial(
+        '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo',
+        1700000000000
+      );
+      expect(missing.ok).assertEqual(false);
+      expect(missing.handshakeError).assertEqual(PairingHandshakeDraftError.MISSING_PENDING_INVITATION);
+
+      const store = new PairingStore();
+      store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);
+      const readySnapshot = store.confirmCodeMatched();
+      const material = store.buildPendingClientHandshakeMaterial(
+        '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo',
+        1700000000000
+      );
+
+      if (material.ok) {
+        expect(decodeBase64Url(material.localEphemeralPrivateKey ?? '')?.length).assertEqual(32);
+        expect(decodeBase64Url(material.localEphemeralPublicKey ?? '')?.length).assertEqual(32);
+        expect(material.draft?.clientHelloPayload.ephemeralPublicKey).assertEqual(material.localEphemeralPublicKey);
+        expect(JSON.stringify(material.draft).indexOf(material.localEphemeralPrivateKey ?? '')).assertEqual(-1);
+        expect(JSON.stringify(store.snapshot()).indexOf(material.localEphemeralPrivateKey ?? '')).assertEqual(-1);
+        expect(JSON.stringify(readySnapshot).indexOf(material.localEphemeralPrivateKey ?? '')).assertEqual(-1);
+      } else {
+        expect(material.keyAgreementError).assertEqual(X25519KeyAgreementError.PLATFORM_CRYPTO_FAILED);
+      }
+    });
+
     it('buildsClientHelloFrameFromPairingDraftForHandshakeTransport', 0, () => {
       const store = new PairingStore();
       store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);

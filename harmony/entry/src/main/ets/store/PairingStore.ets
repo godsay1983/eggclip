@@ -6,9 +6,15 @@ import {
   PairingInvitationSummary
 } from '../services/pairing/PairingInvitationService';
 import {
+  PairingHandshakeDraft,
+  PairingHandshakeDraftError,
   PairingHandshakeDraftResult,
   PairingHandshakeDraftService
 } from '../services/pairing/PairingHandshakeDraftService';
+import {
+  X25519KeyAgreementError,
+  X25519KeyAgreementService
+} from '../services/crypto/X25519KeyAgreementService';
 
 export enum PairingStoreState {
   IDLE = 'idle',
@@ -25,9 +31,20 @@ export interface PairingStoreSnapshot {
   error: PairingInvitationError | null;
 }
 
+export interface PairingGeneratedHandshakeMaterialResult {
+  ok: boolean;
+  draft?: PairingHandshakeDraft;
+  localEphemeralPrivateKey?: string;
+  localEphemeralPublicKey?: string;
+  handshakeError?: PairingHandshakeDraftError;
+  keyAgreementError?: X25519KeyAgreementError;
+  field?: string;
+}
+
 export class PairingStore {
   private readonly service: PairingInvitationService = new PairingInvitationService();
   private readonly handshakeDraftService: PairingHandshakeDraftService = new PairingHandshakeDraftService();
+  private readonly keyAgreement: X25519KeyAgreementService = new X25519KeyAgreementService();
   private currentSnapshot: PairingStoreSnapshot = createInitialPairingSnapshot();
   private pendingPayload: PairingInvitationPayload | null = null;
 
@@ -61,6 +78,50 @@ export class PairingStore {
       localEphemeralPublicKey,
       nowMs
     });
+  }
+
+  buildPendingClientHandshakeMaterial(
+    localDeviceId: string,
+    localIdentityPublicKey: string,
+    nowMs: number = Date.now()
+  ): PairingGeneratedHandshakeMaterialResult {
+    if (!this.hasPendingHandshakeMaterial()) {
+      return {
+        ok: false,
+        handshakeError: PairingHandshakeDraftError.MISSING_PENDING_INVITATION
+      };
+    }
+
+    const keyPair = this.keyAgreement.generateEphemeralKeyPair();
+    if (!keyPair.ok || keyPair.privateKey === undefined || keyPair.publicKey === undefined) {
+      return {
+        ok: false,
+        keyAgreementError: keyPair.error,
+        field: keyPair.field
+      };
+    }
+
+    const draft = this.handshakeDraftService.buildClientHandshakeDraft({
+      invitation: clonePayload(this.pendingPayload as PairingInvitationPayload),
+      localDeviceId,
+      localIdentityPublicKey,
+      localEphemeralPublicKey: keyPair.publicKey,
+      nowMs
+    });
+    if (!draft.ok || draft.draft === undefined) {
+      return {
+        ok: false,
+        handshakeError: draft.error,
+        field: draft.field
+      };
+    }
+
+    return {
+      ok: true,
+      draft: draft.draft,
+      localEphemeralPrivateKey: keyPair.privateKey,
+      localEphemeralPublicKey: keyPair.publicKey
+    };
   }
 
   updateInvitationText(value: string): PairingStoreSnapshot {
