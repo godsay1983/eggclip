@@ -866,6 +866,38 @@ export default function localUnitTest() {
       expect(session.state()).assertEqual(ProtocolSessionState.READY);
     });
 
+    it('rejectsProtocolTransportEncryptedFrameWithAadMismatchWhenKeysArePresent', 0, () => {
+      const session = new ProtocolTransportSession(ProtocolSessionState.AUTHENTICATED, {
+        clientToServerKey: '_CuE_7SfzdShnxyzHQy4IJ0zQjMAUVq-tynBZ2lBPYQ',
+        serverToClientKey: 'TSo91xPhGNnQb2KPW6xyjJJFeHsimcUss0Rm2Tnbo2M'
+      });
+      const result = session.acceptTextFrame(ENCRYPTED_ITEM_LIVE_FIXTURE);
+
+      expect(result.ok).assertEqual(false);
+      expect(result.error).assertEqual(ProtocolTransportFrameError.AAD_MISMATCH);
+      expect(session.isClosed()).assertEqual(true);
+      expect(session.state()).assertEqual(ProtocolSessionState.FAILED);
+    });
+
+    it('closesProtocolTransportOnDecryptFailureWhenAadMatches', 0, () => {
+      const session = new ProtocolTransportSession(ProtocolSessionState.AUTHENTICATED, {
+        clientToServerKey: '_CuE_7SfzdShnxyzHQy4IJ0zQjMAUVq-tynBZ2lBPYQ',
+        serverToClientKey: 'TSo91xPhGNnQb2KPW6xyjJJFeHsimcUss0Rm2Tnbo2M'
+      });
+      const frame = encryptedFrameWithCanonicalAad(
+        MessageType.ITEM_LIVE,
+        '018ff6f3-0d8c-7d1e-a38a-f308c64de79f',
+        12,
+        'session-v1-client-to-server'
+      );
+      const result = session.acceptTextFrame(frame);
+
+      expect(result.ok).assertEqual(false);
+      expect(result.error).assertEqual(ProtocolTransportFrameError.DECRYPT_FAILED);
+      expect(session.isClosed()).assertEqual(true);
+      expect(session.state()).assertEqual(ProtocolSessionState.FAILED);
+    });
+
     it('rejectsProtocolTransportDuplicateAndPocPlaintextFrames', 0, () => {
       const session = new ProtocolTransportSession();
 
@@ -1624,6 +1656,47 @@ export default function localUnitTest() {
         result.error === CryptoVectorErrorCode.PLATFORM_CRYPTO_FAILED).assertEqual(true);
     });
   });
+}
+
+function encryptedFrameWithCanonicalAad(
+  messageType: MessageType,
+  messageId: string,
+  sessionCounter: number,
+  keyId: string
+): string {
+  const aad = canonicalEncryptedAad(messageType, messageId, sessionCounter, keyId) ?? '';
+  const envelope: EncryptedFrameFixture = {
+    version: PROTOCOL_VERSION,
+    type: messageType,
+    messageId,
+    sessionCounter,
+    ciphertext: {
+      algorithm: AeadAlgorithm.AES_256_GCM,
+      keyId,
+      nonce: 'YzJzAQAAAAAAAAAM',
+      aad: encodeBase64Url(asciiBytes(aad)),
+      body: 'FFFFFFFFFFFFFFFF',
+      tag: 'GGGGGGGGGGGGGGGGGGGGGG'
+    }
+  };
+  return JSON.stringify(envelope);
+}
+
+interface EncryptedFrameFixture {
+  version: number;
+  type: MessageType;
+  messageId: string;
+  sessionCounter: number;
+  ciphertext: EncryptedCiphertextFixture;
+}
+
+interface EncryptedCiphertextFixture {
+  algorithm: AeadAlgorithm;
+  keyId: string;
+  nonce: string;
+  aad: string;
+  body: string;
+  tag: string;
 }
 
 const PAIRING_INVITATION_FIXTURE: string = 'eggclip://pair?p=eyJhcHAiOiJlZ2djbGlwIiwidmVyc2lvbiI6MSwia2luZCI6InBhaXJpbmdJbnZpdGF0aW9uIiwiaW52aXRhdGlvbklkIjoiMDE4ZmY2ZjAtMTExMS03MjIyLTgzMzMtMTIzNDU2Nzg5YWJjIiwic3BhY2VJZCI6IjAxOGZmNmVmLWMzOTQtN2QwOC04Yjk5LTRiN2QxMGYyNzY3YSIsInNwYWNlS2V5VmVyc2lvbiI6MSwiaXNzdWVyRGV2aWNlSWQiOiIwMThmZjZmMC0wYTNiLTc4MTUtYTRkYi0zZWI2ZTIzZDkzMzgiLCJpc3N1ZXJJZGVudGl0eVB1YmxpY0tleSI6IjExcVlBWUt4Q3JmVlNfN1R5V1FIT2c3aGN2UGFwaU1scndJYWFwY0hVcm8iLCJwYWlyaW5nU2VjcmV0IjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsImV4cGlyZXNBdE1zIjoxNzAwMDAwMzAwMDAwfQ';
