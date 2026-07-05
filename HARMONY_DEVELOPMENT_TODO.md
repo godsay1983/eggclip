@@ -228,6 +228,7 @@ harmony/entry/src/main/ets/
   - [x] 本地 SDK 类型已确认存在 AES-GCM 参数入口。
   - [x] AES-GCM frame 字段、nonce 和 AAD 规则已有 ArkTS 校验基础。
   - [x] canonical encrypted AAD 构造已与 Rust 规则对齐。
+  - [x] 已新增 `AesGcmCryptoService`，封装 CryptoFramework AES-GCM encrypt/decrypt 入口并覆盖 key、nonce、body、tag 的 base64url 和长度拒绝路径。
   - [ ] 接入 CryptoFramework/HUKS AES-GCM 真加解密。
 - [x] 明确字节序、字符串编码、Base64 变体和 transcript 规范化规则。
 
@@ -295,6 +296,7 @@ harmony/entry/src/main/ets/
   - [x] 已接入 ArkTS HKDF-SHA-256 session key 派生边界，输入 sharedSecret/transcriptSalt 后输出双向 session key；真实 X25519 sharedSecret 计算仍待接入。
   - [ ] 真实 CryptoFramework HKDF 未接入。
 - [ ] AES-256-GCM 解密认证后业务帧。
+  - [x] 已新增 ArkTS AES-GCM 解密服务边界；认证后业务帧解密接入 transport/session 仍待完成。
 - [ ] 维护接收计数器和 replay window。
   - [x] ArkTS 协议入站 replay guard 拒绝重复 messageId 与非递增 sessionCounter。
   - [x] ArkTS `ProtocolTransportSession` 已在已认证 transport 帧入口接入 replay guard。

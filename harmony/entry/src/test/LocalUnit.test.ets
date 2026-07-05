@@ -33,6 +33,10 @@ import {
   sessionNonce
 } from '../main/ets/services/crypto/CryptoVectorService';
 import {
+  AesGcmCryptoError,
+  AesGcmCryptoService
+} from '../main/ets/services/crypto/AesGcmCryptoService';
+import {
   SessionKeyDerivationError,
   SessionKeyDerivationService
 } from '../main/ets/services/crypto/SessionKeyDerivationService';
@@ -1565,6 +1569,51 @@ export default function localUnitTest() {
       expect(invalidSalt.ok).assertEqual(false);
       expect(invalidSalt.error).assertEqual(SessionKeyDerivationError.INVALID_BASE64URL);
       expect(invalidSalt.field).assertEqual('transcriptSalt');
+    });
+
+    it('validatesAesGcmCryptoServiceInputsBeforePlatformCrypto', 0, () => {
+      const service = new AesGcmCryptoService();
+      const invalidKey = service.encryptBase64Url(
+        'AA',
+        'AAAAAAAAAAAAAAAA',
+        '',
+        'AAAAAAAAAAAAAAAAAAAAAA'
+      );
+      expect(invalidKey.ok).assertEqual(false);
+      expect(invalidKey.error).assertEqual(AesGcmCryptoError.INVALID_LENGTH);
+      expect(invalidKey.field).assertEqual('key');
+
+      const invalidNonce = service.encryptBase64Url(
+        'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        'AA',
+        '',
+        'AAAAAAAAAAAAAAAAAAAAAA'
+      );
+      expect(invalidNonce.ok).assertEqual(false);
+      expect(invalidNonce.error).assertEqual(AesGcmCryptoError.INVALID_LENGTH);
+      expect(invalidNonce.field).assertEqual('nonce');
+
+      const invalidTag = service.decryptBase64Url(
+        'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        'AAAAAAAAAAAAAAAA',
+        '',
+        'zqdAPU1ga24HTsXTuvOdGA',
+        'AA'
+      );
+      expect(invalidTag.ok).assertEqual(false);
+      expect(invalidTag.error).assertEqual(AesGcmCryptoError.INVALID_LENGTH);
+      expect(invalidTag.field).assertEqual('tag');
+
+      const invalidBody = service.decryptBase64Url(
+        'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        'AAAAAAAAAAAAAAAA',
+        '',
+        '====',
+        '0NHIp5mZa_AmW5i11Iq5GQ'
+      );
+      expect(invalidBody.ok).assertEqual(false);
+      expect(invalidBody.error).assertEqual(AesGcmCryptoError.INVALID_BASE64URL);
+      expect(invalidBody.field).assertEqual('body');
     });
 
     it('exposesEd25519SignatureVectorCryptoFrameworkBoundary', 0, () => {
