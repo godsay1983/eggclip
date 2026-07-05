@@ -1275,6 +1275,65 @@ export default function localUnitTest() {
       }
     });
 
+    it('buildsPendingClientHandshakeMaterialWithLocalDeviceIdentityProvider', 0, async () => {
+      const emptyStore = new PairingStore();
+      const identityService = new LocalDeviceIdentityService(
+        new FakeLocalDeviceIdentityMetadataGateway(),
+        new FakeSecureIdentityGateway()
+      );
+      const missing = await emptyStore.buildPendingClientHandshakeMaterialWithLocalIdentity(
+        identityService,
+        1700000000000,
+        'v1'
+      );
+      expect(missing.ok).assertEqual(false);
+      expect(missing.handshakeError).assertEqual(PairingHandshakeDraftError.MISSING_PENDING_INVITATION);
+
+      const store = new PairingStore();
+      store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);
+      store.confirmCodeMatched();
+      const material = await store.buildPendingClientHandshakeMaterialWithLocalIdentity(
+        identityService,
+        1700000000000,
+        'v1'
+      );
+
+      if (material.ok) {
+        expect(material.localDeviceId).assertEqual('018ff6f0-4adf-7d31-a987-3ef2b25d0212');
+        expect(material.localIdentityPublicKey).assertEqual(FAKE_LOCAL_IDENTITY_PUBLIC_KEY);
+        expect(material.localIdentityPrivateKeyRef).assertEqual('huks://eggclip/local-identity/ed25519/v1');
+        expect(material.draft?.clientHelloPayload.deviceId).assertEqual(material.localDeviceId);
+        expect(material.draft?.clientHelloPayload.identityPublicKey).assertEqual(FAKE_LOCAL_IDENTITY_PUBLIC_KEY);
+        expect(decodeBase64Url(material.localEphemeralPrivateKey ?? '')?.length).assertEqual(32);
+        const serializedDraft = JSON.stringify(material.draft);
+        expect(serializedDraft.indexOf(material.localEphemeralPrivateKey ?? '')).assertEqual(-1);
+        expect(serializedDraft.indexOf(material.localIdentityPrivateKeyRef ?? '')).assertEqual(-1);
+      } else {
+        expect(material.keyAgreementError).assertEqual(X25519KeyAgreementError.PLATFORM_CRYPTO_FAILED);
+      }
+    });
+
+    it('rejectsPendingHandshakeMaterialWhenLocalIdentityInitializationFails', 0, async () => {
+      const metadata = new FakeLocalDeviceIdentityMetadataGateway();
+      const secureIdentity = new FakeSecureIdentityGateway();
+      secureIdentity.failGeneration = true;
+      const identityService = new LocalDeviceIdentityService(metadata, secureIdentity);
+      const store = new PairingStore();
+      store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);
+      store.confirmCodeMatched();
+
+      const material = await store.buildPendingClientHandshakeMaterialWithLocalIdentity(
+        identityService,
+        1700000000000,
+        'v1'
+      );
+
+      expect(material.ok).assertEqual(false);
+      expect(material.identityError).assertEqual(LocalDeviceIdentityError.HUKS_FAILED);
+      expect(metadata.savedPublicKey).assertEqual('');
+      expect(metadata.savedPrivateKeyRef).assertEqual('');
+    });
+
     it('buildsClientHelloFrameFromPairingDraftForHandshakeTransport', 0, () => {
       const store = new PairingStore();
       store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);

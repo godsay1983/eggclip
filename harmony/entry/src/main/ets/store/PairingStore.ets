@@ -15,6 +15,10 @@ import {
   X25519KeyAgreementError,
   X25519KeyAgreementService
 } from '../services/crypto/X25519KeyAgreementService';
+import {
+  LocalDeviceIdentityError,
+  LocalDeviceIdentityService
+} from '../services/crypto/LocalDeviceIdentityService';
 
 export enum PairingStoreState {
   IDLE = 'idle',
@@ -34,10 +38,14 @@ export interface PairingStoreSnapshot {
 export interface PairingGeneratedHandshakeMaterialResult {
   ok: boolean;
   draft?: PairingHandshakeDraft;
+  localDeviceId?: string;
+  localIdentityPublicKey?: string;
+  localIdentityPrivateKeyRef?: string;
   localEphemeralPrivateKey?: string;
   localEphemeralPublicKey?: string;
   handshakeError?: PairingHandshakeDraftError;
   keyAgreementError?: X25519KeyAgreementError;
+  identityError?: LocalDeviceIdentityError;
   field?: string;
 }
 
@@ -119,8 +127,51 @@ export class PairingStore {
     return {
       ok: true,
       draft: draft.draft,
+      localDeviceId,
+      localIdentityPublicKey,
       localEphemeralPrivateKey: keyPair.privateKey,
       localEphemeralPublicKey: keyPair.publicKey
+    };
+  }
+
+  async buildPendingClientHandshakeMaterialWithLocalIdentity(
+    identityProvider: LocalDeviceIdentityService,
+    nowMs: number = Date.now(),
+    aliasSlot: string = 'v1'
+  ): Promise<PairingGeneratedHandshakeMaterialResult> {
+    if (!this.hasPendingHandshakeMaterial()) {
+      return {
+        ok: false,
+        handshakeError: PairingHandshakeDraftError.MISSING_PENDING_INVITATION
+      };
+    }
+
+    const identity = await identityProvider.ensureLocalIdentity(nowMs, aliasSlot);
+    if (!identity.ok || identity.identity === undefined) {
+      return {
+        ok: false,
+        identityError: identity.error,
+        field: identity.field
+      };
+    }
+
+    const material = this.buildPendingClientHandshakeMaterial(
+      identity.identity.deviceId,
+      identity.identity.identityPublicKey,
+      nowMs
+    );
+    if (!material.ok) {
+      return material;
+    }
+
+    return {
+      ok: true,
+      draft: material.draft,
+      localDeviceId: identity.identity.deviceId,
+      localIdentityPublicKey: identity.identity.identityPublicKey,
+      localIdentityPrivateKeyRef: identity.identity.identityPrivateKeyRef,
+      localEphemeralPrivateKey: material.localEphemeralPrivateKey,
+      localEphemeralPublicKey: material.localEphemeralPublicKey
     };
   }
 

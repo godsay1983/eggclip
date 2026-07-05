@@ -203,6 +203,7 @@ harmony/entry/src/main/ets/
   - [x] 扩展本机身份 metadata repository 契约：RDB 只允许保存 `identityPublicKey` 和 `huks://eggclip/local-identity/ed25519/...` 私钥引用，不保存裸私钥。
   - [x] 新增 `Ed25519HuksIdentityService`，封装 HUKS Ed25519 长期身份 alias、key generation、公钥导出和 AUTH transcript 签名边界；本地测试只校验参数契约，真实输出待真机确认。
   - [x] 新增 `LocalDeviceIdentityService`，编排本机 `deviceId`、HUKS Ed25519 public key 和 private key ref 初始化；失败时不写入身份 metadata。
+  - [x] `PairingStore` 已接入 `LocalDeviceIdentityService` 生成 CLIENT_HELLO 材料：握手 draft 只包含 deviceId、identity public key 和 ephemeral public key，不暴露 HUKS private key ref 或临时私钥。
   - [ ] 将身份材料生成切换为 HUKS/系统安全存储中的长期私钥，只向握手流程暴露 public key 和签名能力。
 - [ ] 将私钥和 `spaceKey` 保存到 HUKS 或等效系统安全存储。
   - [x] 建立 `spaceKey` HUKS alias/引用生成与校验边界；RDB repository 只接收 `huks://` 引用，不保存裸 key。
@@ -235,6 +236,7 @@ harmony/entry/src/main/ets/
   - [x] 已接入 CryptoFramework X25519 key agreement 平台边界，覆盖 32 字节 base64url 输入校验、临时密钥输出和 shared secret fixture 校验/平台失败分类。
   - [x] `PairingClientHandshakeSessionService` 已支持在内存 session 中保存本机临时私钥，并在 AUTH_OK 前使用 SERVER_HELLO ephemeral public key 派生真实 sharedSecret。
   - [x] `PairingStore` 已新增 `buildPendingClientHandshakeMaterial`，在 pending 邀请确认后自动生成 X25519 临时 keypair 并构造 CLIENT_HELLO draft；临时私钥只作为返回值交给后续网络握手，不进入 snapshot/draft。
+  - [x] `PairingStore` 已新增基于本机 HUKS 身份服务的握手材料生成入口，后续页面/网络接线无需手动传入 deviceId 和 identityPublicKey。
   - [ ] 在 HarmonyOS 6.1 真机上确认 X25519 KeySpec 字节序、算法名和 shared secret 输出与 Rust 向量一致。
   - [ ] 将页面/网络配对入口接入本机真实 identityPublicKey、自动生成的临时 keypair 和新握手入口。
 - [ ] ArkTS 实现通过 AES-GCM 加解密和篡改拒绝向量。
@@ -284,6 +286,7 @@ harmony/entry/src/main/ets/
   - [x] 已新增 PairingClientNetworkHandshakeService，面向 WebSocket 回调串联 CLIENT_HELLO 发送、SERVER_HELLO 接收、AUTH_PROOF 发送、AUTH_OK 接收和带 keys 的 `ProtocolTransportSession` 创建。
   - [x] PairingClientHandshakeSessionService / PairingClientNetworkHandshakeService 已新增从本机临时私钥和 SERVER_HELLO ephemeral public key 派生 sharedSecret 的正式入口，临时私钥不进入 draft 序列化。
   - [x] PairingClientHandshakeSessionService / PairingClientNetworkHandshakeService 已新增基于 `Ed25519SignatureService` 的 AUTH_PROOF 签名入口，不再要求调用方传入测试签名。
+  - [x] HarmonyOS pending 邀请确认后可通过本机身份服务生成后续网络握手所需 CLIENT_HELLO 材料，并覆盖 HUKS 初始化失败不继续配对的单测。
   - [ ] HUKS 私钥签名、服务端 AUTH_PROOF 真验签和握手网络交换待接入。
 - [x] 显示六位人工确认码供双方核对，但不把它当成唯一秘密。
   - [x] PairingPage 已显示六位人工确认码，并要求用户点击“确认码一致，继续配对”后才进入 pending；确认码不作为唯一秘密。
@@ -310,6 +313,7 @@ harmony/entry/src/main/ets/
   - [x] 已新增 CryptoFramework X25519 服务边界，可生成 32 字节临时密钥并基于 peer public key 派生 shared secret；本地单测覆盖成功向量或平台失败分类。
   - [x] 已将 X25519 服务接入 `PairingClientHandshakeSessionService` 和 `PairingClientNetworkHandshakeService`，可用内存临时私钥替换外部传入的测试 sharedSecret。
   - [x] `PairingStore` 已能在 pending 配对材料生成时自动创建临时 keypair，并拒绝把私钥写入 snapshot/draft。
+  - [x] `PairingStore` 已能结合本机长期身份初始化生成完整客户端握手材料，页面接线时不需要暴露长期私钥或 HUKS 引用。
   - [ ] 将自动生成的配对材料接入真实 WebSocket 握手发送路径。
 - [ ] Ed25519 验证设备身份和空间绑定。
   - [x] 固定 canonical AUTH_PROOF transcript 并在 ArkTS 校验构造结果。
