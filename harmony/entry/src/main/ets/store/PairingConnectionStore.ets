@@ -55,6 +55,12 @@ export interface PairingConnectionSnapshot {
 
 export type PairingConnectionSnapshotListener = (snapshot: PairingConnectionSnapshot) => void;
 
+interface PairingCompletionPersistResult {
+  ok: boolean;
+  encryptedSpaceKeyRef?: string;
+  failureStage?: string;
+}
+
 class PairingConnectionStore {
   private readonly listeners: PairingConnectionSnapshotListener[] = [];
   private readonly transport: WebSocketTransportService;
@@ -277,8 +283,8 @@ class PairingConnectionStore {
 
     if (frameResult.envelope.messageType === MessageType.SPACE_KEY_ROTATED) {
       const persisted = await this.persistPairingCompletion(frameResult.decryptedPayload, Date.now());
-      if (!persisted) {
-        this.fail('配对保存失败', '已收到桌面端加密空间密钥包，但无法完整写入本机同步空间和可信设备记录。');
+      if (!persisted.ok) {
+        this.fail('配对保存失败', this.describePairingPersistFailure(persisted.failureStage));
         return this.snapshot();
       }
       this.state = PairingConnectionState.AUTHENTICATED;
@@ -336,12 +342,12 @@ class PairingConnectionStore {
     this.emit();
   }
 
-  private async persistPairingCompletion(payload: JsonObject | undefined, nowMs: number): Promise<boolean> {
+  private async persistPairingCompletion(payload: JsonObject | undefined, nowMs: number): Promise<PairingCompletionPersistResult> {
     if (this.context === null ||
       this.pendingTrustDraft === null ||
       this.pendingTrustServerHello === null ||
       payload === undefined) {
-      return false;
+      return failedPersist('context');
     }
     const delivery = await new SpaceKeyDeliveryService().acceptInitialDelivery({
       payload,
@@ -349,7 +355,7 @@ class PairingConnectionStore {
       expectedKeyVersion: this.pendingTrustDraft.spaceKeyVersion
     });
     if (!delivery.ok) {
-      return false;
+      return failedPersist(`spaceKey:${delivery.error ?? 'unknown'}:${delivery.field ?? 'unknown'}`);
     }
     const spaceId = this.pendingTrustDraft.spaceId;
     const keyVersion = this.pendingTrustDraft.spaceKeyVersion;
@@ -381,9 +387,12 @@ class PairingConnectionStore {
           pairedAt: nowMs
         }
       });
-      return true;
-    } catch (_) {
-      return false;
+      return {
+        ok: true,
+        encryptedSpaceKeyRef: delivery.encryptedSpaceKeyRef
+      };
+    } catch (error) {
+      return failedPersist(`rdb:${rdbFailureStage(error)}`);
     }
   }
 
@@ -432,6 +441,28 @@ class PairingConnectionStore {
     return '正式配对握手失败，未创建可信设备。';
   }
 
+  private describePairingPersistFailure(stage: string | undefined): string {
+    if (stage === undefined || stage === 'context') {
+      return '已收到桌面端加密空间密钥包，但本机页面上下文或握手状态已失效，请重新配对。';
+    }
+    if (stage.indexOf('spaceKey:importFailed') === 0) {
+      return `已收到桌面端加密空间密钥包，但 HUKS 空间密钥导入失败（阶段：${safeStageSuffix(stage)}）。请重启应用后重试；如果仍失败，请尝试清除应用数据后重新配对。`;
+    }
+    if (stage.indexOf('spaceKey:') === 0) {
+      return `已收到桌面端加密空间密钥包，但空间密钥 payload 校验失败（阶段：${safeStageSuffix(stage)}）。请重新生成邀请并重新配对。`;
+    }
+    if (stage === 'rdb:space') {
+      return '已收到桌面端加密空间密钥包，HUKS 空间密钥处理已通过，但写入本机同步空间记录失败。请重启应用后重试；如果仍失败，请清除应用数据后重新配对。';
+    }
+    if (stage === 'rdb:device') {
+      return '已收到桌面端加密空间密钥包，HUKS 空间密钥处理已通过，但写入桌面端可信设备记录失败。请重启应用后重试；如果仍失败，请清除应用数据后重新配对。';
+    }
+    if (stage.indexOf('rdb:') === 0) {
+      return '已收到桌面端加密空间密钥包，HUKS 空间密钥处理已通过，但写入本机数据库失败。请重启应用后重试。';
+    }
+    return '已收到桌面端加密空间密钥包，但无法完整写入本机同步空间和可信设备记录。';
+  }
+
   private describeCloseTitle(): string {
     if (this.state === PairingConnectionState.CLIENT_HELLO_SENT) {
       return '桌面端关闭配对握手';
@@ -478,6 +509,27 @@ function nextMessageId(): string {
 
 function shortId(value: string): string {
   return value.length >= 8 ? value.slice(0, 8) : value;
+}
+
+function failedPersist(failureStage: string): PairingCompletionPersistResult {
+  return {
+    ok: false,
+    failureStage
+  };
+}
+
+function safeStageSuffix(stage: string): string {
+  const parts = stage.split(':');
+  const suffix = parts.length > 0 ? parts[parts.length - 1] : 'unknown';
+  return /^[A-Za-z0-9_.-]{1,48}$/.test(suffix) ? suffix : 'unknown';
+}
+
+function rdbFailureStage(error: Error): string {
+  const message = error.message;
+  if (message === 'space' || message === 'device') {
+    return message;
+  }
+  return 'persistCompletion';
 }
 
 function normalizeUuid(value: string, nowMs: number, randomValue: number): string {

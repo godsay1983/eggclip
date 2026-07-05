@@ -535,6 +535,10 @@ export default function localUnitTest() {
         pairedAt: 1700000000000
       });
       expect(device.sql.indexOf('INSERT INTO devices') >= 0).assertEqual(true);
+      expect(device.sql.indexOf('NULL') >= 0).assertEqual(true);
+      for (const arg of device.args) {
+        expect(arg === null).assertEqual(false);
+      }
       expect(devices.listBySpace(spaceId).args[0]).assertEqual(spaceId);
 
       const item = buildLocalClipboardItemDraft({
@@ -661,8 +665,8 @@ export default function localUnitTest() {
         .assertEqual(SpaceKeyHuksError.INVALID_KEY_REF);
       expect(options.inData?.length).assertEqual(SPACE_KEY_BYTES);
       expect(options.properties?.length).assertEqual(6);
-      expect(encryptOptions.properties?.length).assertEqual(8);
-      expect(decryptOptions.properties?.length).assertEqual(9);
+      expect(encryptOptions.properties?.length).assertEqual(9);
+      expect(decryptOptions.properties?.length).assertEqual(10);
       expect(encryptOptions.inData === undefined).assertEqual(true);
     });
 

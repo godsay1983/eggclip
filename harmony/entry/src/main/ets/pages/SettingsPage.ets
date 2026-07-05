@@ -51,6 +51,9 @@ export struct SettingsPage {
   @State private connectionDescription: string = '正在等待 mDNS 候选，也可以使用手动 IP';
   @State private spaceKeyDiagnosticRunning: boolean = false;
   @State private spaceKeyDiagnosticStatus: string = '配对成功后可运行 HUKS 空间密钥加解密自检';
+  @State private spaceKeyDiagnosticDetail: string = '自检只使用固定测试文本，不读取或显示剪贴板内容。';
+  @State private spaceKeyDiagnosticTone: number = 0;
+  @State private spaceKeyDiagnosticUpdatedAt: string = '尚未运行';
 
   aboutToAppear(): void {
     if (this.settingsStore === null) {
@@ -294,14 +297,14 @@ export struct SettingsPage {
       this.DiagnosticsRow('候选地址', `${this.discoveryCandidateCount} 个`)
       this.DiagnosticsRow('WebSocket', `${this.transportState} · ${this.transportStatus}`)
       this.DiagnosticsRow('帧统计', this.transportDiagnostics)
-      this.DiagnosticsRow('空间密钥', this.spaceKeyDiagnosticStatus)
+      this.SpaceKeyDiagnosticResult()
 
       Button(this.spaceKeyDiagnosticRunning ? '自检中' : '自检空间密钥加解密')
         .width('100%')
         .height(38)
         .enabled(!this.spaceKeyDiagnosticRunning)
-        .fontColor(EggClipColors.textSecondary)
-        .backgroundColor(EggClipColors.controlBackground)
+        .fontColor(this.spaceKeyDiagnosticRunning ? EggClipColors.textSecondary : EggClipColors.onPrimary)
+        .backgroundColor(this.spaceKeyDiagnosticRunning ? EggClipColors.controlBackground : EggClipColors.primary)
         .borderRadius(19)
         .onClick(() => {
           this.runSpaceKeySelfTest();
@@ -318,6 +321,46 @@ export struct SettingsPage {
     .padding(EggClipSpacing.cardPadding)
     .backgroundColor(EggClipColors.cardBackground)
     .borderRadius(EggClipSpacing.radiusMedium)
+  }
+
+  @Builder
+  private SpaceKeyDiagnosticResult() {
+    Column({ space: 6 }) {
+      Row() {
+        Text('空间密钥自检')
+          .fontSize(EggClipTypography.captionSize)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(EggClipColors.textPrimary)
+          .layoutWeight(1)
+
+        Text(this.spaceKeyDiagnosticUpdatedAt)
+          .fontSize(11)
+          .fontColor(EggClipColors.textSecondary)
+      }
+      .width('100%')
+
+      Text(this.spaceKeyDiagnosticStatus)
+        .fontSize(EggClipTypography.captionSize)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.spaceKeyDiagnosticColor())
+        .width('100%')
+
+      Text(this.spaceKeyDiagnosticDetail)
+        .fontSize(11)
+        .fontColor(EggClipColors.textSecondary)
+        .lineHeight(18)
+        .width('100%')
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding({
+      left: 12,
+      right: 12,
+      top: 10,
+      bottom: 10
+    })
+    .backgroundColor(EggClipColors.controlBackground)
+    .borderRadius(14)
   }
 
   @Builder
@@ -566,18 +609,29 @@ export struct SettingsPage {
   private runSpaceKeySelfTest(): void {
     if (this.settingsStore === null) {
       this.spaceKeyDiagnosticStatus = '设置服务未初始化，无法运行自检';
+      this.spaceKeyDiagnosticDetail = '请重新打开设置页后再试。';
+      this.spaceKeyDiagnosticTone = 3;
+      this.spaceKeyDiagnosticUpdatedAt = this.formatDiagnosticTime(new Date());
       return;
     }
     this.spaceKeyDiagnosticRunning = true;
-    this.spaceKeyDiagnosticStatus = '正在使用已保存的空间密钥引用进行加解密自检';
+    this.spaceKeyDiagnosticTone = 1;
+    this.spaceKeyDiagnosticStatus = '正在自检';
+    this.spaceKeyDiagnosticDetail = '正在使用已保存的空间密钥引用进行固定文本加解密往返。';
+    this.spaceKeyDiagnosticUpdatedAt = this.formatDiagnosticTime(new Date());
     this.settingsStore.runSpaceKeyCryptoSelfTest()
       .then((result: SpaceKeyCryptoSelfTestResult) => {
         this.spaceKeyDiagnosticStatus = this.describeSpaceKeySelfTest(result);
+        this.spaceKeyDiagnosticDetail = this.describeSpaceKeySelfTestDetail(result);
+        this.spaceKeyDiagnosticTone = result.ok ? 2 : 3;
+        this.spaceKeyDiagnosticUpdatedAt = this.formatDiagnosticTime(new Date());
+        this.spaceKeyDiagnosticRunning = false;
       })
       .catch(() => {
         this.spaceKeyDiagnosticStatus = '空间密钥自检异常';
-      })
-      .finally(() => {
+        this.spaceKeyDiagnosticDetail = '自检流程出现未分类异常，未读取或展示任何密钥材料。';
+        this.spaceKeyDiagnosticTone = 3;
+        this.spaceKeyDiagnosticUpdatedAt = this.formatDiagnosticTime(new Date());
         this.spaceKeyDiagnosticRunning = false;
       });
   }
@@ -602,6 +656,49 @@ export struct SettingsPage {
       return '读取同步空间密钥引用失败';
     }
     return '空间密钥自检失败';
+  }
+
+  private describeSpaceKeySelfTestDetail(result: SpaceKeyCryptoSelfTestResult): string {
+    if (result.ok) {
+      return '已完成固定文本加密、解密和一致性校验；未展示明文、密文、tag 或密钥引用。';
+    }
+    if (result.error === SpaceKeyCryptoSelfTestError.NO_SPACE_KEY) {
+      return '请先完成一次桌面端配对，让本机保存同步空间密钥引用。';
+    }
+    if (result.error === SpaceKeyCryptoSelfTestError.ENCRYPT_FAILED) {
+      return `失败阶段：${result.field ?? 'encryptBase64Url'}。`;
+    }
+    if (result.error === SpaceKeyCryptoSelfTestError.DECRYPT_FAILED) {
+      return `失败阶段：${result.field ?? 'decryptBase64Url'}。`;
+    }
+    if (result.error === SpaceKeyCryptoSelfTestError.PLAINTEXT_MISMATCH) {
+      return '加解密往返完成，但解密结果与固定测试文本不一致。';
+    }
+    if (result.error === SpaceKeyCryptoSelfTestError.STORE_FAILED) {
+      return '读取本机同步空间记录失败，请检查数据库状态或重新配对。';
+    }
+    return '自检失败，未读取或展示任何密钥材料。';
+  }
+
+  private spaceKeyDiagnosticColor(): ResourceColor {
+    if (this.spaceKeyDiagnosticTone === 1) {
+      return EggClipColors.primary;
+    }
+    if (this.spaceKeyDiagnosticTone === 2) {
+      return EggClipColors.statusOnline;
+    }
+    if (this.spaceKeyDiagnosticTone === 3) {
+      return Color.Red;
+    }
+    return EggClipColors.textSecondary;
+  }
+
+  private formatDiagnosticTime(date: Date): string {
+    return `${this.pad2(date.getHours())}:${this.pad2(date.getMinutes())}:${this.pad2(date.getSeconds())}`;
+  }
+
+  private pad2(value: number): string {
+    return value < 10 ? `0${value}` : `${value}`;
   }
 
   private applySnapshot(snapshot: SettingsStoreSnapshot): void {

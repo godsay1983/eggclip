@@ -173,6 +173,7 @@ harmony/entry/src/main/ets/
   - [x] PairingPage 已接入配对连接卡，可填写桌面端 IP/端口并从 pending 邀请发起 CLIENT_HELLO/AUTH_PROOF WebSocket 握手。
   - [x] 真实 WebSocket 配对成功后会等待加密 `SPACE_KEY_ROTATED`，再用同一 RDB transaction 写入同步空间 key 引用占位和桌面端 trusted device。
   - [x] `spaceKey` 已接入真实 HUKS import；HarmonyOS 6.1 真机配对显示“已保存桌面端可信设备和同步空间密钥引用”。
+  - [x] 配对完成落库已补充 space/device 分阶段诊断，并规避 RDB 参数绑定 `null` 导致同步空间或可信设备写入失败。
 - [ ] DevicesPage：设备状态、重命名、移除。
   - [x] 将设备页占位文案改为正式空状态和设备规则卡片，明确配对、可信设备和移除轮换边界；真实设备列表、重命名和移除待配对流程接入。
   - [x] 设备页承接 POC 阶段连接入口：连接状态、mDNS 自动发现、候选地址连接、手动 IP/WebSocket 连接和断开操作。
@@ -311,6 +312,7 @@ harmony/entry/src/main/ets/
   - [ ] 真机验证 HUKS AES-GCM 后，补齐使用 `encryptedSpaceKeyRef` 做业务帧加解密。
 - [ ] 成功后持久化 trusted device 并清理邀请秘密。
   - [x] HarmonyOS 在 AUTH_OK 后不提前落库，收到 `SPACE_KEY_ROTATED` 后用 transaction 同时保存同步空间 key 引用和桌面端 trusted device。
+  - [x] 配对完成持久化改为分阶段执行并回滚，失败时可区分同步空间记录、可信设备记录和密钥处理阶段。
 - [ ] 拒绝过期、重复消费、身份不匹配和空间不匹配邀请。
 
 验收标准：

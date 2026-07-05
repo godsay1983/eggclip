@@ -54,10 +54,26 @@ export class PairingRdbRepository {
 
   async persistCompletion(record: PairingCompletionRecord): Promise<void> {
     const store = await Database.getStore(this.context);
-    await this.runner.executeTransaction(store, [
-      this.spaceCommands.upsert(record.space),
-      this.deviceCommands.upsert(record.device)
-    ]);
+    let failedStage = 'transaction';
+    store.beginTransaction();
+    try {
+      try {
+        await this.runner.execute(store, this.spaceCommands.upsert(record.space));
+      } catch (_) {
+        failedStage = 'space';
+        throw new Error('space');
+      }
+      try {
+        await this.runner.execute(store, this.deviceCommands.upsert(record.device));
+      } catch (_) {
+        failedStage = 'device';
+        throw new Error('device');
+      }
+      store.commit();
+    } catch (_) {
+      store.rollBack();
+      throw new Error(failedStage);
+    }
   }
 }
 

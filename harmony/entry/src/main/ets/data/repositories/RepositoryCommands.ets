@@ -276,36 +276,62 @@ export class LocalClipboardPersistenceCommands {
 
 export class SpaceRepository {
   upsert(record: SpaceRecord): RepositoryCommand {
+    const encryptedSpaceKeyRefPlaceholder = record.encryptedSpaceKeyRef === undefined ? 'NULL' : '?';
+    const args: SqlValue[] = [
+      record.space.spaceId,
+      record.space.displayName
+    ];
+    if (record.encryptedSpaceKeyRef !== undefined) {
+      args.push(record.encryptedSpaceKeyRef);
+    }
+    args.push(
+      record.space.keyVersion,
+      record.space.state,
+      record.space.createdAt,
+      record.updatedAt
+    );
     return {
       sql: `INSERT INTO spaces(
         space_id, display_name, encrypted_space_key_ref, key_version, state, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ${encryptedSpaceKeyRefPlaceholder}, ?, ?, ?, ?)
       ON CONFLICT(space_id) DO UPDATE SET
         display_name = excluded.display_name,
         encrypted_space_key_ref = excluded.encrypted_space_key_ref,
         key_version = excluded.key_version,
         state = excluded.state,
         updated_at = excluded.updated_at`,
-      args: [
-        record.space.spaceId,
-        record.space.displayName,
-        record.encryptedSpaceKeyRef ?? null,
-        record.space.keyVersion,
-        record.space.state,
-        record.space.createdAt,
-        record.updatedAt
-      ]
+      args
     };
   }
 }
 
 export class DeviceRepository {
   upsert(record: DeviceRecord): RepositoryCommand {
+    const pairedAtPlaceholder = record.pairedAt === undefined ? 'NULL' : '?';
+    const lastSeenAtPlaceholder = record.device.lastSeenAt === undefined ? 'NULL' : '?';
+    const revokedAtPlaceholder = record.revokedAt === undefined ? 'NULL' : '?';
+    const args: SqlValue[] = [
+      record.device.deviceId,
+      record.device.spaceId,
+      record.device.displayName,
+      record.device.identityPublicKeyRef,
+      record.device.trustState,
+      record.device.connectionState
+    ];
+    if (record.pairedAt !== undefined) {
+      args.push(record.pairedAt);
+    }
+    if (record.device.lastSeenAt !== undefined) {
+      args.push(record.device.lastSeenAt);
+    }
+    if (record.revokedAt !== undefined) {
+      args.push(record.revokedAt);
+    }
     return {
       sql: `INSERT INTO devices(
         device_id, space_id, display_name, identity_public_key, trust_state,
         connection_state, paired_at, last_seen_at, revoked_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ${pairedAtPlaceholder}, ${lastSeenAtPlaceholder}, ${revokedAtPlaceholder})
       ON CONFLICT(device_id) DO UPDATE SET
         display_name = excluded.display_name,
         identity_public_key = excluded.identity_public_key,
@@ -313,17 +339,7 @@ export class DeviceRepository {
         connection_state = excluded.connection_state,
         last_seen_at = excluded.last_seen_at,
         revoked_at = excluded.revoked_at`,
-      args: [
-        record.device.deviceId,
-        record.device.spaceId,
-        record.device.displayName,
-        record.device.identityPublicKeyRef,
-        record.device.trustState,
-        record.device.connectionState,
-        record.pairedAt ?? null,
-        record.device.lastSeenAt ?? null,
-        record.revokedAt ?? null
-      ]
+      args
     };
   }
 

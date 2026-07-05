@@ -10,6 +10,7 @@ const SPACE_KEY_ALIAS_PREFIX: string = 'eggclip.space-key.';
 const AES_GCM_NONCE_BYTES: number = 12;
 const AES_GCM_TAG_BYTES: number = 16;
 const AES_GCM_TAG_BITS: number = 128;
+const AES_GCM_TAG_LENGTH_CANDIDATES: number[] = [AES_GCM_TAG_BITS, AES_GCM_TAG_BYTES];
 
 export enum SpaceKeyHuksError {
   INVALID_KEY_REF = 'invalidKeyRef',
@@ -103,7 +104,8 @@ export class SpaceKeyHuksService implements SpaceKeySecureImporter {
     purpose: number,
     nonce: Uint8Array,
     aad: Uint8Array,
-    tag?: Uint8Array
+    tag?: Uint8Array,
+    tagLength: number = AES_GCM_TAG_BITS
   ): huks.HuksOptions {
     const properties: huks.HuksParam[] = [
       {
@@ -131,12 +133,16 @@ export class SpaceKeyHuksService implements SpaceKeySecureImporter {
         value: nonce
       },
       {
+        tag: huks.HuksTag.HUKS_TAG_IV,
+        value: nonce
+      },
+      {
         tag: huks.HuksTag.HUKS_TAG_ASSOCIATED_DATA,
         value: aad
       },
       {
         tag: huks.HuksTag.HUKS_TAG_AE_TAG_LEN,
-        value: AES_GCM_TAG_BITS
+        value: tagLength
       }
     ];
     if (tag !== undefined) {
@@ -157,6 +163,14 @@ export class SpaceKeyHuksService implements SpaceKeySecureImporter {
     }
     if (key.length !== SPACE_KEY_BYTES) {
       return failed(SpaceKeyHuksError.INVALID_KEY, 'spaceKey');
+    }
+
+    if (await this.keyExists(alias.huksAlias)) {
+      return {
+        ok: true,
+        encryptedSpaceKeyRef,
+        huksAlias: alias.huksAlias
+      };
     }
 
     try {
@@ -202,26 +216,16 @@ export class SpaceKeyHuksService implements SpaceKeySecureImporter {
       return failedEncrypt(plaintext.error, plaintext.field);
     }
 
-    try {
-      const options = this.operationOptions(
-        huks.HuksKeyPurpose.HUKS_KEY_PURPOSE_ENCRYPT,
-        nonce.value,
-        aad.value
-      );
-      const session = await huks.initSession(alias.huksAlias, options);
-      const encrypted = await huks.finishSession(session.handle, withInput(options, plaintext.value));
-      const outData = encrypted.outData;
-      if (outData === undefined || outData.length < AES_GCM_TAG_BYTES) {
-        return failedEncrypt(SpaceKeyHuksError.PLATFORM_CRYPTO_FAILED, 'finishSession');
+    for (const tagLength of AES_GCM_TAG_LENGTH_CANDIDATES) {
+      const encrypted = await this.tryEncrypt(alias.huksAlias, nonce.value, aad.value, plaintext.value, tagLength);
+      if (encrypted.ok) {
+        return encrypted;
       }
-      return {
-        ok: true,
-        body: encodeBase64Url(outData.subarray(0, outData.length - AES_GCM_TAG_BYTES)),
-        tag: encodeBase64Url(outData.subarray(outData.length - AES_GCM_TAG_BYTES))
-      };
-    } catch (_) {
-      return failedEncrypt(SpaceKeyHuksError.PLATFORM_CRYPTO_FAILED, 'cipher');
+      if (tagLength === AES_GCM_TAG_LENGTH_CANDIDATES[AES_GCM_TAG_LENGTH_CANDIDATES.length - 1]) {
+        return encrypted;
+      }
     }
+    return failedEncrypt(SpaceKeyHuksError.PLATFORM_CRYPTO_FAILED, 'encryptSession');
   }
 
   async decryptBase64Url(
@@ -252,32 +256,102 @@ export class SpaceKeyHuksService implements SpaceKeySecureImporter {
       return failedDecrypt(tag.error, tag.field);
     }
 
+    for (const tagLength of AES_GCM_TAG_LENGTH_CANDIDATES) {
+      const decrypted = await this.tryDecrypt(alias.huksAlias, nonce.value, aad.value, body.value, tag.value, tagLength);
+      if (decrypted.ok) {
+        return decrypted;
+      }
+      if (tagLength === AES_GCM_TAG_LENGTH_CANDIDATES[AES_GCM_TAG_LENGTH_CANDIDATES.length - 1]) {
+        return decrypted;
+      }
+    }
+    return failedDecrypt(SpaceKeyHuksError.PLATFORM_CRYPTO_FAILED, 'decryptSession');
+  }
+
+  private async keyExists(huksAlias: string): Promise<boolean> {
     try {
-      const options = this.operationOptions(
-        huks.HuksKeyPurpose.HUKS_KEY_PURPOSE_DECRYPT,
-        nonce.value,
-        aad.value,
-        tag.value
-      );
-      const session = await huks.initSession(alias.huksAlias, options);
-      const decrypted = await huks.finishSession(session.handle, withInput(options, body.value));
+      if (await huks.hasKeyItem(huksAlias, {})) {
+        return true;
+      }
+    } catch (_) {
+    }
+    try {
+      return await huks.isKeyItemExist(huksAlias, {});
+    } catch (_) {
+      return false;
+    }
+  }
+
+  private async tryEncrypt(
+    huksAlias: string,
+    nonce: Uint8Array,
+    aad: Uint8Array,
+    plaintext: Uint8Array,
+    tagLength: number
+  ): Promise<SpaceKeyHuksEncryptResult> {
+    const options = this.operationOptions(
+      huks.HuksKeyPurpose.HUKS_KEY_PURPOSE_ENCRYPT,
+      nonce,
+      aad,
+      undefined,
+      tagLength
+    );
+    let session: huks.HuksSessionHandle;
+    try {
+      session = await huks.initSession(huksAlias, options);
+    } catch (error) {
+      return failedEncrypt(SpaceKeyHuksError.PLATFORM_CRYPTO_FAILED, stageWithCode('initEncrypt', error));
+    }
+
+    try {
+      const encrypted = await huks.finishSession(session.handle, withInput(options, plaintext));
+      const outData = encrypted.outData;
+      if (outData === undefined || outData.length < AES_GCM_TAG_BYTES) {
+        return failedEncrypt(SpaceKeyHuksError.PLATFORM_CRYPTO_FAILED, `finishEncrypt:empty:${tagLength}`);
+      }
+      return {
+        ok: true,
+        body: encodeBase64Url(outData.subarray(0, outData.length - AES_GCM_TAG_BYTES)),
+        tag: encodeBase64Url(outData.subarray(outData.length - AES_GCM_TAG_BYTES))
+      };
+    } catch (error) {
+      return failedEncrypt(SpaceKeyHuksError.PLATFORM_CRYPTO_FAILED, stageWithCode('finishEncrypt', error, tagLength));
+    }
+  }
+
+  private async tryDecrypt(
+    huksAlias: string,
+    nonce: Uint8Array,
+    aad: Uint8Array,
+    body: Uint8Array,
+    tag: Uint8Array,
+    tagLength: number
+  ): Promise<SpaceKeyHuksDecryptResult> {
+    const options = this.operationOptions(
+      huks.HuksKeyPurpose.HUKS_KEY_PURPOSE_DECRYPT,
+      nonce,
+      aad,
+      tag,
+      tagLength
+    );
+    let session: huks.HuksSessionHandle;
+    try {
+      session = await huks.initSession(huksAlias, options);
+    } catch (error) {
+      return failedDecrypt(SpaceKeyHuksError.PLATFORM_CRYPTO_FAILED, stageWithCode('initDecrypt', error, tagLength));
+    }
+
+    try {
+      const decrypted = await huks.finishSession(session.handle, withInput(options, body));
       if (decrypted.outData === undefined) {
-        return failedDecrypt(SpaceKeyHuksError.PLATFORM_CRYPTO_FAILED, 'finishSession');
+        return failedDecrypt(SpaceKeyHuksError.PLATFORM_CRYPTO_FAILED, `finishDecrypt:empty:${tagLength}`);
       }
       return {
         ok: true,
         plaintext: encodeBase64Url(decrypted.outData)
       };
-    } catch (_) {
-      return failedDecrypt(SpaceKeyHuksError.PLATFORM_CRYPTO_FAILED, 'cipher');
-    }
-  }
-
-  private async keyExists(huksAlias: string): Promise<boolean> {
-    try {
-      return await huks.isKeyItemExist(huksAlias, {});
-    } catch (_) {
-      return false;
+    } catch (error) {
+      return failedDecrypt(SpaceKeyHuksError.PLATFORM_CRYPTO_FAILED, stageWithCode('finishDecrypt', error, tagLength));
     }
   }
 }
@@ -355,4 +429,27 @@ function failed(error: SpaceKeyHuksError, field: string): SpaceKeyHuksImportResu
     error,
     field
   };
+}
+
+function stageWithCode(stage: string, error: Object, tagLength?: number): string {
+  const code = errorCode(error);
+  const suffix = tagLength === undefined ? '' : `:${tagLength}`;
+  if (code.length <= 0) {
+    return `${stage}${suffix}`;
+  }
+  return `${stage}:${code}${suffix}`;
+}
+
+function errorCode(error: Object): string {
+  let serialized = '';
+  try {
+    serialized = JSON.stringify(error);
+  } catch (_) {
+    return '';
+  }
+  const match = /"code"\s*:\s*"?([0-9A-Za-z_-]+)"?/.exec(serialized);
+  if (match === null) {
+    return '';
+  }
+  return match[1];
 }
