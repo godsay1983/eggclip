@@ -248,6 +248,7 @@ desktop/
   - [x] Rust authenticated session frame processor 已支持 tungstenite WebSocket `Message` 入站/出站边界。
   - [x] 桌面端 POC WebSocket peer 已在 AUTH_OK 后保存 authenticated session，后续加密帧优先进入正式 frame processor 解密并带 messageType 发出诊断事件。
   - [x] 桌面端 POC WebSocket 认证后 `ITEM_LIVE` 已接入 sync inbound policy，校验协议 `ClipboardItem` 后按设置写入系统剪贴板，并发出正式认证剪贴板事件。
+  - [x] 桌面端 POC WebSocket 认证后 `ITEM_LIVE` 已接入历史元数据条件持久化：仅在对应 space/device 已存在时去重保存，不保存明文正文，不为未落库 trusted device 伪造记录。
   - [ ] authenticated session frame processor 接入正式同步业务分发和连接生命周期。
 - [ ] 使用方向独立的单调计数器构造 nonce。
   - [x] Rust 实现 `directionPrefix || u64be(counter)` 并通过共享向量。

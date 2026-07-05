@@ -1101,7 +1101,7 @@ fn option_u64_to_i64(value: Option<u64>) -> rusqlite::Result<Option<i64>> {
     value.map(u64_to_i64).transpose()
 }
 
-fn retention_expires_at(created_at: u64, retention_days: u16) -> rusqlite::Result<u64> {
+pub(crate) fn retention_expires_at(created_at: u64, retention_days: u16) -> rusqlite::Result<u64> {
     let ttl_ms = u64::from(retention_days)
         .checked_mul(MILLIS_PER_DAY)
         .ok_or_else(|| {

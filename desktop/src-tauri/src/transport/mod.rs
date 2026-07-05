@@ -13,7 +13,14 @@ use crate::{
         parse_envelope, ClipboardItem as ProtocolClipboardItem, MessageType, ProtocolEnvelope,
     },
     settings::{database_path, now_ms},
-    storage::{open_database, repositories::SettingsRepository},
+    storage::{
+        open_database,
+        repositories::{
+            retention_expires_at, ClipboardInsertOutcome, ClipboardItemRecord, ClipboardRepository,
+            DeviceRepository, SettingsRepository, SpaceRepository,
+        },
+    },
+    sync::{AppSettings, ContentType as SyncContentType, HlcTimestamp},
 };
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -179,6 +186,17 @@ struct AuthenticatedClipboardTextEvent {
     origin_device_id: String,
     origin_seq: u64,
     item: ClipboardText,
+}
+
+const REMOTE_HISTORY_METADATA_PLACEHOLDER: &[u8] = b"eggclip-remote-history-metadata-only-v1";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AuthenticatedRemoteHistoryOutcome {
+    Inserted,
+    Duplicate,
+    Conflict,
+    SkippedByPolicy,
+    SkippedMissingTrustGraph,
 }
 
 #[tauri::command]
@@ -835,7 +853,23 @@ fn dispatch_authenticated_payload(
     }
     let (protocol_item, clipboard_item) =
         authenticated_clipboard_text_from_payload(message_type, payload)?;
-    crate::sync::apply_authenticated_live_item(app, &clipboard_item).map_err(|_| ())?;
+    let settings = load_authenticated_inbound_settings(app)?;
+    let policy = crate::sync::apply_authenticated_inbound_item_with_settings(
+        app,
+        &clipboard_item,
+        crate::sync::InboundClipboardEventKind::ItemLive,
+        &settings,
+    )
+    .map_err(|_| ())?;
+    if policy.update_history {
+        let received_at = now_ms().map_err(|_| ())?;
+        let _ = persist_authenticated_remote_history_if_possible(
+            app,
+            &protocol_item,
+            received_at,
+            &settings,
+        );
+    }
     let _ = app.emit(
         "transport://authenticated-clipboard-text",
         AuthenticatedClipboardTextEvent {
@@ -847,6 +881,84 @@ fn dispatch_authenticated_payload(
         },
     );
     Ok(())
+}
+
+fn load_authenticated_inbound_settings(app: &AppHandle) -> Result<AppSettings, ()> {
+    let path = database_path(app).map_err(|_| ())?;
+    let connection = open_database(path).map_err(|_| ())?;
+    SettingsRepository::new(&connection)
+        .load_app_settings()
+        .map_err(|_| ())
+        .map(|settings| settings.unwrap_or_default())
+}
+
+fn persist_authenticated_remote_history_if_possible(
+    app: &AppHandle,
+    item: &ProtocolClipboardItem,
+    received_at: u64,
+    settings: &AppSettings,
+) -> Result<AuthenticatedRemoteHistoryOutcome, ()> {
+    if !settings.history_enabled || settings.history_limit == 0 {
+        return Ok(AuthenticatedRemoteHistoryOutcome::SkippedByPolicy);
+    }
+    let path = database_path(app).map_err(|_| ())?;
+    let connection = open_database(path).map_err(|_| ())?;
+    let space_id = uuid::Uuid::parse_str(&item.space_id).map_err(|_| ())?;
+    let origin_device_id = uuid::Uuid::parse_str(&item.origin_device_id).map_err(|_| ())?;
+    if SpaceRepository::new(&connection)
+        .get(space_id)
+        .map_err(|_| ())?
+        .is_none()
+        || DeviceRepository::new(&connection)
+            .get(origin_device_id)
+            .map_err(|_| ())?
+            .is_none()
+    {
+        return Ok(AuthenticatedRemoteHistoryOutcome::SkippedMissingTrustGraph);
+    }
+
+    let record = authenticated_remote_clipboard_record(item, received_at, settings)?;
+    let outcome = ClipboardRepository::new(&connection)
+        .insert_deduplicated(&record)
+        .map_err(|_| ())?;
+    ClipboardRepository::new(&connection)
+        .apply_retention(space_id, settings, received_at)
+        .map_err(|_| ())?;
+    Ok(match outcome {
+        ClipboardInsertOutcome::Inserted => AuthenticatedRemoteHistoryOutcome::Inserted,
+        ClipboardInsertOutcome::Duplicate => AuthenticatedRemoteHistoryOutcome::Duplicate,
+        ClipboardInsertOutcome::Conflict => AuthenticatedRemoteHistoryOutcome::Conflict,
+    })
+}
+
+fn authenticated_remote_clipboard_record(
+    item: &ProtocolClipboardItem,
+    received_at: u64,
+    settings: &AppSettings,
+) -> Result<ClipboardItemRecord, ()> {
+    item.validate().map_err(|_| ())?;
+    let content_type = match item.content_type {
+        crate::protocol::ContentType::TextPlain => SyncContentType::TextPlain,
+    };
+    Ok(ClipboardItemRecord {
+        item: crate::sync::ClipboardItem {
+            item_id: uuid::Uuid::parse_str(&item.item_id).map_err(|_| ())?,
+            space_id: uuid::Uuid::parse_str(&item.space_id).map_err(|_| ())?,
+            origin_device_id: uuid::Uuid::parse_str(&item.origin_device_id).map_err(|_| ())?,
+            origin_seq: item.origin_seq,
+            hlc: HlcTimestamp::from_wire(&item.hlc).ok_or(())?,
+            content_type,
+            content_length: item.content_length,
+            content_digest: item.content_digest.clone(),
+            created_at: item.created_at,
+            encrypted_content_ref: None,
+            plaintext: None,
+        },
+        encrypted_content: REMOTE_HISTORY_METADATA_PLACEHOLDER.to_vec(),
+        received_at,
+        expires_at: retention_expires_at(received_at, settings.retention_days).map_err(|_| ())?,
+        deleted_at: None,
+    })
 }
 
 fn authenticated_clipboard_text_from_payload(
@@ -1069,6 +1181,41 @@ mod tests {
         assert_eq!(protocol_item.origin_seq, 7);
         assert_eq!(clipboard_item.as_str(), "authenticated 桌面同步");
         assert_eq!(clipboard_item.byte_len(), 26);
+    }
+
+    #[test]
+    fn builds_authenticated_remote_history_record_without_plaintext() {
+        let protocol_item = ProtocolClipboardItem {
+            item_id: "018ff6f3-0d8c-7d1e-a38a-f308c64de79f".to_string(),
+            space_id: "018ff6ef-c394-7d08-8b99-4b7d10f2767a".to_string(),
+            origin_device_id: "018ff6f0-4adf-7d31-a987-3ef2b25d0212".to_string(),
+            origin_seq: 7,
+            hlc: "0000018bcfe56864-0001".to_string(),
+            content_type: crate::protocol::ContentType::TextPlain,
+            content_length: 26,
+            content_digest: "eA5jJ_YZ7drWuf4TrzLd5LaQ6mKfMsoQkxzHNXl2f5I".to_string(),
+            created_at: 1_700_000_000_000,
+            content: "authenticated 桌面同步".to_string(),
+        };
+        let settings = AppSettings {
+            retention_days: 7,
+            ..AppSettings::default()
+        };
+
+        let record =
+            authenticated_remote_clipboard_record(&protocol_item, 1_700_000_010_000, &settings)
+                .expect("remote history record should build");
+
+        assert_eq!(record.item.item_id.to_string(), protocol_item.item_id);
+        assert_eq!(record.item.origin_seq, 7);
+        assert_eq!(record.item.plaintext, None);
+        assert_eq!(
+            record.encrypted_content,
+            REMOTE_HISTORY_METADATA_PLACEHOLDER
+        );
+        assert_ne!(record.encrypted_content, protocol_item.content.as_bytes());
+        assert_eq!(record.received_at, 1_700_000_010_000);
+        assert_eq!(record.expires_at, 1_700_604_810_000);
     }
 
     #[test]
