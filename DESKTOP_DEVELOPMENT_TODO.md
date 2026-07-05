@@ -181,6 +181,7 @@ desktop/
 - [x] 桌面 Rust 实现 v1 envelope、message type、ciphertext、hello、clipboard item 和 sync heads 类型。
   - [x] HelloPayload 已支持可选 `pairingContext`，扫码配对的 CLIENT_HELLO 可携带公开邀请上下文，便于桌面端路由到对应 invitation；不携带 pairingSecret。
 - [x] 桌面 Rust 消费 `protocol/test-vectors/`，覆盖合法握手、加密 envelope、clipboard item、未知版本和认证后明文拒绝。
+  - [x] 已新增 `SPACE_KEY_ROTATED` 加密 envelope 共享向量，明确初始 `spaceKey` 下发必须走认证后密文帧。
 - [x] HarmonyOS ArkTS 实现同等协议类型和测试向量消费。
 
 ### 设备身份与本地密钥
@@ -212,6 +213,7 @@ desktop/
   - [x] 桌面端已新增 `accept_pairing_client_hello` 服务端握手骨架：根据 CLIENT_HELLO `pairingContext` 定位 active invitation，校验空间和发行设备后生成 SERVER_HELLO；不会提前消费邀请。
   - [x] 桌面端 POC WebSocket server 已新增 CLIENT_HELLO 分流：收到扫码配对握手帧后生成真实随机 server ephemeral public key、回发 SERVER_HELLO，并保存临时握手状态供后续 AUTH_PROOF 使用。
   - [x] 桌面端 POC WebSocket server 已新增 AUTH_PROOF 分流：基于前序握手状态校验 client AUTH_PROOF，成功后回发 AUTH_OK，并清理临时 X25519 secret。
+  - [x] 桌面端 AUTH_OK 后会在同一已认证 WebSocket 会话内发送加密 `SPACE_KEY_ROTATED`，payload 只在 AEAD 密文中携带初始同步空间 key。
   - [ ] 远端导入校验和正式握手消费入口待接入。
 - [x] 生成二维码内容和可复制邀请字符串。
   - [x] 后端已生成版本化 `eggclip://pair` 邀请 URI；前端当前只展示确认码和过期信息，避免完整邀请 secret 被剪贴板监听收入历史。
@@ -222,6 +224,7 @@ desktop/
   - [x] 桌面端生成确认码，鸿蒙端展示并要求人工确认；确认后鸿蒙端从可见 UI 状态中清理完整邀请文本，后续仍需正式握手消费 pairing secret。
 - [x] 配对完成后持久化 trusted device。
   - [x] 桌面端在 AUTH_PROOF 验证成功后以事务消费邀请，并将 HarmonyOS 设备写入/更新为 trusted + online；失败则不回 AUTH_OK。
+  - [x] AUTH_OK 与初始 `SPACE_KEY_ROTATED` 共用握手派生 session key，发送后桌面端出站计数器从下一个安全值继续，避免 nonce 重用。
 - [ ] 拒绝过期、重复消费、空间不匹配和身份不匹配邀请。
   - [x] 桌面端本地消费骨架已拒绝过期、重复消费和错误 pairing secret；空间/身份绑定待正式握手 transcript 接入后完成。
 

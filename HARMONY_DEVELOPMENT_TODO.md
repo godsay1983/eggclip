@@ -171,7 +171,8 @@ harmony/entry/src/main/ets/
   - [x] PairingPage 已接入设备页，可输入 `eggclip://pair` 邀请并展示解析结果、过期剩余、发行设备短指纹和六位确认码。
   - [x] 已接入“确认码一致，继续配对”的内存 pending 状态；确认后会从 UI snapshot 清理完整邀请文本。
   - [x] PairingPage 已接入配对连接卡，可填写桌面端 IP/端口并从 pending 邀请发起 CLIENT_HELLO/AUTH_PROOF WebSocket 握手。
-  - [ ] 真实配对状态持久化、trusted device 创建和 spaceKey 接收待接入。
+  - [x] 真实 WebSocket 配对成功后会等待加密 `SPACE_KEY_ROTATED`，再用同一 RDB transaction 写入同步空间 key 引用占位和桌面端 trusted device。
+  - [ ] `spaceKey` 真实 HUKS import 待接入。
 - [ ] DevicesPage：设备状态、重命名、移除。
   - [x] 将设备页占位文案改为正式空状态和设备规则卡片，明确配对、可信设备和移除轮换边界；真实设备列表、重命名和移除待配对流程接入。
   - [x] 设备页承接 POC 阶段连接入口：连接状态、mDNS 自动发现、候选地址连接、手动 IP/WebSocket 连接和断开操作。
@@ -292,13 +293,16 @@ harmony/entry/src/main/ets/
   - [x] PairingClientHandshakeSessionService / PairingClientNetworkHandshakeService 已接入 HUKS private key ref 签名 AUTH_PROOF 的异步入口，并覆盖签名失败不继续握手、不泄露 HUKS ref 的单测。
   - [x] PairingClientHandshakeSessionService / PairingClientNetworkHandshakeService 已记住 AUTH_PROOF transcriptHash 作为 HKDF transcript salt，AUTH_OK 阶段可直接基于本机临时私钥和已记住 salt 创建正式 `ProtocolTransportSession`。
   - [x] 新增 PairingConnectionStore 并接入 PairingPage，可通过真实 WebSocket 配对入口发送 CLIENT_HELLO、处理 SERVER_HELLO、发送 AUTH_PROOF 并等待/处理 AUTH_OK。
-  - [ ] 服务端 AUTH_PROOF 真验签、trusted device 持久化和 spaceKey 安全下发待接入。
+  - [x] AUTH_OK 后同一 WebSocket 已切换到认证协议 session，可接收桌面端加密 `SPACE_KEY_ROTATED`。
+  - [ ] 服务端 AUTH_PROOF 真验签和真实 HUKS `spaceKey` import 待接入。
 - [x] 显示六位人工确认码供双方核对，但不把它当成唯一秘密。
   - [x] PairingPage 已显示六位人工确认码，并要求用户点击“确认码一致，继续配对”后才进入 pending；确认码不作为唯一秘密。
   - [x] PairingStore 确认后会从 UI snapshot 中清空完整邀请文本，只保留摘要和内存待握手材料。
 - [ ] 安全接收 `spaceKey` 和成员信息。
+  - [x] HarmonyOS 已在 AUTH_OK 后通过认证 session 解密 `SPACE_KEY_ROTATED`，校验 spaceId/keyVersion/32 字节 key，并只把 `huks://` alias 写入 RDB。
+  - [ ] 将解密出的 `spaceKey` 真正导入 HUKS/等效安全存储；当前只完成 alias 占位和明文数组清零。
 - [ ] 成功后持久化 trusted device 并清理邀请秘密。
-  - [x] HarmonyOS 在 AUTH_OK 处理成功后写入同步空间占位记录和桌面端 trusted device；`spaceKey` 安全接收仍待接入。
+  - [x] HarmonyOS 在 AUTH_OK 后不提前落库，收到 `SPACE_KEY_ROTATED` 后用 transaction 同时保存同步空间 key 引用和桌面端 trusted device。
 - [ ] 拒绝过期、重复消费、身份不匹配和空间不匹配邀请。
 
 验收标准：

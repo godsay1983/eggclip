@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "type": "SPACE_KEY_ROTATED",
+  "messageId": "018ff6f4-2c5a-7a81-b9f2-2ddf72fd25ac",
+  "sessionCounter": 4,
+  "ciphertext": {
+    "algorithm": "AES-256-GCM",
+    "keyId": "session-v1-server-to-client",
+    "nonce": "DDDDDDDDDDDDDDDQ",
+    "aad": "EEEEEEEEEEEEEEEE",
+    "body": "FFFFFFFFFFFFFFFF",
+    "tag": "GGGGGGGGGGGGGGGGGGGGGG"
+  }
+}

@@ -1347,6 +1347,27 @@ mod tests {
     }
 
     #[test]
+    fn parses_encrypted_space_key_rotated_fixture() {
+        let fixture = read_vector(&[
+            "test-vectors",
+            "sync",
+            "encrypted-space-key-rotated-envelope.valid.json",
+        ]);
+        let ProtocolEnvelope::Encrypted(envelope) =
+            parse_envelope(&fixture).expect("encrypted space key rotated should parse")
+        else {
+            panic!("space key rotated should be encrypted");
+        };
+
+        assert_eq!(envelope.message_type, MessageType::SpaceKeyRotated);
+        assert_eq!(envelope.session_counter, 4);
+        assert_eq!(
+            envelope.ciphertext.key_id,
+            "session-v1-server-to-client".to_owned()
+        );
+    }
+
+    #[test]
     fn builds_and_decrypts_encrypted_business_payload() {
         let vector: SessionKeysVector =
             read_json_vector(&["test-vectors", "crypto", "session-keys.valid.json"]);

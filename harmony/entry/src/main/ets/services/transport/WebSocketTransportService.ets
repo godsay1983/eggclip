@@ -1,6 +1,6 @@
 import webSocket from '@ohos.net.webSocket';
 import { EndpointValidationResult, ManualEndpoint, POC_MAX_FRAME_BYTES, PocLifecycleState } from '../../models/PocModels';
-import { PROTOCOL_MAX_FRAME_BYTES } from '../../models/ProtocolModels';
+import { PROTOCOL_MAX_FRAME_BYTES, ProtocolSessionState } from '../../models/ProtocolModels';
 import { estimateUtf8Bytes, MAX_TEXT_BYTES } from '../../utils/TextLimits';
 import {
   ProtocolHandshakeTransportSession,
@@ -31,6 +31,7 @@ export interface PairingHandshakeTransportCallbacks {
   onError: (reason: string) => void;
   onFrame: (result: ProtocolTransportFrameResult) => void;
   onTextFrame?: (message: string, result: ProtocolTransportFrameResult) => void;
+  protocolSessionProvider?: () => ProtocolTransportSession | null;
 }
 
 export interface PocClipboardTextMessage {
@@ -165,7 +166,11 @@ export class WebSocketTransportService {
       onClose: callbacks.onClose,
       onError: callbacks.onError,
       onTextMessage: (message: string) => {
-        const result = this.decodeHandshakeFrameMessage(message, session);
+        const protocolSession = session.state() === ProtocolSessionState.AUTHENTICATED &&
+          callbacks.protocolSessionProvider !== undefined ? callbacks.protocolSessionProvider() : null;
+        const result = protocolSession === null ?
+          this.decodeHandshakeFrameMessage(message, session) :
+          this.decodeProtocolFrameMessage(message, protocolSession);
         callbacks.onFrame(result);
         if (callbacks.onTextFrame !== undefined) {
           callbacks.onTextFrame(message, result);

@@ -37,6 +37,30 @@ export interface RecentPocEndpointRecord {
   connectedAt: number;
 }
 
+export interface PairingCompletionRecord {
+  space: SpaceRecord;
+  device: DeviceRecord;
+}
+
+export class PairingRdbRepository {
+  private readonly context: common.Context;
+  private readonly spaceCommands: SpaceRepository = new SpaceRepository();
+  private readonly deviceCommands: DeviceRepository = new DeviceRepository();
+  private readonly runner: RdbCommandRunner = new RdbCommandRunner();
+
+  constructor(context: common.Context) {
+    this.context = context;
+  }
+
+  async persistCompletion(record: PairingCompletionRecord): Promise<void> {
+    const store = await Database.getStore(this.context);
+    await this.runner.executeTransaction(store, [
+      this.spaceCommands.upsert(record.space),
+      this.deviceCommands.upsert(record.device)
+    ]);
+  }
+}
+
 export class SpaceRdbRepository {
   private readonly context: common.Context;
   private readonly commands: SpaceRepository = new SpaceRepository();

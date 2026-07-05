@@ -1,9 +1,6 @@
 import { common } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
-import {
-  DeviceRdbRepository,
-  SpaceRdbRepository
-} from '../data/repositories/RdbRepositories';
+import { PairingRdbRepository } from '../data/repositories/RdbRepositories';
 import { LocalIdentityRdbRepository } from '../data/repositories/LocalIdentityRdbRepository';
 import {
   DeviceConnectionState,
@@ -13,16 +10,20 @@ import {
 import { ManualEndpoint } from '../models/PocModels';
 import {
   HelloPayload,
+  JsonObject,
   MessageType
 } from '../models/ProtocolModels';
+import { decodeBase64Url } from '../services/crypto/CryptoVectorService';
 import { LocalDeviceIdentityService } from '../services/crypto/LocalDeviceIdentityService';
+import { SpaceKeyReferenceService } from '../services/crypto/SpaceKeyReferenceService';
 import {
   PairingClientNetworkHandshakeError,
   PairingClientNetworkHandshakeService
 } from '../services/pairing/PairingClientNetworkHandshakeService';
 import {
   ProtocolHandshakeTransportSession,
-  ProtocolTransportFrameResult
+  ProtocolTransportFrameResult,
+  ProtocolTransportSession
 } from '../services/transport/ProtocolTransportSession';
 import { WebSocketTransportService } from '../services/transport/WebSocketTransportService';
 import {
@@ -62,6 +63,7 @@ class PairingConnectionStore {
   private identityService: LocalDeviceIdentityService | null = null;
   private networkHandshake: PairingClientNetworkHandshakeService = new PairingClientNetworkHandshakeService();
   private localIdentityPrivateKeyRef: string = '';
+  private authenticatedTransportSession: ProtocolTransportSession | null = null;
   private pendingTrustDraft: PairingHandshakeDraft | null = null;
   private pendingTrustServerHello: HelloPayload | null = null;
   private state: PairingConnectionState = PairingConnectionState.IDLE;
@@ -215,6 +217,9 @@ class PairingConnectionStore {
         this.handleHandshakeTextFrame(message, frameResult).catch(() => {
           this.fail('配对握手处理失败', '处理桌面端握手帧时出现异常。');
         });
+      },
+      protocolSessionProvider: () => {
+        return this.authenticatedTransportSession;
       }
     });
     if (!result.ok) {
@@ -263,14 +268,23 @@ class PairingConnectionStore {
         this.fail('AUTH_OK 处理失败', this.describeNetworkFailure(authenticated.error));
         return this.snapshot();
       }
-      const persisted = await this.persistTrustedPairingMetadata(Date.now());
+      this.authenticatedTransportSession = authenticated.transportSession;
+      this.state = PairingConnectionState.AUTHENTICATED;
+      this.title = '配对握手已认证';
+      this.description = '已创建正式协议会话，正在等待桌面端下发加密空间密钥。';
+      this.emit();
+      return this.snapshot();
+    }
+
+    if (frameResult.envelope.messageType === MessageType.SPACE_KEY_ROTATED) {
+      const persisted = await this.persistPairingCompletion(frameResult.decryptedPayload, Date.now());
       if (!persisted) {
-        this.fail('可信设备保存失败', '配对握手已认证，但无法写入本机 RDB 可信设备记录。请重启应用后重新配对。');
+        this.fail('配对保存失败', '已收到桌面端加密空间密钥包，但无法完整写入本机同步空间和可信设备记录。');
         return this.snapshot();
       }
       this.state = PairingConnectionState.AUTHENTICATED;
-      this.title = '配对握手已认证';
-      this.description = '已创建正式协议会话，并已保存桌面端可信设备；spaceKey 安全接收仍待接入。';
+      this.title = '配对已保存';
+      this.description = '已保存桌面端可信设备和同步空间密钥引用；后续将接入正式剪贴板同步。';
       this.emit();
       return this.snapshot();
     }
@@ -287,6 +301,7 @@ class PairingConnectionStore {
   close(): void {
     this.transport.close();
     this.localIdentityPrivateKeyRef = '';
+    this.authenticatedTransportSession = null;
     this.pendingTrustDraft = null;
     this.pendingTrustServerHello = null;
     this.networkHandshake.reset();
@@ -322,36 +337,65 @@ class PairingConnectionStore {
     this.emit();
   }
 
-  private async persistTrustedPairingMetadata(nowMs: number): Promise<boolean> {
-    if (this.context === null || this.pendingTrustDraft === null || this.pendingTrustServerHello === null) {
+  private async persistPairingCompletion(payload: JsonObject | undefined, nowMs: number): Promise<boolean> {
+    if (this.context === null ||
+      this.pendingTrustDraft === null ||
+      this.pendingTrustServerHello === null ||
+      payload === undefined) {
       return false;
     }
-    const draft = this.pendingTrustDraft;
+    const spaceId = readString(payload, 'spaceId');
+    const spaceKey = readString(payload, 'spaceKey');
+    const delivery = readString(payload, 'delivery');
+    const keyVersion = readNumber(payload, 'keyVersion');
+    if (spaceId !== this.pendingTrustDraft.spaceId || delivery !== 'pairing-v1') {
+      return false;
+    }
+    if (!Number.isSafeInteger(keyVersion) || keyVersion !== this.pendingTrustDraft.spaceKeyVersion) {
+      return false;
+    }
+    const decoded = decodeBase64Url(spaceKey);
+    if (decoded === null) {
+      return false;
+    }
+    const referenceService = new SpaceKeyReferenceService();
+    const inspected = referenceService.inspectImportedSpaceKey(decoded);
+    if (!inspected.ok) {
+      decoded.fill(0);
+      return false;
+    }
+    decoded.fill(0);
+    const alias = referenceService.buildHuksAlias(spaceId, keyVersion);
+    if (!alias.ok || alias.alias.length <= 0) {
+      return false;
+    }
     const serverHello = this.pendingTrustServerHello;
-    const spaceRepository = new SpaceRdbRepository(this.context);
-    const deviceRepository = new DeviceRdbRepository(this.context);
+    const pairingRepository = new PairingRdbRepository(this.context);
     try {
-      await spaceRepository.upsert({
+      await pairingRepository.persistCompletion({
         space: {
-          spaceId: draft.spaceId,
-          displayName: `同步空间 #${shortId(draft.spaceId)}`,
-          keyVersion: draft.spaceKeyVersion,
-          state: SpaceState.ACTIVE,
-          createdAt: nowMs
+          space: {
+            spaceId,
+            displayName: `同步空间 #${shortId(spaceId)}`,
+            keyVersion,
+            state: SpaceState.ACTIVE,
+            createdAt: nowMs
+          },
+          encryptedSpaceKeyRef: alias.alias,
+          updatedAt: nowMs
         },
-        updatedAt: nowMs
-      });
-      await deviceRepository.upsert({
         device: {
-          deviceId: serverHello.deviceId,
-          spaceId: draft.spaceId,
-          displayName: `桌面端 #${shortId(serverHello.deviceId)}`,
-          identityPublicKeyRef: serverHello.identityPublicKey,
-          trustState: DeviceTrustState.TRUSTED,
-          connectionState: DeviceConnectionState.ONLINE,
-          lastSeenAt: nowMs
-        },
-        pairedAt: nowMs
+          device: {
+            deviceId: serverHello.deviceId,
+            spaceId,
+            displayName: `桌面端 #${shortId(serverHello.deviceId)}`,
+            identityPublicKeyRef: serverHello.identityPublicKey,
+            trustState: DeviceTrustState.TRUSTED,
+            connectionState: DeviceConnectionState.ONLINE,
+            lastSeenAt: nowMs
+          },
+          pairedAt: nowMs
+        }
       });
       return true;
     } catch (_) {
@@ -450,6 +494,16 @@ function nextMessageId(): string {
 
 function shortId(value: string): string {
   return value.length >= 8 ? value.slice(0, 8) : value;
+}
+
+function readString(payload: JsonObject, field: string): string {
+  const value = payload[field];
+  return typeof value === 'string' ? value : '';
+}
+
+function readNumber(payload: JsonObject, field: string): number {
+  const value = payload[field];
+  return typeof value === 'number' ? value : Number.NaN;
 }
 
 function normalizeUuid(value: string, nowMs: number, randomValue: number): string {

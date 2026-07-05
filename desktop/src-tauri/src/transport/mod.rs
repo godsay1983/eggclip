@@ -6,7 +6,7 @@ use crate::{
     clipboard::{ClipboardText, ClipboardTextError},
     crypto::{encode_base64url, SessionDirection, X25519Secret, X25519_PRIVATE_KEY_BYTES},
     pairing::{
-        accept_pairing_auth_proof, accept_pairing_client_hello, PairingError,
+        accept_pairing_auth_proof, accept_pairing_client_hello, load_space_key, PairingError,
         PairingServerAuthProofInput, PairingServerHelloDraft,
     },
     protocol::{
@@ -657,9 +657,11 @@ where
                     PairingClientHelloRoute::NotPairing => {}
                 }
                 match try_accept_pairing_auth_proof(&app, &peer, &text) {
-                    PairingAuthProofRoute::Handled(auth_ok_frame) => {
+                    PairingAuthProofRoute::Handled(frames) => {
                         record_poc_frame_result(&app, Ok(()));
-                        let _ = outgoing_tx.send(Message::Text(auth_ok_frame.into()));
+                        for frame in frames {
+                            let _ = outgoing_tx.send(Message::Text(frame.into()));
+                        }
                         continue;
                     }
                     PairingAuthProofRoute::Rejected(reason) => {
@@ -722,7 +724,7 @@ enum PairingClientHelloRoute {
 }
 
 enum PairingAuthProofRoute {
-    Handled(String),
+    Handled(Vec<String>),
     Rejected(PocRejectionReason),
     NotPairing,
 }
@@ -828,10 +830,18 @@ fn try_accept_pairing_auth_proof(app: &AppHandle, peer: &str, text: &str) -> Pai
             if persist_trusted_pairing_device(app, &accepted, accepted_at).is_err() {
                 return PairingAuthProofRoute::Rejected(PocRejectionReason::PairingInternalError);
             }
+            let space_key_frame = match build_space_key_delivery_frame(app, &accepted, 4) {
+                Ok(frame) => frame,
+                Err(_) => {
+                    return PairingAuthProofRoute::Rejected(
+                        PocRejectionReason::PairingInternalError,
+                    )
+                }
+            };
             if remember_authenticated_session(app, peer, accepted).is_err() {
                 return PairingAuthProofRoute::Rejected(PocRejectionReason::PairingInternalError);
             }
-            PairingAuthProofRoute::Handled(auth_ok_frame)
+            PairingAuthProofRoute::Handled(vec![auth_ok_frame, space_key_frame])
         }
         Err(error) => PairingAuthProofRoute::Rejected(pairing_auth_proof_rejection(&error)),
     }
@@ -845,6 +855,47 @@ fn persist_trusted_pairing_device(
     let path = database_path(app).map_err(|_| ())?;
     let mut connection = open_database(path).map_err(|_| ())?;
     persist_trusted_pairing_device_in_connection(&mut connection, accepted, accepted_at)
+}
+
+fn build_space_key_delivery_frame(
+    app: &AppHandle,
+    accepted: &crate::pairing::PairingServerAuthProofAccepted,
+    session_counter: u64,
+) -> Result<String, ()> {
+    let space_id = Uuid::parse_str(&accepted.space_id).map_err(|_| ())?;
+    let path = database_path(app).map_err(|_| ())?;
+    let connection = open_database(path).map_err(|_| ())?;
+    #[cfg(windows)]
+    let store = crate::secret_store::WindowsCredentialSecretStore;
+    #[cfg(not(windows))]
+    let store = crate::secret_store::UnavailableSecretStore;
+    let mut space_key = load_space_key(&connection, &store, space_id).map_err(|_| ())?;
+    let space = SpaceRepository::new(&connection)
+        .get(space_id)
+        .map_err(|_| ())?
+        .ok_or(())?;
+    let payload = serde_json::json!({
+        "spaceId": accepted.space_id,
+        "keyVersion": space.space.key_version,
+        "spaceKey": encode_base64url(&space_key),
+        "delivery": "pairing-v1"
+    });
+    space_key.fill(0);
+
+    let mut session = AuthenticatedTransportSession::new(
+        SessionDirection::ClientToServer,
+        accepted.session_keys.client_to_server,
+        SessionDirection::ServerToClient,
+        accepted.session_keys.server_to_client,
+        session_counter,
+    );
+    session
+        .encode_business_frame(
+            MessageType::SpaceKeyRotated,
+            Uuid::now_v7().to_string(),
+            &payload,
+        )
+        .map_err(|_| ())
 }
 
 fn persist_trusted_pairing_device_in_connection(
@@ -1146,7 +1197,7 @@ fn remember_authenticated_session(
             accepted.session_keys.client_to_server,
             SessionDirection::ServerToClient,
             accepted.session_keys.server_to_client,
-            4,
+            5,
         ),
     );
     Ok(())

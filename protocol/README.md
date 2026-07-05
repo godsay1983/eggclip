@@ -251,6 +251,27 @@ Rules:
 
 If a requested range is below `minimumAvailable`, the sender returns a retention gap response rather than pretending synchronization is complete.
 
+## Space Key Delivery
+
+During invitation-based pairing, the desktop sends the initial space key after
+`AUTH_OK` as an encrypted `SPACE_KEY_ROTATED` frame on the authenticated
+session:
+
+```json
+{
+  "spaceId": "018ff6ef-c394-7d08-8b99-4b7d10f2767a",
+  "keyVersion": 1,
+  "spaceKey": "base64url-32-byte-space-key",
+  "delivery": "pairing-v1"
+}
+```
+
+Rules:
+
+- This payload is never valid before authentication and must only appear inside `ciphertext`.
+- `spaceKey` is a raw 256-bit member secret encoded with Base64URL, so it must not be logged, copied to UI, or stored in plaintext.
+- Receivers must verify `spaceId`, `keyVersion`, and key length before creating or updating a local secure-storage reference.
+
 ## Compatibility
 
 - v1 rejects unknown higher `version` values.
