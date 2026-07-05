@@ -246,7 +246,8 @@ desktop/
   - [x] Rust 协议层已实现 encrypted business frame 构造、canonical AAD、方向 nonce 校验、解密和篡改拒绝测试。
   - [x] Rust transport 已新增 authenticated session frame processor，串起正式帧序列化、parse、状态门控、replay guard 和解密边界。
   - [x] Rust authenticated session frame processor 已支持 tungstenite WebSocket `Message` 入站/出站边界。
-  - [ ] authenticated session frame processor 接入真实 WebSocket 连接生命周期。
+  - [x] 桌面端 POC WebSocket peer 已在 AUTH_OK 后保存 authenticated session，后续加密帧优先进入正式 frame processor 解密并带 messageType 发出诊断事件。
+  - [ ] authenticated session frame processor 接入正式同步业务分发和连接生命周期。
 - [ ] 使用方向独立的单调计数器构造 nonce。
   - [x] Rust 实现 `directionPrefix || u64be(counter)` 并通过共享向量。
   - [x] Rust 协议层解密时校验 nonce 与方向和 `sessionCounter` 一致。
@@ -259,11 +260,12 @@ desktop/
   - [x] replay guard 已覆盖 authenticated WebSocket text message 边界。
   - [x] authenticated transport session 在协议拒绝、replay、超限和二进制帧时进入 failed/closed，阻止后续收发。
   - [x] authenticated transport session 收到已通过 AEAD 校验的加密 `ERROR` 帧后进入 failed/closed，不分发为业务 payload。
-  - [ ] replay guard 接入真实 WebSocket 收包路径。
+  - [x] replay guard 已随 authenticated session 接入 POC WebSocket 认证后收包路径。
   - [x] handshake transport session 已接入明文握手 envelope、状态门控、replay guard，并在 `AUTH_ERROR` / `ERROR` 时进入 failed/closed。
   - [ ] 真实握手/认证生命周期接入后由 `AUTH_ERROR` 关闭正式 peer session。
 - [ ] 会话结束后清理临时密钥材料。
   - [x] Rust authenticated transport session close/fail 时擦除方向会话密钥并重置发送计数器。
+  - [x] 桌面端 POC WebSocket peer 断开、断开全部或认证后 frame processor 拒绝时会关闭并移除 authenticated session。
   - [ ] 正式握手/session 生命周期结束时清理临时 X25519 secret、transcript 中间态和生产会话密钥。
 
 验收标准：

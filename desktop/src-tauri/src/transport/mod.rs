@@ -4,7 +4,7 @@ use std::{collections::HashMap, net::Ipv4Addr, str::FromStr, sync::Mutex, time::
 
 use crate::{
     clipboard::{ClipboardText, ClipboardTextError},
-    crypto::{encode_base64url, X25519Secret, X25519_PRIVATE_KEY_BYTES},
+    crypto::{encode_base64url, SessionDirection, X25519Secret, X25519_PRIVATE_KEY_BYTES},
     pairing::{
         accept_pairing_auth_proof, accept_pairing_client_hello, PairingServerAuthProofInput,
         PairingServerHelloDraft,
@@ -39,6 +39,7 @@ pub struct PocTransportRuntime {
     server: Mutex<Option<PocServerHandle>>,
     peers: Mutex<HashMap<String, mpsc::UnboundedSender<Message>>>,
     pairing_handshakes: Mutex<HashMap<String, PairingServerHandshakeRuntimeState>>,
+    authenticated_sessions: Mutex<HashMap<String, AuthenticatedTransportSession>>,
     diagnostics: Mutex<PocTransportDiagnostics>,
 }
 
@@ -158,6 +159,14 @@ enum PocServerMessage {
 struct PocClipboardTextEvent {
     peer: String,
     item: ClipboardText,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PocAuthenticatedFrameEvent {
+    peer: String,
+    message_type: MessageType,
+    payload: serde_json::Value,
 }
 
 #[tauri::command]
@@ -350,6 +359,12 @@ fn disconnect_all_poc_peers_with_runtime(runtime: &PocTransportRuntime) -> Resul
     peers.clear();
     if let Ok(mut handshakes) = runtime.pairing_handshakes.lock() {
         handshakes.clear();
+    }
+    if let Ok(mut sessions) = runtime.authenticated_sessions.lock() {
+        for session in sessions.values_mut() {
+            session.close();
+        }
+        sessions.clear();
     }
     Ok(count)
 }
@@ -572,6 +587,17 @@ where
                         byte_len,
                     },
                 );
+                match try_accept_authenticated_frame(&app, &peer, &text) {
+                    AuthenticatedFrameRoute::Handled => {
+                        record_poc_frame_result(&app, Ok(()));
+                        continue;
+                    }
+                    AuthenticatedFrameRoute::Rejected => {
+                        record_poc_frame_result(&app, Err(PocRejectionReason::InvalidMessage));
+                        break;
+                    }
+                    AuthenticatedFrameRoute::NotAuthenticated => {}
+                }
                 match try_accept_pairing_client_hello(&app, &peer, &text) {
                     PairingClientHelloRoute::Handled(server_hello_frame) => {
                         record_poc_frame_result(&app, Ok(()));
@@ -630,6 +656,15 @@ where
     if let Ok(mut handshakes) = app.state::<PocTransportRuntime>().pairing_handshakes.lock() {
         handshakes.remove(&peer);
     }
+    if let Ok(mut sessions) = app
+        .state::<PocTransportRuntime>()
+        .authenticated_sessions
+        .lock()
+    {
+        if let Some(mut session) = sessions.remove(&peer) {
+            session.close();
+        }
+    }
     write_task.abort();
     let _ = app.emit("transport://poc-peer-disconnected", PocPeerEvent { peer });
 }
@@ -644,6 +679,12 @@ enum PairingAuthProofRoute {
     Handled(String),
     Rejected,
     NotPairing,
+}
+
+enum AuthenticatedFrameRoute {
+    Handled,
+    Rejected,
+    NotAuthenticated,
 }
 
 fn try_accept_pairing_client_hello(
@@ -718,9 +759,53 @@ fn try_accept_pairing_auth_proof(app: &AppHandle, peer: &str, text: &str) -> Pai
         server_ephemeral_secret: handshake.server_ephemeral_secret,
     };
     match accept_pairing_auth_proof(input, text, &message_id) {
-        Ok(accepted) => PairingAuthProofRoute::Handled(accepted.auth_ok_frame),
+        Ok(accepted) => {
+            let auth_ok_frame = accepted.auth_ok_frame.clone();
+            if remember_authenticated_session(app, peer, accepted).is_err() {
+                return PairingAuthProofRoute::Rejected;
+            }
+            PairingAuthProofRoute::Handled(auth_ok_frame)
+        }
         Err(_) => PairingAuthProofRoute::Rejected,
     }
+}
+
+fn try_accept_authenticated_frame(
+    app: &AppHandle,
+    peer: &str,
+    text: &str,
+) -> AuthenticatedFrameRoute {
+    let Some(message_type) = authenticated_message_type(text) else {
+        return AuthenticatedFrameRoute::Rejected;
+    };
+    let payload = {
+        let runtime = app.state::<PocTransportRuntime>();
+        let mut sessions = match runtime.authenticated_sessions.lock() {
+            Ok(sessions) => sessions,
+            Err(_) => return AuthenticatedFrameRoute::Rejected,
+        };
+        let Some(session) = sessions.get_mut(peer) else {
+            return AuthenticatedFrameRoute::NotAuthenticated;
+        };
+        match session.accept_text_frame(text) {
+            Ok(payload) => payload,
+            Err(_) => {
+                session.close();
+                sessions.remove(peer);
+                return AuthenticatedFrameRoute::Rejected;
+            }
+        }
+    };
+
+    let _ = app.emit(
+        "transport://authenticated-payload",
+        PocAuthenticatedFrameEvent {
+            peer: peer.to_owned(),
+            message_type,
+            payload,
+        },
+    );
+    AuthenticatedFrameRoute::Handled
 }
 
 fn is_pairing_client_hello_frame(text: &str) -> bool {
@@ -735,6 +820,13 @@ fn is_pairing_auth_proof_frame(text: &str) -> bool {
         parse_envelope(text),
         Ok(ProtocolEnvelope::PreAuth(envelope)) if envelope.message_type == MessageType::AuthProof
     )
+}
+
+fn authenticated_message_type(text: &str) -> Option<MessageType> {
+    match parse_envelope(text) {
+        Ok(ProtocolEnvelope::Encrypted(envelope)) => Some(envelope.message_type),
+        _ => None,
+    }
 }
 
 fn random_x25519_secret() -> Result<X25519Secret, ()> {
@@ -765,6 +857,26 @@ fn remember_pairing_handshake(
             pairing_context: draft.pairing_context.clone(),
             server_ephemeral_secret,
         },
+    );
+    Ok(())
+}
+
+fn remember_authenticated_session(
+    app: &AppHandle,
+    peer: &str,
+    accepted: crate::pairing::PairingServerAuthProofAccepted,
+) -> Result<(), ()> {
+    let runtime = app.state::<PocTransportRuntime>();
+    let mut sessions = runtime.authenticated_sessions.lock().map_err(|_| ())?;
+    sessions.insert(
+        peer.to_owned(),
+        AuthenticatedTransportSession::new(
+            SessionDirection::ClientToServer,
+            accepted.session_keys.client_to_server,
+            SessionDirection::ServerToClient,
+            accepted.session_keys.server_to_client,
+            4,
+        ),
     );
     Ok(())
 }
