@@ -12,13 +12,17 @@ import {
   ProtocolHandshakeFrameOutcome,
   ProtocolHandshakeTransportSession,
   ProtocolTransportFrameError,
+  ProtocolTransportFrameResult,
   ProtocolTransportSession
 } from '../main/ets/services/transport/ProtocolTransportSession';
 import {
   ProtocolFrameBuildError,
   ProtocolFrameBuilderService
 } from '../main/ets/services/transport/ProtocolFrameBuilderService';
-import { WebSocketTransportService } from '../main/ets/services/transport/WebSocketTransportService';
+import {
+  PairingHandshakeTransportCallbacks,
+  WebSocketTransportService
+} from '../main/ets/services/transport/WebSocketTransportService';
 import {
   SettingsStoreState,
   cloneSettings,
@@ -95,13 +99,20 @@ import {
   PairingClientNetworkHandshakeService
 } from '../main/ets/services/pairing/PairingClientNetworkHandshakeService';
 import {
+  PairingGeneratedHandshakeMaterialResult,
   PairingStore,
   PairingStoreState
 } from '../main/ets/store/PairingStore';
 import {
+  PairingConnectionState,
+  PairingConnectionStore
+} from '../main/ets/store/PairingConnectionStore';
+import {
   ClipboardValidationError,
   EGGCLIP_MDNS_DISCOVERY_TYPE,
   EGGCLIP_MDNS_SERVICE_TYPE,
+  EndpointValidationResult,
+  ManualEndpoint,
   POC_MAX_FRAME_BYTES
 } from '../main/ets/models/PocModels';
 import {
@@ -1336,6 +1347,73 @@ export default function localUnitTest() {
       expect(metadata.savedPrivateKeyRef).assertEqual('');
     });
 
+    it('startsPairingConnectionBySendingClientHelloWithoutLeakingSecrets', 0, async () => {
+      const transport = new FakePairingWebSocketTransportService();
+      const identityService = new LocalDeviceIdentityService(
+        new FakeLocalDeviceIdentityMetadataGateway(),
+        new FakeSecureIdentityGateway()
+      );
+      const network = new PairingClientNetworkHandshakeService(
+        new PairingClientHandshakeSessionService(new FakePairingClientAuthProofSigner())
+      );
+      const connection = new PairingConnectionStore(transport, identityService, network);
+      connection.updateEndpoint('192.168.1.10', '4567');
+      const material = pairingMaterialFixture();
+      if (material === null) {
+        expect(false).assertEqual(true);
+        return;
+      }
+
+      await connection.startWithPreparedMaterial(material, {
+        host: '192.168.1.10',
+        port: 4567
+      });
+      await Promise.resolve();
+
+      expect(transport.connectedEndpoint).assertEqual('192.168.1.10:4567');
+      expect(transport.sentFrames.length).assertEqual(1);
+      expect(transport.sentFrames[0].indexOf('CLIENT_HELLO') >= 0).assertEqual(true);
+      expect(transport.sentFrames[0].indexOf('pairingSecret')).assertEqual(-1);
+      expect(transport.sentFrames[0].indexOf('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')).assertEqual(-1);
+      expect(connection.snapshot().state).assertEqual(PairingConnectionState.CLIENT_HELLO_SENT);
+      expect(connection.snapshot().clientHelloSent).assertEqual(true);
+    });
+
+    it('continuesPairingConnectionAfterServerHelloBySendingAuthProof', 0, async () => {
+      const transport = new FakePairingWebSocketTransportService();
+      const identityService = new LocalDeviceIdentityService(
+        new FakeLocalDeviceIdentityMetadataGateway(),
+        new FakeSecureIdentityGateway()
+      );
+      const signer = new FakePairingClientAuthProofSigner();
+      const network = new PairingClientNetworkHandshakeService(
+        new PairingClientHandshakeSessionService(signer)
+      );
+      const connection = new PairingConnectionStore(transport, identityService, network);
+      connection.updateEndpoint('192.168.1.10', '4567');
+      const material = pairingMaterialFixture();
+      if (material === null) {
+        expect(false).assertEqual(true);
+        return;
+      }
+
+      await connection.startWithPreparedMaterial(material, {
+        host: '192.168.1.10',
+        port: 4567
+      });
+      await Promise.resolve();
+      const handshakeSession = new ProtocolHandshakeTransportSession();
+      const serverHello = handshakeSession.acceptTextFrame(SERVER_HELLO_FRAME_FOR_PAIRING_FIXTURE);
+      await connection.handleHandshakeTextFrame(SERVER_HELLO_FRAME_FOR_PAIRING_FIXTURE, serverHello);
+
+      expect(transport.sentFrames.length).assertEqual(2);
+      expect(transport.sentFrames[1].indexOf('AUTH_PROOF') >= 0).assertEqual(true);
+      expect(transport.sentFrames[1].indexOf('huks://eggclip/local-identity/ed25519/v1')).assertEqual(-1);
+      expect(signer.privateKeyRef).assertEqual('huks://eggclip/local-identity/ed25519/v1');
+      expect(connection.snapshot().state).assertEqual(PairingConnectionState.WAITING_AUTH_OK);
+      expect(connection.snapshot().authProofSent).assertEqual(true);
+    });
+
     it('buildsClientHelloFrameFromPairingDraftForHandshakeTransport', 0, () => {
       const store = new PairingStore();
       store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);
@@ -2514,6 +2592,41 @@ class FakePairingClientAuthProofSigner implements PairingClientAuthProofSigner {
   }
 }
 
+class FakePairingWebSocketTransportService extends WebSocketTransportService {
+  sentFrames: string[] = [];
+  connectedEndpoint: string = '';
+  private callbacks: PairingHandshakeTransportCallbacks | null = null;
+
+  async connectPairingHandshake(
+    endpoint: ManualEndpoint,
+    _: ProtocolHandshakeTransportSession,
+    callbacks: PairingHandshakeTransportCallbacks
+  ): Promise<EndpointValidationResult> {
+    this.callbacks = callbacks;
+    this.connectedEndpoint = `${endpoint.host}:${endpoint.port}`;
+    callbacks.onOpen();
+    return {
+      ok: true,
+      normalizedUrl: `ws://${endpoint.host}:${endpoint.port}`
+    };
+  }
+
+  async sendTextFrame(frame: string): Promise<boolean> {
+    this.sentFrames.push(frame);
+    return true;
+  }
+
+  emitTextFrame(message: string, result: ProtocolTransportFrameResult): void {
+    if (this.callbacks !== null && this.callbacks.onTextFrame !== undefined) {
+      this.callbacks.onTextFrame(message, result);
+    }
+  }
+
+  close(): void {
+    this.callbacks = null;
+  }
+}
+
 function encryptedFrameWithCanonicalAad(
   messageType: MessageType,
   messageId: string,
@@ -2566,6 +2679,22 @@ function pairingDraftFixture(): PairingHandshakeDraft | null {
     1700000000000
   );
   return draft.ok && draft.draft !== undefined ? draft.draft : null;
+}
+
+function pairingMaterialFixture(): PairingGeneratedHandshakeMaterialResult | null {
+  const draft = pairingDraftFixture();
+  if (draft === null) {
+    return null;
+  }
+  return {
+    ok: true,
+    draft,
+    localDeviceId: '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+    localIdentityPublicKey: '3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08',
+    localIdentityPrivateKeyRef: 'huks://eggclip/local-identity/ed25519/v1',
+    localEphemeralPrivateKey: 'dwdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LCo',
+    localEphemeralPublicKey: 'hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo'
+  };
 }
 
 const PAIRING_INVITATION_FIXTURE: string = 'eggclip://pair?p=eyJhcHAiOiJlZ2djbGlwIiwidmVyc2lvbiI6MSwia2luZCI6InBhaXJpbmdJbnZpdGF0aW9uIiwiaW52aXRhdGlvbklkIjoiMDE4ZmY2ZjAtMTExMS03MjIyLTgzMzMtMTIzNDU2Nzg5YWJjIiwic3BhY2VJZCI6IjAxOGZmNmVmLWMzOTQtN2QwOC04Yjk5LTRiN2QxMGYyNzY3YSIsInNwYWNlS2V5VmVyc2lvbiI6MSwiaXNzdWVyRGV2aWNlSWQiOiIwMThmZjZmMC0wYTNiLTc4MTUtYTRkYi0zZWI2ZTIzZDkzMzgiLCJpc3N1ZXJJZGVudGl0eVB1YmxpY0tleSI6IjExcVlBWUt4Q3JmVlNfN1R5V1FIT2c3aGN2UGFwaU1scndJYWFwY0hVcm8iLCJwYWlyaW5nU2VjcmV0IjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsImV4cGlyZXNBdE1zIjoxNzAwMDAwMzAwMDAwfQ';

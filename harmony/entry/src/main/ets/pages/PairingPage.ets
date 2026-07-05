@@ -4,6 +4,11 @@ import {
   PairingStoreState,
   createInitialPairingSnapshot
 } from '../store/PairingStore';
+import {
+  PairingConnectionSnapshot,
+  PairingConnectionState,
+  pairingConnectionStore
+} from '../store/PairingConnectionStore';
 import { common } from '@kit.AbilityKit';
 import { PairingInvitationSummary } from '../services/pairing/PairingInvitationService';
 import { PairingScanService } from '../services/pairing/PairingScanService';
@@ -18,7 +23,23 @@ export struct PairingPage {
   private readonly clipboardBridge: ClipboardBridgeService = new ClipboardBridgeService();
   private readonly pairingScanService: PairingScanService = new PairingScanService();
   @State private snapshot: PairingStoreSnapshot = createInitialPairingSnapshot();
+  @State private connectionSnapshot: PairingConnectionSnapshot = pairingConnectionStore.snapshot();
   @State private pasteImportStatus: string = '可以扫码导入，或点击系统 PasteButton 从剪贴板读取邀请。';
+  private readonly connectionListener = (snapshot: PairingConnectionSnapshot): void => {
+    this.connectionSnapshot = snapshot;
+  };
+
+  aboutToAppear(): void {
+    const hostContext = this.getUIContext().getHostContext();
+    if (hostContext !== undefined) {
+      pairingConnectionStore.initialize(hostContext as common.Context);
+    }
+    pairingConnectionStore.subscribe(this.connectionListener);
+  }
+
+  aboutToDisappear(): void {
+    pairingConnectionStore.unsubscribe(this.connectionListener);
+  }
 
   build() {
     Column({ space: 12 }) {
@@ -29,7 +50,7 @@ export struct PairingPage {
             .fontWeight(FontWeight.Bold)
             .fontColor(EggClipColors.textPrimary)
 
-          Text('导入桌面端生成的 eggclip://pair 邀请。当前只做格式、过期和字段校验，暂不建立信任。')
+          Text('导入桌面端生成的 eggclip://pair 邀请，核对确认码后连接桌面端完成安全握手。')
             .fontSize(EggClipTypography.captionSize)
             .fontColor(EggClipColors.textSecondary)
             .lineHeight(20)
@@ -143,6 +164,10 @@ export struct PairingPage {
         this.InvitationSummaryCard(this.snapshot.summary)
       }
 
+      if (this.snapshot.state === PairingStoreState.PENDING) {
+        this.ConnectionHandshakeCard()
+      }
+
       this.SecurityBoundary()
     }
     .width('100%')
@@ -176,7 +201,7 @@ export struct PairingPage {
       .borderRadius(16)
       .alignItems(HorizontalAlign.Center)
 
-      Button(this.snapshot.state === PairingStoreState.PENDING ? '等待正式配对接入' : '确认码一致，继续配对')
+      Button(this.snapshot.state === PairingStoreState.PENDING ? '已确认，填写桌面端地址后连接' : '确认码一致，继续配对')
         .width('100%')
         .height(42)
         .enabled(this.snapshot.state === PairingStoreState.READY)
@@ -188,7 +213,7 @@ export struct PairingPage {
         })
 
       if (this.snapshot.state === PairingStoreState.PENDING) {
-        Text('当前只推进到内存 pending 状态，已从可见输入中清理完整邀请；暂不创建可信设备、不保存邀请 secret、不接收 spaceKey。正式握手和 HUKS 接入后会继续完成配对。')
+        Text('已从可见输入中清理完整邀请。下一步会连接桌面端并发送 CLIENT_HELLO/AUTH_PROOF；可信设备持久化和 spaceKey 接收仍待后续接入。')
           .width('100%')
           .fontSize(11)
           .fontColor(EggClipColors.textSecondary)
@@ -199,6 +224,97 @@ export struct PairingPage {
     .padding(12)
     .backgroundColor(EggClipColors.controlBackground)
     .borderRadius(16)
+  }
+
+  @Builder
+  private ConnectionHandshakeCard() {
+    Column({ space: 10 }) {
+      Row() {
+        Column({ space: 4 }) {
+          Text('连接桌面端')
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(EggClipColors.textPrimary)
+
+          Text(this.connectionSnapshot.endpointLabel)
+            .fontSize(11)
+            .fontColor(EggClipColors.textSecondary)
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+
+        Text(this.connectionBadgeText())
+          .fontSize(11)
+          .fontColor(this.connectionStatusColor())
+          .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+          .backgroundColor(EggClipColors.cardBackground)
+          .borderRadius(14)
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      Row({ space: 8 }) {
+        TextInput({
+          text: this.connectionSnapshot.manualHost,
+          placeholder: '桌面端 IP'
+        })
+          .layoutWeight(1)
+          .height(40)
+          .backgroundColor(EggClipColors.cardBackground)
+          .borderRadius(14)
+          .onChange((value: string) => {
+            this.connectionSnapshot = pairingConnectionStore.updateEndpoint(value, this.connectionSnapshot.manualPort);
+          })
+
+        TextInput({
+          text: this.connectionSnapshot.manualPort,
+          placeholder: '端口'
+        })
+          .width(92)
+          .height(40)
+          .backgroundColor(EggClipColors.cardBackground)
+          .borderRadius(14)
+          .onChange((value: string) => {
+            this.connectionSnapshot = pairingConnectionStore.updateEndpoint(this.connectionSnapshot.manualHost, value);
+          })
+      }
+      .width('100%')
+
+      Row({ space: 8 }) {
+        Button(this.connectionButtonText())
+          .layoutWeight(1)
+          .height(42)
+          .enabled(!this.isPairingConnectionBusy())
+          .fontColor(EggClipColors.onPrimary)
+          .backgroundColor(this.isPairingConnectionBusy() ? EggClipColors.textSecondary : EggClipColors.primary)
+          .borderRadius(21)
+          .onClick(() => {
+            this.startPairingConnection();
+          })
+
+        Button('停止')
+          .width(76)
+          .height(42)
+          .fontColor(EggClipColors.textSecondary)
+          .backgroundColor(EggClipColors.cardBackground)
+          .borderRadius(21)
+          .onClick(() => {
+            pairingConnectionStore.close();
+          })
+      }
+      .width('100%')
+
+      Text(this.connectionSnapshot.description)
+        .width('100%')
+        .fontSize(11)
+        .fontColor(this.connectionStatusColor())
+        .lineHeight(18)
+    }
+    .width('100%')
+    .padding(12)
+    .backgroundColor(EggClipColors.controlBackground)
+    .borderRadius(16)
+    .alignItems(HorizontalAlign.Start)
   }
 
   @Builder
@@ -225,7 +341,7 @@ export struct PairingPage {
         .fontWeight(FontWeight.Medium)
         .fontColor(EggClipColors.textPrimary)
 
-      Text('邀请字符串包含一次性 pairingSecret。导入校验不会把邀请保存到历史，也不会写入 RDB；正式配对接入后才会消费 secret 并清理。')
+      Text('邀请字符串包含一次性 pairingSecret。导入校验不会把邀请保存到历史，也不会写入 RDB；握手只发送协议帧，不在普通日志或 UI 展示 secret、私钥和正文。')
         .fontSize(11)
         .fontColor(EggClipColors.textSecondary)
         .lineHeight(18)
@@ -261,6 +377,70 @@ export struct PairingPage {
       return Color.Red;
     }
     return EggClipColors.textSecondary;
+  }
+
+  private connectionBadgeText(): string {
+    if (this.connectionSnapshot.state === PairingConnectionState.AUTHENTICATED) {
+      return '已认证';
+    }
+    if (this.connectionSnapshot.state === PairingConnectionState.FAILED) {
+      return '失败';
+    }
+    if (this.connectionSnapshot.state === PairingConnectionState.CLIENT_HELLO_SENT ||
+      this.connectionSnapshot.state === PairingConnectionState.WAITING_AUTH_OK) {
+      return '握手中';
+    }
+    if (this.connectionSnapshot.state === PairingConnectionState.CONNECTING ||
+      this.connectionSnapshot.state === PairingConnectionState.PREPARING) {
+      return '连接中';
+    }
+    return '待连接';
+  }
+
+  private connectionButtonText(): string {
+    if (this.connectionSnapshot.state === PairingConnectionState.FAILED) {
+      return '重试配对握手';
+    }
+    if (this.connectionSnapshot.state === PairingConnectionState.AUTHENTICATED) {
+      return '重新配对握手';
+    }
+    return '连接并发送握手';
+  }
+
+  private connectionStatusColor(): ResourceColor {
+    if (this.connectionSnapshot.state === PairingConnectionState.AUTHENTICATED) {
+      return EggClipColors.statusOnline;
+    }
+    if (this.connectionSnapshot.state === PairingConnectionState.FAILED) {
+      return Color.Red;
+    }
+    if (this.connectionSnapshot.state === PairingConnectionState.IDLE) {
+      return EggClipColors.textSecondary;
+    }
+    return EggClipColors.primary;
+  }
+
+  private isPairingConnectionBusy(): boolean {
+    return this.connectionSnapshot.state === PairingConnectionState.PREPARING ||
+      this.connectionSnapshot.state === PairingConnectionState.CONNECTING ||
+      this.connectionSnapshot.state === PairingConnectionState.CLIENT_HELLO_SENT ||
+      this.connectionSnapshot.state === PairingConnectionState.WAITING_AUTH_OK;
+  }
+
+  private startPairingConnection(): void {
+    const hostContext = this.getUIContext().getHostContext();
+    if (hostContext === undefined) {
+      this.pasteImportStatus = '无法连接桌面端：未获取到页面上下文';
+      return;
+    }
+    pairingConnectionStore.initialize(hostContext as common.Context);
+    pairingConnectionStore.startPairing(this.pairingStore)
+      .then((snapshot) => {
+        this.connectionSnapshot = snapshot;
+      })
+      .catch(() => {
+        this.pasteImportStatus = '配对连接异常，请检查桌面端地址、端口和邀请是否仍有效';
+      });
   }
 
   private importInvitationFromScan(): void {

@@ -2,6 +2,7 @@ import { common } from '@kit.AbilityKit';
 import { relationalStore } from '@kit.ArkData';
 import { util } from '@kit.ArkTS';
 import { Database } from '../db/Database';
+import { LocalDeviceIdentityMetadataGateway } from '../../services/crypto/LocalDeviceIdentityService';
 import {
   INITIAL_ORIGIN_SEQ,
   LOCAL_IDENTITY_PRIVATE_KEY_REF_KEY,
@@ -12,7 +13,7 @@ import {
   isValidLocalIdentityPublicKey
 } from './RepositoryCommands';
 
-export class LocalIdentityRdbRepository {
+export class LocalIdentityRdbRepository implements LocalDeviceIdentityMetadataGateway {
   private readonly context: common.Context;
 
   constructor(context: common.Context) {
