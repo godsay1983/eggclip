@@ -209,7 +209,8 @@ harmony/entry/src/main/ets/
   - [ ] 将身份材料生成切换为 HUKS/系统安全存储中的长期私钥，只向握手流程暴露 public key 和签名能力。
 - [ ] 将私钥和 `spaceKey` 保存到 HUKS 或等效系统安全存储。
   - [x] 建立 `spaceKey` HUKS alias/引用生成与校验边界；RDB repository 只接收 `huks://` 引用，不保存裸 key。
-  - [ ] 真实 HUKS import/generate 和读取流程待真机验证后接入。
+  - [x] 新增 `SpaceKeyHuksService`，封装 `huks://eggclip/space-key/...` 到 HUKS alias 的映射、AES-256-GCM import 参数和 `importKeyItem` 调用边界；单测覆盖参数契约和非法引用。
+  - [ ] HUKS import 真机结果、spaceKey 读取/缺失重初始化流程待验证后接入。
 - [ ] RDB 只保存公钥、密钥版本和安全存储 alias。
 - [ ] 实现密钥存在、缺失、损坏和重新初始化路径。
 - [ ] 禁止日志输出密钥、邀请、正文、HMAC 摘要和完整帧。
@@ -301,7 +302,8 @@ harmony/entry/src/main/ets/
 - [ ] 安全接收 `spaceKey` 和成员信息。
   - [x] HarmonyOS 已在 AUTH_OK 后通过认证 session 解密 `SPACE_KEY_ROTATED`，校验 spaceId/keyVersion/32 字节 key，并只把 `huks://` alias 写入 RDB。
   - [x] 已抽出 `SpaceKeyDeliveryService` 覆盖 `SPACE_KEY_ROTATED` payload 校验边界，单测覆盖缺失 payload、spaceId/keyVersion/delivery 不匹配和 key 长度错误。
-  - [ ] 将解密出的 `spaceKey` 真正导入 HUKS/等效安全存储；当前只完成 alias 占位和明文数组清零。
+  - [x] `SpaceKeyDeliveryService` 已接入 `SpaceKeyHuksService`，payload 校验通过后导入 HUKS，再只把 `encryptedSpaceKeyRef` 写入 RDB，并在 finally 中清零明文数组。
+  - [ ] 真机验证 `importKeyItem` 成功后，补齐使用 `encryptedSpaceKeyRef` 做 AES-GCM 业务帧加解密。
 - [ ] 成功后持久化 trusted device 并清理邀请秘密。
   - [x] HarmonyOS 在 AUTH_OK 后不提前落库，收到 `SPACE_KEY_ROTATED` 后用 transaction 同时保存同步空间 key 引用和桌面端 trusted device。
 - [ ] 拒绝过期、重复消费、身份不匹配和空间不匹配邀请。

@@ -1,5 +1,9 @@
 import { JsonObject } from '../../models/ProtocolModels';
 import { decodeBase64Url } from '../crypto/CryptoVectorService';
+import {
+  SpaceKeyHuksService,
+  SpaceKeySecureImporter
+} from '../crypto/SpaceKeyHuksService';
 import { SpaceKeyReferenceService } from '../crypto/SpaceKeyReferenceService';
 
 export const INITIAL_SPACE_KEY_DELIVERY: string = 'pairing-v1';
@@ -10,7 +14,8 @@ export enum SpaceKeyDeliveryError {
   INVALID_KEY_VERSION = 'invalidKeyVersion',
   INVALID_DELIVERY = 'invalidDelivery',
   INVALID_SPACE_KEY = 'invalidSpaceKey',
-  INVALID_ALIAS = 'invalidAlias'
+  INVALID_ALIAS = 'invalidAlias',
+  IMPORT_FAILED = 'importFailed'
 }
 
 export interface SpaceKeyDeliveryInput {
@@ -28,12 +33,17 @@ export interface SpaceKeyDeliveryResult {
 
 export class SpaceKeyDeliveryService {
   private readonly referenceService: SpaceKeyReferenceService;
+  private readonly secureImporter: SpaceKeySecureImporter;
 
-  constructor(referenceService: SpaceKeyReferenceService = new SpaceKeyReferenceService()) {
+  constructor(
+    referenceService: SpaceKeyReferenceService = new SpaceKeyReferenceService(),
+    secureImporter: SpaceKeySecureImporter = new SpaceKeyHuksService()
+  ) {
     this.referenceService = referenceService;
+    this.secureImporter = secureImporter;
   }
 
-  acceptInitialDelivery(input: SpaceKeyDeliveryInput): SpaceKeyDeliveryResult {
+  async acceptInitialDelivery(input: SpaceKeyDeliveryInput): Promise<SpaceKeyDeliveryResult> {
     if (input.payload === undefined) {
       return failed(SpaceKeyDeliveryError.MISSING_PAYLOAD, 'payload');
     }
@@ -67,6 +77,11 @@ export class SpaceKeyDeliveryService {
       const alias = this.referenceService.buildHuksAlias(spaceId, keyVersion);
       if (!alias.ok || alias.alias.length <= 0) {
         return failed(SpaceKeyDeliveryError.INVALID_ALIAS, 'encryptedSpaceKeyRef');
+      }
+
+      const imported = await this.secureImporter.importSpaceKey(alias.alias, decoded);
+      if (!imported.ok) {
+        return failed(SpaceKeyDeliveryError.IMPORT_FAILED, imported.field ?? 'importKeyItem');
       }
 
       return {

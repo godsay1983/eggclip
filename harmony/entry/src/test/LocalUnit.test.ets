@@ -76,6 +76,12 @@ import {
   SpaceKeyReferenceService
 } from '../main/ets/services/crypto/SpaceKeyReferenceService';
 import {
+  SpaceKeyHuksError,
+  SpaceKeyHuksImportResult,
+  SpaceKeyHuksService,
+  SpaceKeySecureImporter
+} from '../main/ets/services/crypto/SpaceKeyHuksService';
+import {
   PairingInvitationError,
   PairingInvitationService
 } from '../main/ets/services/pairing/PairingInvitationService';
@@ -632,10 +638,26 @@ export default function localUnitTest() {
       expect(containsRawKey).assertEqual(false);
     });
 
-    it('acceptsEncryptedSpaceKeyDeliveryPayloadWithoutReturningRawKey', 0, () => {
+    it('buildsSpaceKeyHuksImportOptionsForAesGcmRawKey', 0, () => {
       const spaceId = '018ff6ef-c394-7d08-8b99-4b7d10f2767a';
-      const service = new SpaceKeyDeliveryService();
-      const result = service.acceptInitialDelivery(spaceKeyDeliveryInput(
+      const service = new SpaceKeyHuksService();
+      const keyRef = `huks://eggclip/space-key/${spaceId}/v1`;
+      const alias = service.huksAliasFromRef(keyRef);
+      const options = service.importOptions(new Uint8Array(SPACE_KEY_BYTES));
+
+      expect(alias.ok).assertEqual(true);
+      expect(alias.huksAlias).assertEqual(`eggclip.space-key.${spaceId}.v1`);
+      expect(service.huksAliasFromRef('huks://eggclip/space-key/not-a-space/v1').error)
+        .assertEqual(SpaceKeyHuksError.INVALID_KEY_REF);
+      expect(options.inData?.length).assertEqual(SPACE_KEY_BYTES);
+      expect(options.properties?.length).assertEqual(6);
+    });
+
+    it('acceptsEncryptedSpaceKeyDeliveryPayloadWithoutReturningRawKey', 0, async () => {
+      const spaceId = '018ff6ef-c394-7d08-8b99-4b7d10f2767a';
+      const importer = new FakeSpaceKeyImporter();
+      const service = new SpaceKeyDeliveryService(new SpaceKeyReferenceService(), importer);
+      const result = await service.acceptInitialDelivery(spaceKeyDeliveryInput(
         spaceKeyDeliveryPayload(spaceId, INITIAL_SPACE_KEY_VERSION, SPACE_KEY_BYTES, 'pairing-v1'),
         spaceId,
         INITIAL_SPACE_KEY_VERSION
@@ -643,38 +665,58 @@ export default function localUnitTest() {
 
       expect(result.ok).assertEqual(true);
       expect(result.encryptedSpaceKeyRef).assertEqual(`huks://eggclip/space-key/${spaceId}/v1`);
+      expect(importer.importCalls).assertEqual(1);
+      expect(importer.importedRef).assertEqual(`huks://eggclip/space-key/${spaceId}/v1`);
+      expect(importer.importedKeyLength).assertEqual(SPACE_KEY_BYTES);
       expect(JSON.stringify(result).indexOf('spaceKey')).assertEqual(-1);
     });
 
-    it('rejectsInvalidEncryptedSpaceKeyDeliveryPayloads', 0, () => {
+    it('rejectsInvalidEncryptedSpaceKeyDeliveryPayloads', 0, async () => {
       const spaceId = '018ff6ef-c394-7d08-8b99-4b7d10f2767a';
-      const service = new SpaceKeyDeliveryService();
+      const service = new SpaceKeyDeliveryService(new SpaceKeyReferenceService(), new FakeSpaceKeyImporter());
 
-      expect(service.acceptInitialDelivery(spaceKeyDeliveryInput(
+      expect((await service.acceptInitialDelivery(spaceKeyDeliveryInput(
         undefined,
         spaceId,
         INITIAL_SPACE_KEY_VERSION
-      )).error).assertEqual(SpaceKeyDeliveryError.MISSING_PAYLOAD);
-      expect(service.acceptInitialDelivery(spaceKeyDeliveryInput(
+      ))).error).assertEqual(SpaceKeyDeliveryError.MISSING_PAYLOAD);
+      expect((await service.acceptInitialDelivery(spaceKeyDeliveryInput(
         spaceKeyDeliveryPayload('018ff6ef-c394-7d08-8b99-4b7d10f2767b', INITIAL_SPACE_KEY_VERSION, SPACE_KEY_BYTES, 'pairing-v1'),
         spaceId,
         INITIAL_SPACE_KEY_VERSION
-      )).error).assertEqual(SpaceKeyDeliveryError.INVALID_SPACE_ID);
-      expect(service.acceptInitialDelivery(spaceKeyDeliveryInput(
+      ))).error).assertEqual(SpaceKeyDeliveryError.INVALID_SPACE_ID);
+      expect((await service.acceptInitialDelivery(spaceKeyDeliveryInput(
         spaceKeyDeliveryPayload(spaceId, 2, SPACE_KEY_BYTES, 'pairing-v1'),
         spaceId,
         INITIAL_SPACE_KEY_VERSION
-      )).error).assertEqual(SpaceKeyDeliveryError.INVALID_KEY_VERSION);
-      expect(service.acceptInitialDelivery(spaceKeyDeliveryInput(
+      ))).error).assertEqual(SpaceKeyDeliveryError.INVALID_KEY_VERSION);
+      expect((await service.acceptInitialDelivery(spaceKeyDeliveryInput(
         spaceKeyDeliveryPayload(spaceId, INITIAL_SPACE_KEY_VERSION, SPACE_KEY_BYTES, 'unexpected'),
         spaceId,
         INITIAL_SPACE_KEY_VERSION
-      )).error).assertEqual(SpaceKeyDeliveryError.INVALID_DELIVERY);
-      expect(service.acceptInitialDelivery(spaceKeyDeliveryInput(
+      ))).error).assertEqual(SpaceKeyDeliveryError.INVALID_DELIVERY);
+      expect((await service.acceptInitialDelivery(spaceKeyDeliveryInput(
         spaceKeyDeliveryPayload(spaceId, INITIAL_SPACE_KEY_VERSION, SPACE_KEY_BYTES - 1, 'pairing-v1'),
         spaceId,
         INITIAL_SPACE_KEY_VERSION
-      )).error).assertEqual(SpaceKeyDeliveryError.INVALID_SPACE_KEY);
+      ))).error).assertEqual(SpaceKeyDeliveryError.INVALID_SPACE_KEY);
+    });
+
+    it('rejectsEncryptedSpaceKeyDeliveryWhenSecureImportFails', 0, async () => {
+      const spaceId = '018ff6ef-c394-7d08-8b99-4b7d10f2767a';
+      const importer = new FakeSpaceKeyImporter();
+      importer.failImport = true;
+      const service = new SpaceKeyDeliveryService(new SpaceKeyReferenceService(), importer);
+      const result = await service.acceptInitialDelivery(spaceKeyDeliveryInput(
+        spaceKeyDeliveryPayload(spaceId, INITIAL_SPACE_KEY_VERSION, SPACE_KEY_BYTES, 'pairing-v1'),
+        spaceId,
+        INITIAL_SPACE_KEY_VERSION
+      ));
+
+      expect(result.ok).assertEqual(false);
+      expect(result.error).assertEqual(SpaceKeyDeliveryError.IMPORT_FAILED);
+      expect(result.encryptedSpaceKeyRef).assertEqual('');
+      expect(importer.importCalls).assertEqual(1);
     });
 
     it('buildsRetentionRepositoryCommandsForHistoryPolicy', 0, () => {
@@ -2634,6 +2676,57 @@ class FakeSpaceKeyDeliveryInput implements SpaceKeyDeliveryInput {
     this.payload = payload;
     this.expectedSpaceId = expectedSpaceId;
     this.expectedKeyVersion = expectedKeyVersion;
+  }
+}
+
+class FakeSpaceKeyImporter implements SpaceKeySecureImporter {
+  importCalls: number = 0;
+  importedRef: string = '';
+  importedKeyLength: number = 0;
+  failImport: boolean = false;
+
+  async importSpaceKey(encryptedSpaceKeyRef: string, key: Uint8Array): Promise<SpaceKeyHuksImportResult> {
+    this.importCalls += 1;
+    this.importedRef = encryptedSpaceKeyRef;
+    this.importedKeyLength = key.length;
+    if (this.failImport) {
+      return new FakeSpaceKeyHuksImportResult(
+        false,
+        '',
+        undefined,
+        SpaceKeyHuksError.PLATFORM_CRYPTO_FAILED,
+        'importKeyItem'
+      );
+    }
+    return new FakeSpaceKeyHuksImportResult(
+      true,
+      encryptedSpaceKeyRef,
+      'eggclip.space-key.fake',
+      undefined,
+      undefined
+    );
+  }
+}
+
+class FakeSpaceKeyHuksImportResult implements SpaceKeyHuksImportResult {
+  ok: boolean;
+  encryptedSpaceKeyRef: string;
+  huksAlias?: string;
+  error?: SpaceKeyHuksError;
+  field?: string;
+
+  constructor(
+    ok: boolean,
+    encryptedSpaceKeyRef: string,
+    huksAlias: string | undefined,
+    error: SpaceKeyHuksError | undefined,
+    field: string | undefined
+  ) {
+    this.ok = ok;
+    this.encryptedSpaceKeyRef = encryptedSpaceKeyRef;
+    this.huksAlias = huksAlias;
+    this.error = error;
+    this.field = field;
   }
 }
 

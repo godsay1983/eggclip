@@ -343,7 +343,7 @@ class PairingConnectionStore {
       payload === undefined) {
       return false;
     }
-    const delivery = new SpaceKeyDeliveryService().acceptInitialDelivery({
+    const delivery = await new SpaceKeyDeliveryService().acceptInitialDelivery({
       payload,
       expectedSpaceId: this.pendingTrustDraft.spaceId,
       expectedKeyVersion: this.pendingTrustDraft.spaceKeyVersion
