@@ -7,6 +7,7 @@ import {
   PairingClientHandshakeSessionService
 } from './PairingClientHandshakeSessionService';
 import { PairingHandshakeDraft } from './PairingHandshakeDraftService';
+import { Ed25519HuksIdentityError } from '../crypto/Ed25519HuksIdentityService';
 
 export enum PairingClientNetworkHandshakePhase {
   IDLE = 'idle',
@@ -38,6 +39,7 @@ export interface PairingClientNetworkAuthProofResult {
   outgoingFrame?: string;
   error?: PairingClientNetworkHandshakeError;
   handshakeError?: PairingClientHandshakeError;
+  huksError?: Ed25519HuksIdentityError;
   field?: string;
 }
 
@@ -51,9 +53,13 @@ export interface PairingClientNetworkAuthenticatedResult {
 }
 
 export class PairingClientNetworkHandshakeService {
-  private readonly handshake: PairingClientHandshakeSessionService = new PairingClientHandshakeSessionService();
+  private readonly handshake: PairingClientHandshakeSessionService;
   private phaseValue: PairingClientNetworkHandshakePhase = PairingClientNetworkHandshakePhase.IDLE;
   private session: PairingClientHandshakeSession | null = null;
+
+  constructor(handshake: PairingClientHandshakeSessionService = new PairingClientHandshakeSessionService()) {
+    this.handshake = handshake;
+  }
 
   phase(): PairingClientNetworkHandshakePhase {
     return this.phaseValue;
@@ -163,6 +169,47 @@ export class PairingClientNetworkHandshakeService {
         phase: this.phaseValue,
         error: PairingClientNetworkHandshakeError.AUTH_PROOF_FAILED,
         handshakeError: proof.error,
+        field: proof.field
+      };
+    }
+
+    this.phaseValue = PairingClientNetworkHandshakePhase.WAITING_AUTH_OK;
+    return {
+      ok: true,
+      phase: this.phaseValue,
+      outgoingFrame: proof.authProofFrame
+    };
+  }
+
+  async acceptServerHelloAndSignAuthProofWithRef(
+    serverHelloFrame: string,
+    localIdentityPrivateKeyRef: string,
+    authProofMessageId: string,
+    authProofCounter: number = 2
+  ): Promise<PairingClientNetworkAuthProofResult> {
+    if (this.session === null || this.phaseValue !== PairingClientNetworkHandshakePhase.CLIENT_HELLO_READY) {
+      return {
+        ok: false,
+        phase: this.phaseValue,
+        error: PairingClientNetworkHandshakeError.INVALID_PHASE
+      };
+    }
+
+    const proof: PairingClientAuthProofResult = await this.handshake.acceptServerHelloAndSignAuthProofWithRef(
+      this.session,
+      serverHelloFrame,
+      localIdentityPrivateKeyRef,
+      authProofMessageId,
+      authProofCounter
+    );
+    if (!proof.ok || proof.authProofFrame === undefined) {
+      this.fail();
+      return {
+        ok: false,
+        phase: this.phaseValue,
+        error: PairingClientNetworkHandshakeError.AUTH_PROOF_FAILED,
+        handshakeError: proof.error,
+        huksError: proof.huksError,
         field: proof.field
       };
     }

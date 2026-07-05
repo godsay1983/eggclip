@@ -56,7 +56,8 @@ import {
   Ed25519HuksIdentityError,
   Ed25519HuksIdentityMaterialResult,
   Ed25519HuksKeyRefResult,
-  Ed25519HuksIdentityService
+  Ed25519HuksIdentityService,
+  Ed25519HuksSignatureResult
 } from '../main/ets/services/crypto/Ed25519HuksIdentityService';
 import {
   LocalDeviceIdentityError,
@@ -80,6 +81,7 @@ import {
   PairingHandshakeDraftService
 } from '../main/ets/services/pairing/PairingHandshakeDraftService';
 import {
+  PairingClientAuthProofSigner,
   PairingClientHandshakeError,
   PairingClientHandshakeSessionService
 } from '../main/ets/services/pairing/PairingClientHandshakeSessionService';
@@ -1733,6 +1735,83 @@ export default function localUnitTest() {
       }
     });
 
+    it('orchestratesClientPairingHandshakeWithHuksIdentityRefSigner', 0, async () => {
+      const store = new PairingStore();
+      store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);
+      store.confirmCodeMatched();
+      const draft = store.buildPendingClientHandshakeDraft(
+        '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaapcHUro',
+        'hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo',
+        1700000000000
+      );
+      if (!draft.ok || draft.draft === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+
+      const signer = new FakePairingClientAuthProofSigner();
+      const service = new PairingClientHandshakeSessionService(signer);
+      const started = service.start(
+        draft.draft,
+        '018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01',
+        0
+      );
+      if (!started.ok || started.session === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+
+      const result = await service.acceptServerHelloAndSignAuthProofWithRef(
+        started.session,
+        SERVER_HELLO_FRAME_FOR_PAIRING_FIXTURE,
+        'huks://eggclip/local-identity/ed25519/v1',
+        '018ff6f1-1d2a-725d-8d1a-894d2f5b0a42',
+        2
+      );
+
+      expect(result.ok).assertEqual(true);
+      expect(signer.privateKeyRef).assertEqual('huks://eggclip/local-identity/ed25519/v1');
+      expect(signer.canonicalTranscript.indexOf('role=client') >= 0).assertEqual(true);
+      expect(signer.canonicalTranscript.indexOf('pairingSecret')).assertEqual(-1);
+      expect((result.authProofFrame?.indexOf('AUTH_PROOF') ?? -1) >= 0).assertEqual(true);
+      expect(result.authProofFrame?.indexOf('huks://eggclip/local-identity/ed25519/v1') ?? 0).assertEqual(-1);
+    });
+
+    it('failsClientPairingHandshakeWhenHuksRefSigningFails', 0, async () => {
+      const draft = pairingDraftFixture();
+      if (draft === null) {
+        expect(false).assertEqual(true);
+        return;
+      }
+
+      const signer = new FakePairingClientAuthProofSigner();
+      signer.failSigning = true;
+      const service = new PairingClientHandshakeSessionService(signer);
+      const started = service.start(
+        draft,
+        '018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01',
+        0
+      );
+      if (!started.ok || started.session === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+
+      const result = await service.acceptServerHelloAndSignAuthProofWithRef(
+        started.session,
+        SERVER_HELLO_FRAME_FOR_PAIRING_FIXTURE,
+        'huks://eggclip/local-identity/ed25519/v1',
+        '018ff6f1-1d2a-725d-8d1a-894d2f5b0a42',
+        2
+      );
+
+      expect(result.ok).assertEqual(false);
+      expect(result.error).assertEqual(PairingClientHandshakeError.AUTH_PROOF_SIGN_FAILED);
+      expect(result.huksError).assertEqual(Ed25519HuksIdentityError.PLATFORM_CRYPTO_FAILED);
+      expect(result.field).assertEqual('signAuthTranscript');
+    });
+
     it('createsProtocolTransportSessionAfterPairingAuthOkAndSessionKeyDerivation', 0, () => {
       const store = new PairingStore();
       store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);
@@ -1920,6 +1999,35 @@ export default function localUnitTest() {
       expect(authenticated.phase).assertEqual(PairingClientNetworkHandshakePhase.AUTHENTICATED);
       expect(authenticated.transportSession?.state()).assertEqual(ProtocolSessionState.AUTHENTICATED);
       expect(service.phase()).assertEqual(PairingClientNetworkHandshakePhase.AUTHENTICATED);
+    });
+
+    it('orchestratesClientNetworkHandshakeAuthProofWithHuksIdentityRefSigner', 0, async () => {
+      const draft = pairingDraftFixture();
+      if (draft === null) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      const signer = new FakePairingClientAuthProofSigner();
+      const service = new PairingClientNetworkHandshakeService(
+        new PairingClientHandshakeSessionService(signer)
+      );
+
+      const started = service.start(draft, '018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01', 0);
+      expect(started.ok).assertEqual(true);
+      expect(started.phase).assertEqual(PairingClientNetworkHandshakePhase.CLIENT_HELLO_READY);
+
+      const proof = await service.acceptServerHelloAndSignAuthProofWithRef(
+        SERVER_HELLO_FRAME_FOR_PAIRING_FIXTURE,
+        'huks://eggclip/local-identity/ed25519/v1',
+        '018ff6f1-1d2a-725d-8d1a-894d2f5b0a42',
+        2
+      );
+
+      expect(proof.ok).assertEqual(true);
+      expect(proof.phase).assertEqual(PairingClientNetworkHandshakePhase.WAITING_AUTH_OK);
+      expect(signer.privateKeyRef).assertEqual('huks://eggclip/local-identity/ed25519/v1');
+      expect((proof.outgoingFrame?.indexOf('AUTH_PROOF') ?? -1) >= 0).assertEqual(true);
+      expect(proof.outgoingFrame?.indexOf('huks://eggclip/local-identity/ed25519/v1') ?? 0).assertEqual(-1);
     });
 
     it('rejectsClientNetworkHandshakeFramesOutOfOrder', 0, () => {
@@ -2288,6 +2396,31 @@ class FakeSecureIdentityGateway implements LocalDeviceSecureIdentityGateway {
       ok: true,
       identityPublicKey: FAKE_LOCAL_IDENTITY_PUBLIC_KEY,
       identityPrivateKeyRef
+    };
+  }
+}
+
+class FakePairingClientAuthProofSigner implements PairingClientAuthProofSigner {
+  failSigning: boolean = false;
+  privateKeyRef: string = '';
+  canonicalTranscript: string = '';
+
+  async signAuthTranscriptWithRef(
+    identityPrivateKeyRef: string,
+    canonicalTranscript: string
+  ): Promise<Ed25519HuksSignatureResult> {
+    this.privateKeyRef = identityPrivateKeyRef;
+    this.canonicalTranscript = canonicalTranscript;
+    if (this.failSigning) {
+      return {
+        ok: false,
+        error: Ed25519HuksIdentityError.PLATFORM_CRYPTO_FAILED,
+        field: 'signAuthTranscript'
+      };
+    }
+    return {
+      ok: true,
+      signature: TEST_ED25519_SIGNATURE
     };
   }
 }

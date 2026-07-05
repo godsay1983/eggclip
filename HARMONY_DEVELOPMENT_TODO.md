@@ -227,6 +227,7 @@ harmony/entry/src/main/ets/
   - [x] 新增 `Ed25519SignatureService`，封装 CryptoFramework Ed25519 signing 边界，支持用 32 字节私钥材料对 AUTH transcript 签名并返回 64 字节 base64url signature；平台不支持或格式不匹配时明确返回错误类型。
   - [x] 新增本机 Ed25519 身份材料生成与 AUTH transcript 签名组合边界；当前仍为内存材料传递，未写入 RDB 或日志。
   - [x] 新增 HUKS Ed25519 signing 边界，支持通过 `huks://eggclip/local-identity/ed25519/...` 引用签名 AUTH transcript；真实签名输出待 HarmonyOS 6.1 真机确认。
+  - [x] `PairingClientHandshakeSessionService` / `PairingClientNetworkHandshakeService` 已新增基于 HUKS private key ref 的 AUTH_PROOF 签名入口，调用方不再需要传入裸 Ed25519 private seed。
   - [ ] 接入 HUKS 持久化 Ed25519 私钥生成/签名，替换临时私钥材料入参。
   - [ ] 在 HarmonyOS 6.1 真机上确认 Ed25519 算法名、公钥/私钥导入格式、空消息 one-shot 验签和 signing 行为。
 - [ ] ArkTS 实现通过 X25519/HKDF 派生向量。
@@ -287,6 +288,7 @@ harmony/entry/src/main/ets/
   - [x] PairingClientHandshakeSessionService / PairingClientNetworkHandshakeService 已新增从本机临时私钥和 SERVER_HELLO ephemeral public key 派生 sharedSecret 的正式入口，临时私钥不进入 draft 序列化。
   - [x] PairingClientHandshakeSessionService / PairingClientNetworkHandshakeService 已新增基于 `Ed25519SignatureService` 的 AUTH_PROOF 签名入口，不再要求调用方传入测试签名。
   - [x] HarmonyOS pending 邀请确认后可通过本机身份服务生成后续网络握手所需 CLIENT_HELLO 材料，并覆盖 HUKS 初始化失败不继续配对的单测。
+  - [x] PairingClientHandshakeSessionService / PairingClientNetworkHandshakeService 已接入 HUKS private key ref 签名 AUTH_PROOF 的异步入口，并覆盖签名失败不继续握手、不泄露 HUKS ref 的单测。
   - [ ] HUKS 私钥签名、服务端 AUTH_PROOF 真验签和握手网络交换待接入。
 - [x] 显示六位人工确认码供双方核对，但不把它当成唯一秘密。
   - [x] PairingPage 已显示六位人工确认码，并要求用户点击“确认码一致，继续配对”后才进入 pending；确认码不作为唯一秘密。
@@ -318,6 +320,7 @@ harmony/entry/src/main/ets/
 - [ ] Ed25519 验证设备身份和空间绑定。
   - [x] 固定 canonical AUTH_PROOF transcript 并在 ArkTS 校验构造结果。
   - [x] 已新增 Ed25519 signing 边界和客户端 AUTH_PROOF 签名入口；本地单元环境允许平台不支持或格式不匹配时明确失败。
+  - [x] 客户端 AUTH_PROOF 已支持通过 HUKS private key ref 签名，网络编排层可直接使用本机身份服务返回的 private key ref。
   - [ ] HUKS 私钥签名与服务端真实 Ed25519 验签待接。
 - [ ] HKDF 派生双向会话密钥。
   - [x] 固定共享 session key 向量并在 ArkTS 校验字段、长度和 nonce 规则。

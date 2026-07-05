@@ -23,6 +23,11 @@ import {
   Ed25519SignatureService
 } from '../crypto/Ed25519SignatureService';
 import {
+  Ed25519HuksIdentityError,
+  Ed25519HuksIdentityService,
+  Ed25519HuksSignatureResult
+} from '../crypto/Ed25519HuksIdentityService';
+import {
   SessionKeyDerivationError,
   SessionKeyDerivationService
 } from '../crypto/SessionKeyDerivationService';
@@ -69,6 +74,7 @@ export interface PairingClientAuthProofResult {
   transportError?: ProtocolTransportFrameError;
   handshakeError?: PairingHandshakeDraftError;
   signatureError?: Ed25519SignatureError;
+  huksError?: Ed25519HuksIdentityError;
   frameError?: ProtocolFrameBuildError;
   field?: string;
 }
@@ -82,6 +88,13 @@ export interface PairingClientAuthenticatedSessionResult {
   keyAgreementError?: X25519KeyAgreementError;
   derivationError?: SessionKeyDerivationError;
   field?: string;
+}
+
+export interface PairingClientAuthProofSigner {
+  signAuthTranscriptWithRef(
+    identityPrivateKeyRef: string,
+    canonicalTranscript: string
+  ): Promise<Ed25519HuksSignatureResult>;
 }
 
 export class PairingClientHandshakeSession {
@@ -132,6 +145,11 @@ export class PairingClientHandshakeSessionService {
   private readonly signatureService: Ed25519SignatureService = new Ed25519SignatureService();
   private readonly keyDerivation: SessionKeyDerivationService = new SessionKeyDerivationService();
   private readonly keyAgreement: X25519KeyAgreementService = new X25519KeyAgreementService();
+  private readonly authProofSigner: PairingClientAuthProofSigner;
+
+  constructor(authProofSigner: PairingClientAuthProofSigner = new Ed25519HuksIdentityService()) {
+    this.authProofSigner = authProofSigner;
+  }
 
   start(
     draft: PairingHandshakeDraft,
@@ -210,6 +228,87 @@ export class PairingClientHandshakeSessionService {
         ok: false,
         error: PairingClientHandshakeError.AUTH_PROOF_SIGN_FAILED,
         signatureError: signature.error,
+        field: signature.field
+      };
+    }
+
+    const authProof = this.frameBuilder.buildAuthProofFrame(
+      AuthRole.CLIENT,
+      transcript.transcript.canonicalTranscript,
+      signature.signature,
+      authProofMessageId,
+      authProofCounter
+    );
+    if (!authProof.ok) {
+      return {
+        ok: false,
+        error: PairingClientHandshakeError.AUTH_PROOF_BUILD_FAILED,
+        frameError: authProof.error,
+        field: authProof.field
+      };
+    }
+    session.rememberServerHello(serverHello.payload);
+    session.markAuthProofSent();
+
+    return {
+      ok: true,
+      authProofFrame: authProof.frame,
+      serverHello: serverHello.payload,
+      transcript: transcript.transcript
+    };
+  }
+
+  async acceptServerHelloAndSignAuthProofWithRef(
+    session: PairingClientHandshakeSession,
+    serverHelloFrame: string,
+    localIdentityPrivateKeyRef: string,
+    authProofMessageId: string,
+    authProofCounter: number = 2
+  ): Promise<PairingClientAuthProofResult> {
+    const accepted = session.acceptServerFrame(serverHelloFrame);
+    if (!accepted.ok || accepted.envelope === undefined) {
+      return {
+        ok: false,
+        error: PairingClientHandshakeError.SERVER_FRAME_REJECTED,
+        transportError: accepted.error
+      };
+    }
+    if (accepted.outcome !== ProtocolHandshakeFrameOutcome.CONTINUE ||
+      accepted.envelope.messageType !== MessageType.SERVER_HELLO) {
+      return {
+        ok: false,
+        error: PairingClientHandshakeError.UNEXPECTED_SERVER_MESSAGE
+      };
+    }
+
+    const serverHello = this.parser.parseHelloPayload(accepted.envelope.payload);
+    if (!serverHello.ok || serverHello.payload === undefined) {
+      return {
+        ok: false,
+        error: PairingClientHandshakeError.INVALID_SERVER_HELLO,
+        field: serverHello.field
+      };
+    }
+
+    const transcript = this.draftService.buildClientAuthTranscriptDraft(session.draft, serverHello.payload);
+    if (!transcript.ok || transcript.transcript === undefined) {
+      return {
+        ok: false,
+        error: PairingClientHandshakeError.SERVER_HELLO_MISMATCH,
+        handshakeError: transcript.error,
+        field: transcript.field
+      };
+    }
+
+    const signature = await this.authProofSigner.signAuthTranscriptWithRef(
+      localIdentityPrivateKeyRef,
+      transcript.transcript.canonicalTranscript
+    );
+    if (!signature.ok || signature.signature === undefined) {
+      return {
+        ok: false,
+        error: PairingClientHandshakeError.AUTH_PROOF_SIGN_FAILED,
+        huksError: signature.error,
         field: signature.field
       };
     }
