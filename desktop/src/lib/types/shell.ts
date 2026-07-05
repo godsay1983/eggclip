@@ -62,7 +62,16 @@ export type PocRejectionReason =
   | "invalidMessage"
   | "emptyText"
   | "textTooLarge"
-  | "binaryUnsupported";
+  | "binaryUnsupported"
+  | "authenticatedFrameRejected"
+  | "pairingClientHelloRejected"
+  | "pairingInvitationMissing"
+  | "pairingInvitationExpired"
+  | "pairingInvitationConsumed"
+  | "pairingAuthProofRejected"
+  | "pairingAuthSignatureRejected"
+  | "pairingServerStateMissing"
+  | "pairingInternalError";
 
 export interface PocDiagnostics {
   receivedFrames: number;

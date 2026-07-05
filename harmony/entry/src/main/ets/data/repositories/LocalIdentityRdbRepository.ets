@@ -27,15 +27,12 @@ export class LocalIdentityRdbRepository implements LocalDeviceIdentityMetadataGa
 
   async getOrCreateDeviceIdWithStore(store: relationalStore.RdbStore, updatedAt: number = Date.now()): Promise<string> {
     const existing = await this.metadataValue(store, LOCAL_DEVICE_ID_KEY);
-    if (existing !== null && existing.length > 0) {
+    if (existing !== null && isUuid(existing)) {
       return existing;
     }
 
-    const deviceId = util.generateRandomUUID(false).toLowerCase();
-    await store.executeSql(
-      `INSERT OR IGNORE INTO app_metadata(key, value, updated_at) VALUES (?, ?, ?)`,
-      [LOCAL_DEVICE_ID_KEY, deviceId, updatedAt]
-    );
+    const deviceId = normalizeUuid(util.generateRandomUUID(false));
+    await this.upsertMetadata(store, LOCAL_DEVICE_ID_KEY, deviceId, updatedAt);
     const persisted = await this.metadataValue(store, LOCAL_DEVICE_ID_KEY);
     return persisted ?? deviceId;
   }
@@ -149,4 +146,19 @@ export class LocalIdentityRdbRepository implements LocalDeviceIdentityMetadataGa
       [key, value, updatedAt]
     );
   }
+}
+
+function normalizeUuid(value: string): string {
+  const lower = value.toLowerCase();
+  if (isUuid(lower)) {
+    return lower;
+  }
+  const compact = lower.replace(/[^0-9a-f]/g, '');
+  const padded = `${compact}${Date.now().toString(16)}00000000000000000000000000000000`.slice(0, 32);
+  const variant = /^[89ab]$/.test(padded.charAt(16)) ? padded.charAt(16) : '8';
+  return `${padded.slice(0, 8)}-${padded.slice(8, 12)}-4${padded.slice(13, 16)}-${variant}${padded.slice(17, 20)}-${padded.slice(20)}`;
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }

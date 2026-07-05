@@ -6,8 +6,8 @@ use crate::{
     clipboard::{ClipboardText, ClipboardTextError},
     crypto::{encode_base64url, SessionDirection, X25519Secret, X25519_PRIVATE_KEY_BYTES},
     pairing::{
-        accept_pairing_auth_proof, accept_pairing_client_hello, PairingServerAuthProofInput,
-        PairingServerHelloDraft,
+        accept_pairing_auth_proof, accept_pairing_client_hello, PairingError,
+        PairingServerAuthProofInput, PairingServerHelloDraft,
     },
     protocol::{
         parse_envelope, ClipboardItem as ProtocolClipboardItem, MessageType, ProtocolEnvelope,
@@ -120,6 +120,15 @@ pub enum PocRejectionReason {
     EmptyText,
     TextTooLarge,
     BinaryUnsupported,
+    AuthenticatedFrameRejected,
+    PairingClientHelloRejected,
+    PairingInvitationMissing,
+    PairingInvitationExpired,
+    PairingInvitationConsumed,
+    PairingAuthProofRejected,
+    PairingAuthSignatureRejected,
+    PairingServerStateMissing,
+    PairingInternalError,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -623,7 +632,10 @@ where
                         continue;
                     }
                     AuthenticatedFrameRoute::Rejected => {
-                        record_poc_frame_result(&app, Err(PocRejectionReason::InvalidMessage));
+                        record_poc_frame_result(
+                            &app,
+                            Err(PocRejectionReason::AuthenticatedFrameRejected),
+                        );
                         break;
                     }
                     AuthenticatedFrameRoute::NotAuthenticated => {}
@@ -634,8 +646,8 @@ where
                         let _ = outgoing_tx.send(Message::Text(server_hello_frame.into()));
                         continue;
                     }
-                    PairingClientHelloRoute::Rejected => {
-                        record_poc_frame_result(&app, Err(PocRejectionReason::InvalidMessage));
+                    PairingClientHelloRoute::Rejected(reason) => {
+                        record_poc_frame_result(&app, Err(reason));
                         break;
                     }
                     PairingClientHelloRoute::NotPairing => {}
@@ -646,8 +658,8 @@ where
                         let _ = outgoing_tx.send(Message::Text(auth_ok_frame.into()));
                         continue;
                     }
-                    PairingAuthProofRoute::Rejected => {
-                        record_poc_frame_result(&app, Err(PocRejectionReason::InvalidMessage));
+                    PairingAuthProofRoute::Rejected(reason) => {
+                        record_poc_frame_result(&app, Err(reason));
                         break;
                     }
                     PairingAuthProofRoute::NotPairing => {}
@@ -701,13 +713,13 @@ where
 
 enum PairingClientHelloRoute {
     Handled(String),
-    Rejected,
+    Rejected(PocRejectionReason),
     NotPairing,
 }
 
 enum PairingAuthProofRoute {
     Handled(String),
-    Rejected,
+    Rejected(PocRejectionReason),
     NotPairing,
 }
 
@@ -728,11 +740,15 @@ fn try_accept_pairing_client_hello(
 
     let path = match database_path(app) {
         Ok(path) => path,
-        Err(_) => return PairingClientHelloRoute::Rejected,
+        Err(_) => {
+            return PairingClientHelloRoute::Rejected(PocRejectionReason::PairingInternalError)
+        }
     };
     let mut connection = match open_database(path) {
         Ok(connection) => connection,
-        Err(_) => return PairingClientHelloRoute::Rejected,
+        Err(_) => {
+            return PairingClientHelloRoute::Rejected(PocRejectionReason::PairingInternalError)
+        }
     };
     #[cfg(windows)]
     let mut store = crate::secret_store::WindowsCredentialSecretStore;
@@ -741,13 +757,17 @@ fn try_accept_pairing_client_hello(
 
     let server_ephemeral_secret = match random_x25519_secret() {
         Ok(secret) => secret,
-        Err(_) => return PairingClientHelloRoute::Rejected,
+        Err(_) => {
+            return PairingClientHelloRoute::Rejected(PocRejectionReason::PairingInternalError)
+        }
     };
     let server_ephemeral_public_key = encode_base64url(&server_ephemeral_secret.public_key());
     let message_id = Uuid::now_v7().to_string();
     let timestamp_ms = match now_ms() {
         Ok(timestamp) => timestamp,
-        Err(_) => return PairingClientHelloRoute::Rejected,
+        Err(_) => {
+            return PairingClientHelloRoute::Rejected(PocRejectionReason::PairingInternalError)
+        }
     };
 
     let draft = match accept_pairing_client_hello(
@@ -759,11 +779,13 @@ fn try_accept_pairing_client_hello(
         timestamp_ms,
     ) {
         Ok(draft) => draft,
-        Err(_) => return PairingClientHelloRoute::Rejected,
+        Err(error) => {
+            return PairingClientHelloRoute::Rejected(pairing_client_hello_rejection(&error))
+        }
     };
 
     if remember_pairing_handshake(app, peer, &draft, server_ephemeral_secret).is_err() {
-        return PairingClientHelloRoute::Rejected;
+        return PairingClientHelloRoute::Rejected(PocRejectionReason::PairingInternalError);
     }
     PairingClientHelloRoute::Handled(draft.server_hello_frame)
 }
@@ -773,7 +795,7 @@ fn try_accept_pairing_auth_proof(app: &AppHandle, peer: &str, text: &str) -> Pai
         return PairingAuthProofRoute::NotPairing;
     }
     let Some(handshake) = take_pairing_handshake(app, peer) else {
-        return PairingAuthProofRoute::Rejected;
+        return PairingAuthProofRoute::Rejected(PocRejectionReason::PairingServerStateMissing);
     };
     let message_id = Uuid::now_v7().to_string();
     let input = PairingServerAuthProofInput {
@@ -792,11 +814,31 @@ fn try_accept_pairing_auth_proof(app: &AppHandle, peer: &str, text: &str) -> Pai
         Ok(accepted) => {
             let auth_ok_frame = accepted.auth_ok_frame.clone();
             if remember_authenticated_session(app, peer, accepted).is_err() {
-                return PairingAuthProofRoute::Rejected;
+                return PairingAuthProofRoute::Rejected(PocRejectionReason::PairingInternalError);
             }
             PairingAuthProofRoute::Handled(auth_ok_frame)
         }
-        Err(_) => PairingAuthProofRoute::Rejected,
+        Err(error) => PairingAuthProofRoute::Rejected(pairing_auth_proof_rejection(&error)),
+    }
+}
+
+fn pairing_client_hello_rejection(error: &PairingError) -> PocRejectionReason {
+    match error {
+        PairingError::InvitationMissing => PocRejectionReason::PairingInvitationMissing,
+        PairingError::InvitationExpired => PocRejectionReason::PairingInvitationExpired,
+        PairingError::InvitationConsumed => PocRejectionReason::PairingInvitationConsumed,
+        PairingError::InvalidClientHello | PairingError::InvalidInvitationSecret => {
+            PocRejectionReason::PairingClientHelloRejected
+        }
+        _ => PocRejectionReason::PairingInternalError,
+    }
+}
+
+fn pairing_auth_proof_rejection(error: &PairingError) -> PocRejectionReason {
+    match error {
+        PairingError::AuthProofSignatureFailed => PocRejectionReason::PairingAuthSignatureRejected,
+        PairingError::InvalidAuthProof => PocRejectionReason::PairingAuthProofRejected,
+        _ => PocRejectionReason::PairingInternalError,
     }
 }
 
@@ -806,7 +848,7 @@ fn try_accept_authenticated_frame(
     text: &str,
 ) -> AuthenticatedFrameRoute {
     let Some(message_type) = authenticated_message_type(text) else {
-        return AuthenticatedFrameRoute::Rejected;
+        return AuthenticatedFrameRoute::NotAuthenticated;
     };
     let payload = {
         let runtime = app.state::<PocTransportRuntime>();
@@ -815,7 +857,7 @@ fn try_accept_authenticated_frame(
             Err(_) => return AuthenticatedFrameRoute::Rejected,
         };
         let Some(session) = sessions.get_mut(peer) else {
-            return AuthenticatedFrameRoute::NotAuthenticated;
+            return AuthenticatedFrameRoute::Rejected;
         };
         match session.accept_text_frame(text) {
             Ok(payload) => payload,
@@ -1239,6 +1281,17 @@ mod tests {
         assert!(
             authenticated_clipboard_text_from_payload(MessageType::ItemLive, &payload).is_err()
         );
+    }
+
+    #[test]
+    fn pre_auth_and_poc_frames_are_not_authenticated_messages() {
+        let client_hello = r#"{"version":1,"type":"CLIENT_HELLO","messageId":"018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01","sessionCounter":0,"payload":{}}"#;
+        let auth_proof = r#"{"version":1,"type":"AUTH_PROOF","messageId":"018ff6f1-35f0-7c09-a4cf-3d683ebfae33","sessionCounter":2,"payload":{}}"#;
+        let poc_clipboard = r#"{"kind":"clipboardText","text":"from harmony"}"#;
+
+        assert_eq!(authenticated_message_type(client_hello), None);
+        assert_eq!(authenticated_message_type(auth_proof), None);
+        assert_eq!(authenticated_message_type(poc_clipboard), None);
     }
 
     #[test]

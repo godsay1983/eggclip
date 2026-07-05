@@ -184,11 +184,11 @@ class PairingConnectionStore {
       },
       onClose: (reason: string) => {
         if (this.state !== PairingConnectionState.AUTHENTICATED) {
-          this.fail('配对连接已关闭', reason);
+          this.fail(this.describeCloseTitle(), this.describeCloseReason(reason));
         }
       },
       onError: (reason: string) => {
-        this.fail('配对连接失败', reason);
+        this.fail('配对连接失败', this.describeTransportError(reason));
       },
       onFrame: () => {
       },
@@ -304,6 +304,24 @@ class PairingConnectionStore {
 
   private describeMaterialFailure(field?: string): string {
     if (field !== undefined && field.length > 0) {
+      if (field === 'deviceIdMetadata') {
+        return '无法读取或写入本机设备 ID，请重启应用；如果仍失败，请清除应用数据后重试。';
+      }
+      if (field === 'identityPublicKeyMetadata') {
+        return '无法读取本机身份公钥 metadata，请重启应用后重试。';
+      }
+      if (field === 'identityPrivateKeyRefMetadata') {
+        return '无法读取本机 HUKS 私钥引用 metadata，请重启应用后重试。';
+      }
+      if (field === 'saveIdentityPublicKeyMetadata') {
+        return '无法保存本机身份公钥 metadata，请检查应用数据库状态。';
+      }
+      if (field === 'saveIdentityPrivateKeyRefMetadata') {
+        return '无法保存本机 HUKS 私钥引用 metadata，请检查应用数据库状态。';
+      }
+      if (field === 'localDeviceId') {
+        return '本机设备 ID 格式无效，已修复生成逻辑；请重启应用或清除应用数据后重试。';
+      }
       return `无法生成安全握手材料：${field}`;
     }
     return '请确认邀请仍在有效期内，并检查本机 HUKS 身份是否可用。';
@@ -320,6 +338,45 @@ class PairingConnectionStore {
       return '桌面端确认失败或会话密钥派生失败。';
     }
     return '正式配对握手失败，未创建可信设备。';
+  }
+
+  private describeCloseTitle(): string {
+    if (this.state === PairingConnectionState.CLIENT_HELLO_SENT) {
+      return '桌面端关闭配对握手';
+    }
+    if (this.state === PairingConnectionState.WAITING_AUTH_OK) {
+      return '桌面端关闭认证确认';
+    }
+    if (this.state === PairingConnectionState.CONNECTING) {
+      return '配对连接已关闭';
+    }
+    return '配对连接中断';
+  }
+
+  private describeCloseReason(reason: string): string {
+    const normalized = reason.trim().toLowerCase();
+    const closeDetail = reason.trim().length > 0 ? `底层连接信息：${reason.trim()}` : '底层连接没有返回详细原因。';
+    if (this.state === PairingConnectionState.CLIENT_HELLO_SENT) {
+      return `${closeDetail} 这通常表示桌面端拒绝了 CLIENT_HELLO：请在桌面端重新生成邀请，确认邀请未过期、未被使用，并查看桌面端“帧诊断”的上次拒绝原因。`;
+    }
+    if (this.state === PairingConnectionState.WAITING_AUTH_OK) {
+      return `${closeDetail} 这通常表示桌面端拒绝了 AUTH_PROOF：请重新生成邀请并重新配对。`;
+    }
+    if (normalized.indexOf('link is down') >= 0 || normalized === '0:' || normalized === '0') {
+      return `${closeDetail} 请确认手机和桌面端在同一局域网，桌面端 WebSocket 服务仍在运行，并优先填写桌面端显示的普通 Wi-Fi IPv4 地址。`;
+    }
+    return closeDetail;
+  }
+
+  private describeTransportError(reason: string): string {
+    const trimmed = reason.trim();
+    if (trimmed.length <= 0) {
+      return 'WebSocket 连接失败，请检查桌面端 IP、端口和局域网连通性。';
+    }
+    if (trimmed.toLowerCase().indexOf('link is down') >= 0) {
+      return `${trimmed}。请确认手机和桌面端在同一局域网，桌面端服务仍在运行，并优先使用普通 Wi-Fi IPv4 地址。`;
+    }
+    return trimmed;
   }
 }
 

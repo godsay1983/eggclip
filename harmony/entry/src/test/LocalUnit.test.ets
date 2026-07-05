@@ -1379,6 +1379,34 @@ export default function localUnitTest() {
       expect(connection.snapshot().clientHelloSent).assertEqual(true);
     });
 
+    it('describesLinkDownAfterClientHelloAsDesktopHandshakeClosure', 0, async () => {
+      const transport = new FakePairingWebSocketTransportService();
+      const identityService = new LocalDeviceIdentityService(
+        new FakeLocalDeviceIdentityMetadataGateway(),
+        new FakeSecureIdentityGateway()
+      );
+      const network = new PairingClientNetworkHandshakeService(
+        new PairingClientHandshakeSessionService(new FakePairingClientAuthProofSigner())
+      );
+      const connection = new PairingConnectionStore(transport, identityService, network);
+      const material = pairingMaterialFixture();
+      if (material === null) {
+        expect(false).assertEqual(true);
+        return;
+      }
+
+      await connection.startWithPreparedMaterial(material, {
+        host: '192.168.1.10',
+        port: 4567
+      });
+      await Promise.resolve();
+      transport.emitClose('0: the link is down');
+
+      expect(connection.snapshot().state).assertEqual(PairingConnectionState.FAILED);
+      expect(connection.snapshot().title).assertEqual('桌面端关闭配对握手');
+      expect(connection.snapshot().description.indexOf('桌面端拒绝了 CLIENT_HELLO') >= 0).assertEqual(true);
+    });
+
     it('continuesPairingConnectionAfterServerHelloBySendingAuthProof', 0, async () => {
       const transport = new FakePairingWebSocketTransportService();
       const identityService = new LocalDeviceIdentityService(
@@ -2508,6 +2536,21 @@ export default function localUnitTest() {
       expect(metadata.savedPublicKey).assertEqual('');
       expect(metadata.savedPrivateKeyRef).assertEqual('');
     });
+
+    it('reportsLocalIdentityMetadataStepWhenStorageFails', 0, async () => {
+      const metadata = new FakeLocalDeviceIdentityMetadataGateway();
+      metadata.failOnSavePrivateKeyRef = true;
+      const secureIdentity = new FakeSecureIdentityGateway();
+      const service = new LocalDeviceIdentityService(metadata, secureIdentity);
+
+      const result = await service.ensureLocalIdentity(1700000000000, 'v1');
+
+      expect(result.ok).assertEqual(false);
+      expect(result.error).assertEqual(LocalDeviceIdentityError.STORAGE_FAILED);
+      expect(result.field).assertEqual('saveIdentityPrivateKeyRefMetadata');
+      expect(metadata.savedPublicKey).assertEqual(FAKE_LOCAL_IDENTITY_PUBLIC_KEY);
+      expect(metadata.savedPrivateKeyRef).assertEqual('');
+    });
   });
 }
 
@@ -2516,6 +2559,7 @@ const FAKE_LOCAL_IDENTITY_PUBLIC_KEY: string = '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMl
 class FakeLocalDeviceIdentityMetadataGateway implements LocalDeviceIdentityMetadataGateway {
   savedPublicKey: string = '';
   savedPrivateKeyRef: string = '';
+  failOnSavePrivateKeyRef: boolean = false;
   private readonly deviceIdValue: string = '018ff6f0-4adf-7d31-a987-3ef2b25d0212';
 
   async getOrCreateDeviceId(_: number): Promise<string> {
@@ -2535,6 +2579,9 @@ class FakeLocalDeviceIdentityMetadataGateway implements LocalDeviceIdentityMetad
   }
 
   async saveLocalIdentityPrivateKeyRef(identityPrivateKeyRef: string, _: number): Promise<void> {
+    if (this.failOnSavePrivateKeyRef) {
+      throw new Error('metadata write failed');
+    }
     this.savedPrivateKeyRef = identityPrivateKeyRef;
   }
 }
@@ -2619,6 +2666,12 @@ class FakePairingWebSocketTransportService extends WebSocketTransportService {
   emitTextFrame(message: string, result: ProtocolTransportFrameResult): void {
     if (this.callbacks !== null && this.callbacks.onTextFrame !== undefined) {
       this.callbacks.onTextFrame(message, result);
+    }
+  }
+
+  emitClose(reason: string): void {
+    if (this.callbacks !== null) {
+      this.callbacks.onClose(reason);
     }
   }
 

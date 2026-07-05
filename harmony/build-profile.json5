@@ -3,6 +3,7 @@
     "products": [
       {
         "name": "default",
+        "signingConfig": "debug",
         "targetSdkVersion": "6.1.1(24)",
         "compatibleSdkVersion": "6.1.0(23)",
         "runtimeOS": "HarmonyOS",
@@ -20,6 +21,34 @@
       },
       {
         "name": "release"
+      }
+    ],
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\caozhipeng\\.ohos\\config\\default_harmony_vLR7ok_l7JFNJbwsGr__ehsxMBnqJvXqeY81dW8p3VU=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001B372FF36CE82493BBDE3A3ED8A4A6A80BAD827270660E6D5673C2BAAE97E5617FDA126E821AD777",
+          "profile": "C:\\Users\\caozhipeng\\.ohos\\config\\default_harmony_vLR7ok_l7JFNJbwsGr__ehsxMBnqJvXqeY81dW8p3VU=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\caozhipeng\\.ohos\\config\\default_harmony_vLR7ok_l7JFNJbwsGr__ehsxMBnqJvXqeY81dW8p3VU=.p12",
+          "storePassword": "0000001B2B996016F50B9FA819552D7E1C2194B4E4F664CF2FADCECB98DA9C95AD3EBBB3425352F0C78C58"
+        }
+      },
+      {
+        "name": "debug",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\caozhipeng\\.ohos\\config\\debug_harmony_vLR7ok_l7JFNJbwsGr__ehsxMBnqJvXqeY81dW8p3VU=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001BC2D0C38A3A6A140DB42BC11C6CB2819F2D7ADBBE261FBECF0AC5B2D9C0450A54894A0EA218A2C6",
+          "profile": "C:\\Users\\caozhipeng\\.ohos\\config\\debug_harmony_vLR7ok_l7JFNJbwsGr__ehsxMBnqJvXqeY81dW8p3VU=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\caozhipeng\\.ohos\\config\\debug_harmony_vLR7ok_l7JFNJbwsGr__ehsxMBnqJvXqeY81dW8p3VU=.p12",
+          "storePassword": "0000001B5FA9BFFAE5419AB1D8F015448B4A1F386F5AA8C0D33A7FE3CD26DBCBECD99141B1C54EB4382C59"
+        }
       }
     ]
   },

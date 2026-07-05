@@ -14,6 +14,7 @@ export class MigrationRunner {
     for (const migration of migrations) {
       await this.applyMigration(store, migration);
     }
+    await this.ensureBaselineSchema(store);
     store.version = CURRENT_SCHEMA_VERSION;
   }
 
@@ -42,6 +43,14 @@ export class MigrationRunner {
         applied_at INTEGER NOT NULL
       )`
     );
+  }
+
+  private async ensureBaselineSchema(store: relationalStore.RdbStore): Promise<void> {
+    for (const migration of SCHEMA_MIGRATIONS) {
+      for (const statement of migration.statements) {
+        await store.executeSql(statement);
+      }
+    }
   }
 
   private async currentVersion(store: relationalStore.RdbStore): Promise<number> {

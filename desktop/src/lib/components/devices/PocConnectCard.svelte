@@ -57,6 +57,24 @@
         return "正文超限";
       case "binaryUnsupported":
         return "不支持二进制";
+      case "authenticatedFrameRejected":
+        return "已认证帧被拒绝";
+      case "pairingClientHelloRejected":
+        return "配对邀请不匹配";
+      case "pairingInvitationMissing":
+        return "配对邀请不存在";
+      case "pairingInvitationExpired":
+        return "配对邀请已过期";
+      case "pairingInvitationConsumed":
+        return "配对邀请已使用";
+      case "pairingAuthProofRejected":
+        return "配对认证无效";
+      case "pairingAuthSignatureRejected":
+        return "配对签名无效";
+      case "pairingServerStateMissing":
+        return "配对状态丢失";
+      case "pairingInternalError":
+        return "配对内部错误";
       default:
         return "无";
     }

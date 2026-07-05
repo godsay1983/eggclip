@@ -55,53 +55,75 @@ export class LocalDeviceIdentityService {
     nowMs: number = Date.now(),
     aliasSlot: string = 'v1'
   ): Promise<LocalDeviceIdentityResult> {
+    let deviceId: string = '';
     try {
-      const deviceId = await this.metadata.getOrCreateDeviceId(nowMs);
-      const existingPublicKey = await this.metadata.loadLocalIdentityPublicKey();
-      const existingPrivateKeyRef = await this.metadata.loadLocalIdentityPrivateKeyRef();
+      deviceId = await this.metadata.getOrCreateDeviceId(nowMs);
+    } catch (_) {
+      return failed(LocalDeviceIdentityError.STORAGE_FAILED, 'deviceIdMetadata');
+    }
 
-      if (existingPublicKey !== null && existingPrivateKeyRef !== null) {
-        return {
-          ok: true,
-          created: false,
-          identity: {
-            deviceId,
-            identityPublicKey: existingPublicKey,
-            identityPrivateKeyRef: existingPrivateKeyRef
-          }
-        };
-      }
+    let existingPublicKey: string | null = null;
+    try {
+      existingPublicKey = await this.metadata.loadLocalIdentityPublicKey();
+    } catch (_) {
+      return failed(LocalDeviceIdentityError.STORAGE_FAILED, 'identityPublicKeyMetadata');
+    }
 
-      const privateKeyRef = existingPrivateKeyRef ?? this.buildNewPrivateKeyRef(aliasSlot);
-      if (privateKeyRef === null) {
-        return failed(LocalDeviceIdentityError.INVALID_HUKS_REF, 'identityPrivateKeyRef');
-      }
+    let existingPrivateKeyRef: string | null = null;
+    try {
+      existingPrivateKeyRef = await this.metadata.loadLocalIdentityPrivateKeyRef();
+    } catch (_) {
+      return failed(LocalDeviceIdentityError.STORAGE_FAILED, 'identityPrivateKeyRefMetadata');
+    }
 
-      const generated = await this.secureIdentity.generateOrLoadIdentity(privateKeyRef);
-      if (!generated.ok || generated.identityPublicKey === undefined ||
-        generated.identityPrivateKeyRef === undefined) {
-        return failed(
-          LocalDeviceIdentityError.HUKS_FAILED,
-          generated.field ?? 'identity',
-          generated.error
-        );
-      }
-
-      await this.metadata.saveLocalIdentityPublicKey(generated.identityPublicKey, nowMs);
-      await this.metadata.saveLocalIdentityPrivateKeyRef(generated.identityPrivateKeyRef, nowMs);
-
+    if (existingPublicKey !== null && existingPrivateKeyRef !== null) {
       return {
         ok: true,
-        created: true,
+        created: false,
         identity: {
           deviceId,
-          identityPublicKey: generated.identityPublicKey,
-          identityPrivateKeyRef: generated.identityPrivateKeyRef
+          identityPublicKey: existingPublicKey,
+          identityPrivateKeyRef: existingPrivateKeyRef
         }
       };
-    } catch (_) {
-      return failed(LocalDeviceIdentityError.STORAGE_FAILED, 'metadata');
     }
+
+    const privateKeyRef = existingPrivateKeyRef ?? this.buildNewPrivateKeyRef(aliasSlot);
+    if (privateKeyRef === null) {
+      return failed(LocalDeviceIdentityError.INVALID_HUKS_REF, 'identityPrivateKeyRef');
+    }
+
+    const generated = await this.secureIdentity.generateOrLoadIdentity(privateKeyRef);
+    if (!generated.ok || generated.identityPublicKey === undefined ||
+      generated.identityPrivateKeyRef === undefined) {
+      return failed(
+        LocalDeviceIdentityError.HUKS_FAILED,
+        generated.field ?? 'identity',
+        generated.error
+      );
+    }
+
+    try {
+      await this.metadata.saveLocalIdentityPublicKey(generated.identityPublicKey, nowMs);
+    } catch (_) {
+      return failed(LocalDeviceIdentityError.STORAGE_FAILED, 'saveIdentityPublicKeyMetadata');
+    }
+
+    try {
+      await this.metadata.saveLocalIdentityPrivateKeyRef(generated.identityPrivateKeyRef, nowMs);
+    } catch (_) {
+      return failed(LocalDeviceIdentityError.STORAGE_FAILED, 'saveIdentityPrivateKeyRefMetadata');
+    }
+
+    return {
+      ok: true,
+      created: true,
+      identity: {
+        deviceId,
+        identityPublicKey: generated.identityPublicKey,
+        identityPrivateKeyRef: generated.identityPrivateKeyRef
+      }
+    };
   }
 
   private buildNewPrivateKeyRef(aliasSlot: string): string | null {
