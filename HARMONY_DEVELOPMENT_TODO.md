@@ -202,6 +202,7 @@ harmony/entry/src/main/ets/
   - [x] 新增 `Ed25519IdentityService`，封装 CryptoFramework Ed25519 本机身份材料生成边界，输出 32 字节 public/private material 并在平台不支持时明确返回 `platformCryptoFailed`。
   - [x] 扩展本机身份 metadata repository 契约：RDB 只允许保存 `identityPublicKey` 和 `huks://eggclip/local-identity/ed25519/...` 私钥引用，不保存裸私钥。
   - [x] 新增 `Ed25519HuksIdentityService`，封装 HUKS Ed25519 长期身份 alias、key generation、公钥导出和 AUTH transcript 签名边界；本地测试只校验参数契约，真实输出待真机确认。
+  - [x] 新增 `LocalDeviceIdentityService`，编排本机 `deviceId`、HUKS Ed25519 public key 和 private key ref 初始化；失败时不写入身份 metadata。
   - [ ] 将身份材料生成切换为 HUKS/系统安全存储中的长期私钥，只向握手流程暴露 public key 和签名能力。
 - [ ] 将私钥和 `spaceKey` 保存到 HUKS 或等效系统安全存储。
   - [x] 建立 `spaceKey` HUKS alias/引用生成与校验边界；RDB repository 只接收 `huks://` 引用，不保存裸 key。

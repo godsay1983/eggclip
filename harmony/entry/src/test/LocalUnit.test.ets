@@ -54,8 +54,16 @@ import {
 } from '../main/ets/services/crypto/Ed25519IdentityService';
 import {
   Ed25519HuksIdentityError,
+  Ed25519HuksIdentityMaterialResult,
+  Ed25519HuksKeyRefResult,
   Ed25519HuksIdentityService
 } from '../main/ets/services/crypto/Ed25519HuksIdentityService';
+import {
+  LocalDeviceIdentityError,
+  LocalDeviceIdentityMetadataGateway,
+  LocalDeviceIdentityService,
+  LocalDeviceSecureIdentityGateway
+} from '../main/ets/services/crypto/LocalDeviceIdentityService';
 import {
   INITIAL_SPACE_KEY_VERSION,
   SPACE_KEY_BYTES,
@@ -2131,7 +2139,98 @@ export default function localUnitTest() {
       expect((signOptions.properties?.length ?? 0) >= 3).assertEqual(true);
       expect((signOptions.inData?.length ?? 0) > 0).assertEqual(true);
     });
+
+    it('ensuresLocalDeviceIdentityWithoutPersistingPrivateMaterial', 0, async () => {
+      const metadata = new FakeLocalDeviceIdentityMetadataGateway();
+      const secureIdentity = new FakeSecureIdentityGateway();
+      const service = new LocalDeviceIdentityService(metadata, secureIdentity);
+
+      const created = await service.ensureLocalIdentity(1700000000000, 'v1');
+      expect(created.ok).assertEqual(true);
+      expect(created.created).assertEqual(true);
+      expect(created.identity?.deviceId).assertEqual('018ff6f0-4adf-7d31-a987-3ef2b25d0212');
+      expect(created.identity?.identityPublicKey).assertEqual(FAKE_LOCAL_IDENTITY_PUBLIC_KEY);
+      expect(created.identity?.identityPrivateKeyRef).assertEqual('huks://eggclip/local-identity/ed25519/v1');
+      expect(metadata.savedPublicKey).assertEqual(FAKE_LOCAL_IDENTITY_PUBLIC_KEY);
+      expect(metadata.savedPrivateKeyRef).assertEqual('huks://eggclip/local-identity/ed25519/v1');
+      expect(JSON.stringify(metadata).indexOf('identityPrivateKey')).assertEqual(-1);
+
+      const reused = await service.ensureLocalIdentity(1700000000500, 'v1');
+      expect(reused.ok).assertEqual(true);
+      expect(reused.created).assertEqual(false);
+      expect(secureIdentity.generateCalls).assertEqual(1);
+    });
+
+    it('doesNotPersistLocalIdentityMetadataWhenHuksGenerationFails', 0, async () => {
+      const metadata = new FakeLocalDeviceIdentityMetadataGateway();
+      const secureIdentity = new FakeSecureIdentityGateway();
+      secureIdentity.failGeneration = true;
+      const service = new LocalDeviceIdentityService(metadata, secureIdentity);
+
+      const result = await service.ensureLocalIdentity(1700000000000, 'v1');
+      expect(result.ok).assertEqual(false);
+      expect(result.error).assertEqual(LocalDeviceIdentityError.HUKS_FAILED);
+      expect(result.huksError).assertEqual(Ed25519HuksIdentityError.PLATFORM_CRYPTO_FAILED);
+      expect(metadata.savedPublicKey).assertEqual('');
+      expect(metadata.savedPrivateKeyRef).assertEqual('');
+    });
   });
+}
+
+const FAKE_LOCAL_IDENTITY_PUBLIC_KEY: string = '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo';
+
+class FakeLocalDeviceIdentityMetadataGateway implements LocalDeviceIdentityMetadataGateway {
+  savedPublicKey: string = '';
+  savedPrivateKeyRef: string = '';
+  private readonly deviceIdValue: string = '018ff6f0-4adf-7d31-a987-3ef2b25d0212';
+
+  async getOrCreateDeviceId(_: number): Promise<string> {
+    return this.deviceIdValue;
+  }
+
+  async loadLocalIdentityPublicKey(): Promise<string | null> {
+    return this.savedPublicKey.length > 0 ? this.savedPublicKey : null;
+  }
+
+  async saveLocalIdentityPublicKey(identityPublicKey: string, _: number): Promise<void> {
+    this.savedPublicKey = identityPublicKey;
+  }
+
+  async loadLocalIdentityPrivateKeyRef(): Promise<string | null> {
+    return this.savedPrivateKeyRef.length > 0 ? this.savedPrivateKeyRef : null;
+  }
+
+  async saveLocalIdentityPrivateKeyRef(identityPrivateKeyRef: string, _: number): Promise<void> {
+    this.savedPrivateKeyRef = identityPrivateKeyRef;
+  }
+}
+
+class FakeSecureIdentityGateway implements LocalDeviceSecureIdentityGateway {
+  failGeneration: boolean = false;
+  generateCalls: number = 0;
+
+  buildLocalIdentityPrivateKeyRef(aliasSlot?: string): Ed25519HuksKeyRefResult {
+    return {
+      ok: true,
+      identityPrivateKeyRef: `huks://eggclip/local-identity/ed25519/${aliasSlot ?? 'v1'}`
+    };
+  }
+
+  async generateOrLoadIdentity(identityPrivateKeyRef: string): Promise<Ed25519HuksIdentityMaterialResult> {
+    this.generateCalls += 1;
+    if (this.failGeneration) {
+      return {
+        ok: false,
+        error: Ed25519HuksIdentityError.PLATFORM_CRYPTO_FAILED,
+        field: 'generateKeyItem'
+      };
+    }
+    return {
+      ok: true,
+      identityPublicKey: FAKE_LOCAL_IDENTITY_PUBLIC_KEY,
+      identityPrivateKeyRef
+    };
+  }
 }
 
 function encryptedFrameWithCanonicalAad(
