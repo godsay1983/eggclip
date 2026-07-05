@@ -211,6 +211,7 @@ desktop/
   - [x] 桌面端启动后会每分钟后台清理过期 active 邀请，只更新状态，不记录邀请正文或 secret。
   - [x] 桌面端已新增 `accept_pairing_client_hello` 服务端握手骨架：根据 CLIENT_HELLO `pairingContext` 定位 active invitation，校验空间和发行设备后生成 SERVER_HELLO；不会提前消费邀请。
   - [x] 桌面端 POC WebSocket server 已新增 CLIENT_HELLO 分流：收到扫码配对握手帧后生成真实随机 server ephemeral public key、回发 SERVER_HELLO，并保存临时握手状态供后续 AUTH_PROOF 使用。
+  - [x] 桌面端 POC WebSocket server 已新增 AUTH_PROOF 分流：基于前序握手状态校验 client AUTH_PROOF，成功后回发 AUTH_OK，并清理临时 X25519 secret。
   - [ ] 远端导入校验和正式握手消费入口待接入。
 - [x] 生成二维码内容和可复制邀请字符串。
   - [x] 后端已生成版本化 `eggclip://pair` 邀请 URI；前端当前只展示确认码和过期信息，避免完整邀请 secret 被剪贴板监听收入历史。
@@ -228,13 +229,16 @@ desktop/
 - [ ] X25519 协商临时共享秘密。
   - [x] Rust 完成基于共享向量的 X25519 基元。
   - [x] 桌面端 WebSocket 收到 CLIENT_HELLO 时已生成随机 server ephemeral key pair，并在 SERVER_HELLO 中发送 public key；shared secret 计算待 AUTH_PROOF 阶段接入。
+  - [x] 桌面端收到有效 AUTH_PROOF 后已使用 server ephemeral secret 与 client ephemeral public key 计算 shared secret。
   - [ ] 正式握手状态机生成并交换临时公钥。
 - [ ] Ed25519 签名绑定身份、空间和握手 transcript。
   - [x] 固定 canonical AUTH_PROOF transcript。
   - [x] 固定 transcript hash 和 Ed25519 验签向量。
-  - [ ] 正式握手状态机验证远端 AUTH_PROOF。
+  - [x] 桌面端服务端握手已校验 client AUTH_PROOF 的 role、transcriptHash 和 Ed25519 签名。
+  - [x] 桌面端 POC WebSocket server 已接入远端 AUTH_PROOF 验证入口。
 - [ ] HKDF-SHA-256 派生双向独立会话密钥。
   - [x] Rust 实现方向隔离 session key 派生并通过共享向量。
+  - [x] 桌面端服务端 AUTH_PROOF 通过后已使用 transcriptHash 作为 salt 派生双向 session key；正式 session 保存和业务帧接入待完成。
   - [ ] 正式握手 transcript 输入接入 session key 派生。
 - [ ] AES-256-GCM 加密认证后全部业务消息。
   - [x] Rust AES-GCM 基元通过共享向量和 tag 篡改拒绝测试。

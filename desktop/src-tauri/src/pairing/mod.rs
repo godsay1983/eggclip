@@ -12,11 +12,16 @@ use uuid::Uuid;
 
 use crate::{
     clipboard,
-    crypto::{decode_base64url, encode_base64url},
+    crypto::{
+        decode_base64url, derive_session_keys, encode_base64url, fixed_bytes,
+        verify_ed25519_signature, SessionKeys, X25519Secret, ED25519_PUBLIC_KEY_BYTES,
+        ED25519_SIGNATURE_BYTES, X25519_PUBLIC_KEY_BYTES, X25519_SHARED_SECRET_BYTES,
+    },
     identity::{ensure_local_device_identity, IdentityError},
     protocol::{
-        parse_envelope, serialize_pre_auth_envelope, Capability, HelloPayload, MessageType,
-        PreAuthEnvelope, ProtocolEnvelope,
+        auth_transcript_hash_base64url, canonical_auth_transcript, parse_envelope,
+        serialize_pre_auth_envelope, AuthProofPayload, AuthRole, AuthTranscriptInput, Capability,
+        HelloPayload, MessageType, PreAuthEnvelope, ProtocolEnvelope, SignatureAlgorithm,
     },
     secret_store::{SecretBytesStore, SecretStoreError},
     settings::{database_path, now_ms},
@@ -67,10 +72,40 @@ pub struct PairingInvitationSummary {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PairingServerHelloDraft {
     pub invitation_id: String,
+    pub space_id: String,
     pub peer_device_id: String,
     pub peer_identity_public_key: String,
+    pub peer_ephemeral_public_key: String,
+    pub server_device_id: String,
+    pub server_identity_public_key: String,
+    pub server_ephemeral_public_key: String,
     pub pairing_context: String,
     pub server_hello_frame: String,
+}
+
+#[derive(Clone)]
+pub struct PairingServerAuthProofInput {
+    pub invitation_id: String,
+    pub space_id: String,
+    pub peer_device_id: String,
+    pub peer_identity_public_key: String,
+    pub peer_ephemeral_public_key: String,
+    pub server_device_id: String,
+    pub server_identity_public_key: String,
+    pub server_ephemeral_public_key: String,
+    pub pairing_context: String,
+    pub server_ephemeral_secret: X25519Secret,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PairingServerAuthProofAccepted {
+    pub invitation_id: String,
+    pub peer_device_id: String,
+    pub transcript_hash: String,
+    pub transcript_salt: [u8; 32],
+    pub shared_secret: [u8; X25519_SHARED_SECRET_BYTES],
+    pub session_keys: SessionKeys,
+    pub auth_ok_frame: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -106,6 +141,9 @@ pub enum PairingError {
     InvitationConsumed,
     InvalidInvitationSecret,
     InvalidClientHello,
+    InvalidAuthProof,
+    AuthProofSignatureFailed,
+    SessionKeyDerivationFailed,
     QrCode(String),
     Serialize(String),
 }
@@ -130,6 +168,13 @@ impl fmt::Display for PairingError {
                 formatter.write_str("invalid pairing invitation secret")
             }
             PairingError::InvalidClientHello => formatter.write_str("invalid client hello"),
+            PairingError::InvalidAuthProof => formatter.write_str("invalid auth proof"),
+            PairingError::AuthProofSignatureFailed => {
+                formatter.write_str("auth proof signature verification failed")
+            }
+            PairingError::SessionKeyDerivationFailed => {
+                formatter.write_str("session key derivation failed")
+            }
             PairingError::QrCode(message) => write!(formatter, "qr code error: {message}"),
             PairingError::Serialize(message) => write!(formatter, "serialize error: {message}"),
         }
@@ -575,10 +620,109 @@ pub fn accept_pairing_client_hello<S: SecretBytesStore>(
 
     Ok(PairingServerHelloDraft {
         invitation_id: invitation_id.to_string(),
+        space_id: client_hello.space_id,
         peer_device_id: client_hello.device_id,
         peer_identity_public_key: client_hello.identity_public_key,
+        peer_ephemeral_public_key: client_hello.ephemeral_public_key,
+        server_device_id: server_hello.device_id,
+        server_identity_public_key: server_hello.identity_public_key,
+        server_ephemeral_public_key: server_ephemeral_public_key.to_string(),
         pairing_context,
         server_hello_frame,
+    })
+}
+
+pub fn accept_pairing_auth_proof(
+    handshake: PairingServerAuthProofInput,
+    auth_proof_frame: &str,
+    auth_ok_message_id: &str,
+) -> Result<PairingServerAuthProofAccepted, PairingError> {
+    let ProtocolEnvelope::PreAuth(envelope) =
+        parse_envelope(auth_proof_frame).map_err(|_| PairingError::InvalidAuthProof)?
+    else {
+        return Err(PairingError::InvalidAuthProof);
+    };
+    if envelope.message_type != MessageType::AuthProof {
+        return Err(PairingError::InvalidAuthProof);
+    }
+    let proof: AuthProofPayload =
+        serde_json::from_value(envelope.payload).map_err(|_| PairingError::InvalidAuthProof)?;
+    proof
+        .validate()
+        .map_err(|_| PairingError::InvalidAuthProof)?;
+    if proof.role != AuthRole::Client || proof.signature_algorithm != SignatureAlgorithm::Ed25519 {
+        return Err(PairingError::InvalidAuthProof);
+    }
+
+    let transcript_input = AuthTranscriptInput {
+        role: AuthRole::Client,
+        space_id: handshake.space_id.clone(),
+        local_device_id: handshake.peer_device_id.clone(),
+        remote_device_id: handshake.server_device_id.clone(),
+        local_identity_public_key: handshake.peer_identity_public_key.clone(),
+        remote_identity_public_key: handshake.server_identity_public_key.clone(),
+        local_ephemeral_public_key: handshake.peer_ephemeral_public_key.clone(),
+        remote_ephemeral_public_key: handshake.server_ephemeral_public_key.clone(),
+        pairing_context: handshake.pairing_context.clone(),
+    };
+    let canonical_transcript =
+        canonical_auth_transcript(&transcript_input).map_err(|_| PairingError::InvalidAuthProof)?;
+    let transcript_hash = auth_transcript_hash_base64url(&transcript_input)
+        .map_err(|_| PairingError::InvalidAuthProof)?;
+    if proof.transcript_hash != transcript_hash {
+        return Err(PairingError::InvalidAuthProof);
+    }
+
+    let peer_identity_public_key = fixed_bytes::<ED25519_PUBLIC_KEY_BYTES>(
+        &decode_base64url(&handshake.peer_identity_public_key)
+            .map_err(|_| PairingError::InvalidAuthProof)?,
+        "peerIdentityPublicKey",
+    )
+    .map_err(|_| PairingError::InvalidAuthProof)?;
+    let signature = fixed_bytes::<ED25519_SIGNATURE_BYTES>(
+        &decode_base64url(&proof.signature).map_err(|_| PairingError::InvalidAuthProof)?,
+        "signature",
+    )
+    .map_err(|_| PairingError::InvalidAuthProof)?;
+    verify_ed25519_signature(
+        peer_identity_public_key,
+        canonical_transcript.as_bytes(),
+        signature,
+    )
+    .map_err(|_| PairingError::AuthProofSignatureFailed)?;
+
+    let peer_ephemeral_public_key = fixed_bytes::<X25519_PUBLIC_KEY_BYTES>(
+        &decode_base64url(&handshake.peer_ephemeral_public_key)
+            .map_err(|_| PairingError::InvalidAuthProof)?,
+        "peerEphemeralPublicKey",
+    )
+    .map_err(|_| PairingError::InvalidAuthProof)?;
+    let shared_secret = handshake
+        .server_ephemeral_secret
+        .shared_secret(peer_ephemeral_public_key);
+    let transcript_salt = fixed_bytes::<32>(
+        &decode_base64url(&transcript_hash).map_err(|_| PairingError::InvalidAuthProof)?,
+        "transcriptHash",
+    )
+    .map_err(|_| PairingError::InvalidAuthProof)?;
+    let session_keys = derive_session_keys(shared_secret, &transcript_salt)
+        .map_err(|_| PairingError::SessionKeyDerivationFailed)?;
+    let auth_ok_frame = serialize_pre_auth_envelope(&PreAuthEnvelope {
+        message_type: MessageType::AuthOk,
+        message_id: auth_ok_message_id.to_string(),
+        session_counter: envelope.session_counter.saturating_add(1),
+        payload: serde_json::json!({}),
+    })
+    .map_err(|error| PairingError::Serialize(error.to_string()))?;
+
+    Ok(PairingServerAuthProofAccepted {
+        invitation_id: handshake.invitation_id,
+        peer_device_id: handshake.peer_device_id,
+        transcript_hash,
+        transcript_salt,
+        shared_secret,
+        session_keys,
+        auth_ok_frame,
     })
 }
 
@@ -1126,6 +1270,167 @@ mod tests {
             .expect("invitation should query")
             .expect("invitation should exist");
         assert_eq!(stored.state, PairingInvitationState::Active);
+    }
+
+    #[test]
+    fn accepts_pairing_auth_proof_and_derives_server_session_material() {
+        let mut connection = open_in_memory_database().expect("database should open");
+        let mut store = MemorySecretStore::default();
+        let space = create_sync_space(&mut connection, &mut store, "默认空间", 1_700_000_000_000)
+            .expect("space should be created");
+        let invitation = create_pairing_invitation_for_space(
+            &mut connection,
+            &mut store,
+            &space.space_id,
+            1_700_000_000_500,
+        )
+        .expect("invitation should be created");
+        let payload = decode_invitation_payload(&invitation.invitation);
+        let client_identity_seed = [9u8; 32];
+        let client_identity = crate::crypto::Ed25519Identity::from_seed(client_identity_seed);
+        let client_x25519 = X25519Secret::from_private_key([8u8; 32]);
+        let server_x25519 = X25519Secret::from_private_key([7u8; 32]);
+        let client_hello = HelloPayload {
+            space_id: payload.space_id.clone(),
+            device_id: "018ff6f0-4adf-7d31-a987-3ef2b25d0212".to_string(),
+            identity_public_key: encode_base64url(&client_identity.public_key()),
+            ephemeral_public_key: encode_base64url(&client_x25519.public_key()),
+            capabilities: vec![Capability::TextPlain, Capability::SyncHeads],
+            pairing_context: Some(format!("pairing-invitation:v1:{}", payload.invitation_id)),
+        };
+        let client_hello_frame = serialize_pre_auth_envelope(&PreAuthEnvelope {
+            message_type: MessageType::ClientHello,
+            message_id: "018ff6f1-0000-7000-8000-000000000001".to_string(),
+            session_counter: 0,
+            payload: serde_json::to_value(&client_hello).expect("hello should serialize"),
+        })
+        .expect("client hello should serialize");
+        let server_hello = accept_pairing_client_hello(
+            &mut connection,
+            &mut store,
+            &client_hello_frame,
+            &encode_base64url(&server_x25519.public_key()),
+            "018ff6f1-0000-7000-8000-000000000002",
+            1_700_000_001_000,
+        )
+        .expect("client hello should be accepted");
+
+        let transcript_input = AuthTranscriptInput {
+            role: AuthRole::Client,
+            space_id: server_hello.space_id.clone(),
+            local_device_id: server_hello.peer_device_id.clone(),
+            remote_device_id: server_hello.server_device_id.clone(),
+            local_identity_public_key: server_hello.peer_identity_public_key.clone(),
+            remote_identity_public_key: server_hello.server_identity_public_key.clone(),
+            local_ephemeral_public_key: server_hello.peer_ephemeral_public_key.clone(),
+            remote_ephemeral_public_key: server_hello.server_ephemeral_public_key.clone(),
+            pairing_context: server_hello.pairing_context.clone(),
+        };
+        let canonical_transcript =
+            canonical_auth_transcript(&transcript_input).expect("transcript should build");
+        let signature = client_identity.sign(canonical_transcript.as_bytes());
+        let auth_proof = AuthProofPayload {
+            role: AuthRole::Client,
+            signature_algorithm: SignatureAlgorithm::Ed25519,
+            transcript_hash: auth_transcript_hash_base64url(&transcript_input)
+                .expect("hash should build"),
+            signature: encode_base64url(&signature),
+        };
+        let auth_proof_frame = serialize_pre_auth_envelope(&PreAuthEnvelope {
+            message_type: MessageType::AuthProof,
+            message_id: "018ff6f1-0000-7000-8000-000000000003".to_string(),
+            session_counter: 2,
+            payload: serde_json::to_value(&auth_proof).expect("proof should serialize"),
+        })
+        .expect("auth proof should serialize");
+
+        let accepted = accept_pairing_auth_proof(
+            PairingServerAuthProofInput {
+                invitation_id: server_hello.invitation_id.clone(),
+                space_id: server_hello.space_id.clone(),
+                peer_device_id: server_hello.peer_device_id.clone(),
+                peer_identity_public_key: server_hello.peer_identity_public_key.clone(),
+                peer_ephemeral_public_key: server_hello.peer_ephemeral_public_key.clone(),
+                server_device_id: server_hello.server_device_id.clone(),
+                server_identity_public_key: server_hello.server_identity_public_key.clone(),
+                server_ephemeral_public_key: server_hello.server_ephemeral_public_key.clone(),
+                pairing_context: server_hello.pairing_context.clone(),
+                server_ephemeral_secret: server_x25519.clone(),
+            },
+            &auth_proof_frame,
+            "018ff6f1-0000-7000-8000-000000000004",
+        )
+        .expect("auth proof should be accepted");
+
+        assert_eq!(accepted.invitation_id, server_hello.invitation_id);
+        assert_eq!(accepted.peer_device_id, client_hello.device_id);
+        assert_eq!(
+            accepted.shared_secret,
+            client_x25519.shared_secret(server_x25519.public_key())
+        );
+        assert_ne!(accepted.session_keys.client_to_server, [0u8; 32]);
+        assert_ne!(accepted.session_keys.server_to_client, [0u8; 32]);
+        let ProtocolEnvelope::PreAuth(auth_ok) =
+            parse_envelope(&accepted.auth_ok_frame).expect("auth ok should parse")
+        else {
+            panic!("auth ok should be pre-auth");
+        };
+        assert_eq!(auth_ok.message_type, MessageType::AuthOk);
+        assert_eq!(auth_ok.session_counter, 3);
+    }
+
+    #[test]
+    fn rejects_pairing_auth_proof_with_invalid_signature() {
+        let server_x25519 = X25519Secret::from_private_key([7u8; 32]);
+        let peer_x25519 = X25519Secret::from_private_key([8u8; 32]);
+        let transcript_input = AuthTranscriptInput {
+            role: AuthRole::Client,
+            space_id: "018ff6ef-c394-7d08-8b99-4b7d10f2767a".to_string(),
+            local_device_id: "018ff6f0-4adf-7d31-a987-3ef2b25d0212".to_string(),
+            remote_device_id: "018ff6f0-0a3b-7815-a4db-3eb6e23d9338".to_string(),
+            local_identity_public_key: encode_base64url(
+                &crate::crypto::Ed25519Identity::from_seed([9u8; 32]).public_key(),
+            ),
+            remote_identity_public_key: encode_base64url(&[3u8; 32]),
+            local_ephemeral_public_key: encode_base64url(&peer_x25519.public_key()),
+            remote_ephemeral_public_key: encode_base64url(&server_x25519.public_key()),
+            pairing_context: "pairing-invitation:v1:018ff6f1-0000-7000-8000-000000000005"
+                .to_string(),
+        };
+        let auth_proof = AuthProofPayload {
+            role: AuthRole::Client,
+            signature_algorithm: SignatureAlgorithm::Ed25519,
+            transcript_hash: auth_transcript_hash_base64url(&transcript_input)
+                .expect("hash should build"),
+            signature: encode_base64url(&[0u8; 64]),
+        };
+        let auth_proof_frame = serialize_pre_auth_envelope(&PreAuthEnvelope {
+            message_type: MessageType::AuthProof,
+            message_id: "018ff6f1-0000-7000-8000-000000000003".to_string(),
+            session_counter: 2,
+            payload: serde_json::to_value(&auth_proof).expect("proof should serialize"),
+        })
+        .expect("auth proof should serialize");
+
+        assert_eq!(
+            accept_pairing_auth_proof(
+                PairingServerAuthProofInput {
+                    invitation_id: "018ff6f1-0000-7000-8000-000000000005".to_string(),
+                    space_id: transcript_input.space_id,
+                    peer_device_id: transcript_input.local_device_id,
+                    peer_identity_public_key: transcript_input.local_identity_public_key,
+                    peer_ephemeral_public_key: transcript_input.local_ephemeral_public_key,
+                    server_device_id: transcript_input.remote_device_id,
+                    server_identity_public_key: transcript_input.remote_identity_public_key,
+                    server_ephemeral_public_key: transcript_input.remote_ephemeral_public_key,
+                    pairing_context: transcript_input.pairing_context,
+                    server_ephemeral_secret: server_x25519,
+                },
+                &auth_proof_frame,
+                "018ff6f1-0000-7000-8000-000000000004",
+            ),
+            Err(PairingError::AuthProofSignatureFailed)
+        );
     }
 
     #[test]

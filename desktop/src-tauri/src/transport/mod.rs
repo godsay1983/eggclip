@@ -5,7 +5,10 @@ use std::{collections::HashMap, net::Ipv4Addr, str::FromStr, sync::Mutex, time::
 use crate::{
     clipboard::{ClipboardText, ClipboardTextError},
     crypto::{encode_base64url, X25519Secret, X25519_PRIVATE_KEY_BYTES},
-    pairing::{accept_pairing_client_hello, PairingServerHelloDraft},
+    pairing::{
+        accept_pairing_auth_proof, accept_pairing_client_hello, PairingServerAuthProofInput,
+        PairingServerHelloDraft,
+    },
     protocol::{parse_envelope, MessageType, ProtocolEnvelope},
     settings::{database_path, now_ms},
     storage::{open_database, repositories::SettingsRepository},
@@ -42,8 +45,13 @@ pub struct PocTransportRuntime {
 #[allow(dead_code)]
 struct PairingServerHandshakeRuntimeState {
     invitation_id: String,
+    space_id: String,
     peer_device_id: String,
     peer_identity_public_key: String,
+    peer_ephemeral_public_key: String,
+    server_device_id: String,
+    server_identity_public_key: String,
+    server_ephemeral_public_key: String,
     pairing_context: String,
     server_ephemeral_secret: X25519Secret,
 }
@@ -576,6 +584,18 @@ where
                     }
                     PairingClientHelloRoute::NotPairing => {}
                 }
+                match try_accept_pairing_auth_proof(&app, &peer, &text) {
+                    PairingAuthProofRoute::Handled(auth_ok_frame) => {
+                        record_poc_frame_result(&app, Ok(()));
+                        let _ = outgoing_tx.send(Message::Text(auth_ok_frame.into()));
+                        continue;
+                    }
+                    PairingAuthProofRoute::Rejected => {
+                        record_poc_frame_result(&app, Err(PocRejectionReason::InvalidMessage));
+                        break;
+                    }
+                    PairingAuthProofRoute::NotPairing => {}
+                }
                 match parse_poc_clipboard_text_message(&text) {
                     Ok(item) => {
                         record_poc_frame_result(&app, Ok(()));
@@ -615,6 +635,12 @@ where
 }
 
 enum PairingClientHelloRoute {
+    Handled(String),
+    Rejected,
+    NotPairing,
+}
+
+enum PairingAuthProofRoute {
     Handled(String),
     Rejected,
     NotPairing,
@@ -671,10 +697,43 @@ fn try_accept_pairing_client_hello(
     PairingClientHelloRoute::Handled(draft.server_hello_frame)
 }
 
+fn try_accept_pairing_auth_proof(app: &AppHandle, peer: &str, text: &str) -> PairingAuthProofRoute {
+    if !is_pairing_auth_proof_frame(text) {
+        return PairingAuthProofRoute::NotPairing;
+    }
+    let Some(handshake) = take_pairing_handshake(app, peer) else {
+        return PairingAuthProofRoute::Rejected;
+    };
+    let message_id = Uuid::now_v7().to_string();
+    let input = PairingServerAuthProofInput {
+        invitation_id: handshake.invitation_id,
+        space_id: handshake.space_id,
+        peer_device_id: handshake.peer_device_id,
+        peer_identity_public_key: handshake.peer_identity_public_key,
+        peer_ephemeral_public_key: handshake.peer_ephemeral_public_key,
+        server_device_id: handshake.server_device_id,
+        server_identity_public_key: handshake.server_identity_public_key,
+        server_ephemeral_public_key: handshake.server_ephemeral_public_key,
+        pairing_context: handshake.pairing_context,
+        server_ephemeral_secret: handshake.server_ephemeral_secret,
+    };
+    match accept_pairing_auth_proof(input, text, &message_id) {
+        Ok(accepted) => PairingAuthProofRoute::Handled(accepted.auth_ok_frame),
+        Err(_) => PairingAuthProofRoute::Rejected,
+    }
+}
+
 fn is_pairing_client_hello_frame(text: &str) -> bool {
     matches!(
         parse_envelope(text),
         Ok(ProtocolEnvelope::PreAuth(envelope)) if envelope.message_type == MessageType::ClientHello
+    )
+}
+
+fn is_pairing_auth_proof_frame(text: &str) -> bool {
+    matches!(
+        parse_envelope(text),
+        Ok(ProtocolEnvelope::PreAuth(envelope)) if envelope.message_type == MessageType::AuthProof
     )
 }
 
@@ -696,13 +755,27 @@ fn remember_pairing_handshake(
         peer.to_owned(),
         PairingServerHandshakeRuntimeState {
             invitation_id: draft.invitation_id.clone(),
+            space_id: draft.space_id.clone(),
             peer_device_id: draft.peer_device_id.clone(),
             peer_identity_public_key: draft.peer_identity_public_key.clone(),
+            peer_ephemeral_public_key: draft.peer_ephemeral_public_key.clone(),
+            server_device_id: draft.server_device_id.clone(),
+            server_identity_public_key: draft.server_identity_public_key.clone(),
+            server_ephemeral_public_key: draft.server_ephemeral_public_key.clone(),
             pairing_context: draft.pairing_context.clone(),
             server_ephemeral_secret,
         },
     );
     Ok(())
+}
+
+fn take_pairing_handshake(
+    app: &AppHandle,
+    peer: &str,
+) -> Option<PairingServerHandshakeRuntimeState> {
+    let runtime = app.state::<PocTransportRuntime>();
+    let mut handshakes = runtime.pairing_handshakes.lock().ok()?;
+    handshakes.remove(peer)
 }
 
 fn serialize_poc_server_message(message: &PocServerMessage) -> Result<String, String> {
