@@ -9,7 +9,9 @@ use crate::{
         accept_pairing_auth_proof, accept_pairing_client_hello, PairingServerAuthProofInput,
         PairingServerHelloDraft,
     },
-    protocol::{parse_envelope, MessageType, ProtocolEnvelope},
+    protocol::{
+        parse_envelope, ClipboardItem as ProtocolClipboardItem, MessageType, ProtocolEnvelope,
+    },
     settings::{database_path, now_ms},
     storage::{open_database, repositories::SettingsRepository},
 };
@@ -167,6 +169,16 @@ struct PocAuthenticatedFrameEvent {
     peer: String,
     message_type: MessageType,
     payload: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AuthenticatedClipboardTextEvent {
+    peer: String,
+    item_id: String,
+    origin_device_id: String,
+    origin_seq: u64,
+    item: ClipboardText,
 }
 
 #[tauri::command]
@@ -797,6 +809,10 @@ fn try_accept_authenticated_frame(
         }
     };
 
+    if dispatch_authenticated_payload(app, peer, message_type, &payload).is_err() {
+        close_authenticated_session(app, peer);
+        return AuthenticatedFrameRoute::Rejected;
+    }
     let _ = app.emit(
         "transport://authenticated-payload",
         PocAuthenticatedFrameEvent {
@@ -806,6 +822,44 @@ fn try_accept_authenticated_frame(
         },
     );
     AuthenticatedFrameRoute::Handled
+}
+
+fn dispatch_authenticated_payload(
+    app: &AppHandle,
+    peer: &str,
+    message_type: MessageType,
+    payload: &serde_json::Value,
+) -> Result<(), ()> {
+    if message_type != MessageType::ItemLive {
+        return Ok(());
+    }
+    let (protocol_item, clipboard_item) =
+        authenticated_clipboard_text_from_payload(message_type, payload)?;
+    crate::sync::apply_authenticated_live_item(app, &clipboard_item).map_err(|_| ())?;
+    let _ = app.emit(
+        "transport://authenticated-clipboard-text",
+        AuthenticatedClipboardTextEvent {
+            peer: peer.to_owned(),
+            item_id: protocol_item.item_id,
+            origin_device_id: protocol_item.origin_device_id,
+            origin_seq: protocol_item.origin_seq,
+            item: clipboard_item,
+        },
+    );
+    Ok(())
+}
+
+fn authenticated_clipboard_text_from_payload(
+    message_type: MessageType,
+    payload: &serde_json::Value,
+) -> Result<(ProtocolClipboardItem, ClipboardText), ()> {
+    if message_type != MessageType::ItemLive {
+        return Err(());
+    }
+    let item: ProtocolClipboardItem = serde_json::from_value(payload.clone()).map_err(|_| ())?;
+    item.validate().map_err(|_| ())?;
+    let clipboard_text = ClipboardText::parse(item.content.clone()).map_err(|_| ())?;
+    Ok((item, clipboard_text))
 }
 
 fn is_pairing_client_hello_frame(text: &str) -> bool {
@@ -879,6 +933,18 @@ fn remember_authenticated_session(
         ),
     );
     Ok(())
+}
+
+fn close_authenticated_session(app: &AppHandle, peer: &str) {
+    if let Ok(mut sessions) = app
+        .state::<PocTransportRuntime>()
+        .authenticated_sessions
+        .lock()
+    {
+        if let Some(mut session) = sessions.remove(peer) {
+            session.close();
+        }
+    }
 }
 
 fn take_pairing_handshake(
@@ -979,6 +1045,53 @@ mod tests {
         .expect("valid poc server message");
 
         assert_eq!(message, r#"{"kind":"clipboardText","text":"from desktop"}"#);
+    }
+
+    #[test]
+    fn extracts_authenticated_item_live_clipboard_text() {
+        let payload = serde_json::json!({
+            "itemId": "018ff6f3-0d8c-7d1e-a38a-f308c64de79f",
+            "spaceId": "018ff6ef-c394-7d08-8b99-4b7d10f2767a",
+            "originDeviceId": "018ff6f0-4adf-7d31-a987-3ef2b25d0212",
+            "originSeq": 7,
+            "hlc": "0000018bcfe56864-0001",
+            "contentType": "text/plain",
+            "contentLength": 26,
+            "contentDigest": "eA5jJ_YZ7drWuf4TrzLd5LaQ6mKfMsoQkxzHNXl2f5I",
+            "createdAt": 1_700_000_000_000u64,
+            "content": "authenticated 桌面同步"
+        });
+
+        let (protocol_item, clipboard_item) =
+            authenticated_clipboard_text_from_payload(MessageType::ItemLive, &payload)
+                .expect("item live should parse");
+
+        assert_eq!(protocol_item.origin_seq, 7);
+        assert_eq!(clipboard_item.as_str(), "authenticated 桌面同步");
+        assert_eq!(clipboard_item.byte_len(), 26);
+    }
+
+    #[test]
+    fn rejects_authenticated_clipboard_payload_for_wrong_type_or_size() {
+        let payload = serde_json::json!({
+            "itemId": "018ff6f3-0d8c-7d1e-a38a-f308c64de79f",
+            "spaceId": "018ff6ef-c394-7d08-8b99-4b7d10f2767a",
+            "originDeviceId": "018ff6f0-4adf-7d31-a987-3ef2b25d0212",
+            "originSeq": 7,
+            "hlc": "0000018bcfe56864-0001",
+            "contentType": "text/plain",
+            "contentLength": 0,
+            "contentDigest": "eA5jJ_YZ7drWuf4TrzLd5LaQ6mKfMsoQkxzHNXl2f5I",
+            "createdAt": 1_700_000_000_000u64,
+            "content": ""
+        });
+
+        assert!(
+            authenticated_clipboard_text_from_payload(MessageType::SyncHeads, &payload).is_err()
+        );
+        assert!(
+            authenticated_clipboard_text_from_payload(MessageType::ItemLive, &payload).is_err()
+        );
     }
 
     #[test]
