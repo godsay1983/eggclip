@@ -45,6 +45,10 @@ import {
   X25519KeyAgreementService
 } from '../main/ets/services/crypto/X25519KeyAgreementService';
 import {
+  Ed25519SignatureError,
+  Ed25519SignatureService
+} from '../main/ets/services/crypto/Ed25519SignatureService';
+import {
   INITIAL_SPACE_KEY_VERSION,
   SPACE_KEY_BYTES,
   SpaceKeyReferenceError,
@@ -1578,6 +1582,53 @@ export default function localUnitTest() {
       expect(proofEnvelope.envelope?.messageType).assertEqual(MessageType.AUTH_PROOF);
     });
 
+    it('orchestratesClientPairingHandshakeWithEd25519SigningBoundaryWhenAvailable', 0, () => {
+      const store = new PairingStore();
+      store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);
+      store.confirmCodeMatched();
+      const draft = store.buildPendingClientHandshakeDraft(
+        '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaapcHUro',
+        'hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo',
+        1700000000000
+      );
+      if (!draft.ok || draft.draft === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+
+      const service = new PairingClientHandshakeSessionService();
+      const started = service.start(
+        draft.draft,
+        '018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01',
+        0
+      );
+      if (!started.ok || started.session === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+
+      const result = service.acceptServerHelloAndSignAuthProof(
+        started.session,
+        SERVER_HELLO_FRAME_FOR_PAIRING_FIXTURE,
+        'nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A',
+        '018ff6f1-1d2a-725d-8d1a-894d2f5b0a42',
+        2
+      );
+      if (result.ok) {
+        const parser = new ProtocolParser();
+        const proofEnvelope = parser.parseEnvelope(result.authProofFrame ?? '');
+        expect(proofEnvelope.ok).assertEqual(true);
+        expect(proofEnvelope.envelope?.messageType).assertEqual(MessageType.AUTH_PROOF);
+      } else {
+        expect(result.error).assertEqual(PairingClientHandshakeError.AUTH_PROOF_SIGN_FAILED);
+        expect(
+          result.signatureError === Ed25519SignatureError.PLATFORM_CRYPTO_FAILED ||
+          result.signatureError === Ed25519SignatureError.SIGNATURE_MISMATCH
+        ).assertEqual(true);
+      }
+    });
+
     it('createsProtocolTransportSessionAfterPairingAuthOkAndSessionKeyDerivation', 0, () => {
       const store = new PairingStore();
       store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);
@@ -1962,6 +2013,23 @@ export default function localUnitTest() {
 
       expect(result.ok || result.error === CryptoVectorErrorCode.SIGNATURE_MISMATCH ||
         result.error === CryptoVectorErrorCode.PLATFORM_CRYPTO_FAILED).assertEqual(true);
+    });
+
+    it('exposesEd25519SigningVectorCryptoFrameworkBoundary', 0, () => {
+      const service = new Ed25519SignatureService();
+      const result = service.signVector(ED25519_SIGNATURE_VECTOR);
+      if (result.ok) {
+        expect(result.signature)
+          .assertEqual('5VZDAMNgrHKQhuLMgG6CioSHfx645dl02HPgZSJJAVVfuIIVkKM7rMYeOXAc-bRr0lv18FlbviRlUUFDjnoQCw');
+      } else {
+        expect(result.error === Ed25519SignatureError.PLATFORM_CRYPTO_FAILED ||
+          result.error === Ed25519SignatureError.SIGNATURE_MISMATCH).assertEqual(true);
+      }
+
+      const invalid = service.signMessage('AA', '');
+      expect(invalid.ok).assertEqual(false);
+      expect(invalid.error).assertEqual(Ed25519SignatureError.INVALID_LENGTH);
+      expect(invalid.field).assertEqual('privateSeed');
     });
   });
 }

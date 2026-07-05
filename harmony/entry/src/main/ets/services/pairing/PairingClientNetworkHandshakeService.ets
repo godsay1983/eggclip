@@ -135,6 +135,46 @@ export class PairingClientNetworkHandshakeService {
     };
   }
 
+  acceptServerHelloAndSignAuthProof(
+    serverHelloFrame: string,
+    localIdentityPrivateSeed: string,
+    authProofMessageId: string,
+    authProofCounter: number = 2
+  ): PairingClientNetworkAuthProofResult {
+    if (this.session === null || this.phaseValue !== PairingClientNetworkHandshakePhase.CLIENT_HELLO_READY) {
+      return {
+        ok: false,
+        phase: this.phaseValue,
+        error: PairingClientNetworkHandshakeError.INVALID_PHASE
+      };
+    }
+
+    const proof: PairingClientAuthProofResult = this.handshake.acceptServerHelloAndSignAuthProof(
+      this.session,
+      serverHelloFrame,
+      localIdentityPrivateSeed,
+      authProofMessageId,
+      authProofCounter
+    );
+    if (!proof.ok || proof.authProofFrame === undefined) {
+      this.fail();
+      return {
+        ok: false,
+        phase: this.phaseValue,
+        error: PairingClientNetworkHandshakeError.AUTH_PROOF_FAILED,
+        handshakeError: proof.error,
+        field: proof.field
+      };
+    }
+
+    this.phaseValue = PairingClientNetworkHandshakePhase.WAITING_AUTH_OK;
+    return {
+      ok: true,
+      phase: this.phaseValue,
+      outgoingFrame: proof.authProofFrame
+    };
+  }
+
   acceptAuthOkAndCreateTransportSession(
     authOkFrame: string,
     sharedSecretBase64Url: string,

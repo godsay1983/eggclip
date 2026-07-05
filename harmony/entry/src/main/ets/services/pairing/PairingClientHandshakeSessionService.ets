@@ -19,6 +19,10 @@ import {
   ProtocolTransportSession
 } from '../transport/ProtocolTransportSession';
 import {
+  Ed25519SignatureError,
+  Ed25519SignatureService
+} from '../crypto/Ed25519SignatureService';
+import {
   SessionKeyDerivationError,
   SessionKeyDerivationService
 } from '../crypto/SessionKeyDerivationService';
@@ -39,6 +43,7 @@ export enum PairingClientHandshakeError {
   UNEXPECTED_SERVER_MESSAGE = 'unexpectedServerMessage',
   INVALID_SERVER_HELLO = 'invalidServerHello',
   SERVER_HELLO_MISMATCH = 'serverHelloMismatch',
+  AUTH_PROOF_SIGN_FAILED = 'authProofSignFailed',
   AUTH_PROOF_BUILD_FAILED = 'authProofBuildFailed',
   AUTH_PROOF_NOT_SENT = 'authProofNotSent',
   AUTH_OK_REJECTED = 'authOkRejected',
@@ -63,6 +68,7 @@ export interface PairingClientAuthProofResult {
   error?: PairingClientHandshakeError;
   transportError?: ProtocolTransportFrameError;
   handshakeError?: PairingHandshakeDraftError;
+  signatureError?: Ed25519SignatureError;
   frameError?: ProtocolFrameBuildError;
   field?: string;
 }
@@ -123,6 +129,7 @@ export class PairingClientHandshakeSessionService {
   private readonly parser: ProtocolParser = new ProtocolParser();
   private readonly frameBuilder: ProtocolFrameBuilderService = new ProtocolFrameBuilderService();
   private readonly draftService: PairingHandshakeDraftService = new PairingHandshakeDraftService();
+  private readonly signatureService: Ed25519SignatureService = new Ed25519SignatureService();
   private readonly keyDerivation: SessionKeyDerivationService = new SessionKeyDerivationService();
   private readonly keyAgreement: X25519KeyAgreementService = new X25519KeyAgreementService();
 
@@ -149,6 +156,87 @@ export class PairingClientHandshakeSessionService {
       ok: true,
       session: new PairingClientHandshakeSession(draft, localEphemeralPrivateKey),
       clientHelloFrame: clientHello.frame
+    };
+  }
+
+  acceptServerHelloAndSignAuthProof(
+    session: PairingClientHandshakeSession,
+    serverHelloFrame: string,
+    localIdentityPrivateSeed: string,
+    authProofMessageId: string,
+    authProofCounter: number = 2
+  ): PairingClientAuthProofResult {
+    const accepted = session.acceptServerFrame(serverHelloFrame);
+    if (!accepted.ok || accepted.envelope === undefined) {
+      return {
+        ok: false,
+        error: PairingClientHandshakeError.SERVER_FRAME_REJECTED,
+        transportError: accepted.error
+      };
+    }
+    if (accepted.outcome !== ProtocolHandshakeFrameOutcome.CONTINUE ||
+      accepted.envelope.messageType !== MessageType.SERVER_HELLO) {
+      return {
+        ok: false,
+        error: PairingClientHandshakeError.UNEXPECTED_SERVER_MESSAGE
+      };
+    }
+
+    const serverHello = this.parser.parseHelloPayload(accepted.envelope.payload);
+    if (!serverHello.ok || serverHello.payload === undefined) {
+      return {
+        ok: false,
+        error: PairingClientHandshakeError.INVALID_SERVER_HELLO,
+        field: serverHello.field
+      };
+    }
+
+    const transcript = this.draftService.buildClientAuthTranscriptDraft(session.draft, serverHello.payload);
+    if (!transcript.ok || transcript.transcript === undefined) {
+      return {
+        ok: false,
+        error: PairingClientHandshakeError.SERVER_HELLO_MISMATCH,
+        handshakeError: transcript.error,
+        field: transcript.field
+      };
+    }
+
+    const signature = this.signatureService.signMessage(
+      localIdentityPrivateSeed,
+      transcript.transcript.canonicalTranscript
+    );
+    if (!signature.ok || signature.signature === undefined) {
+      return {
+        ok: false,
+        error: PairingClientHandshakeError.AUTH_PROOF_SIGN_FAILED,
+        signatureError: signature.error,
+        field: signature.field
+      };
+    }
+
+    const authProof = this.frameBuilder.buildAuthProofFrame(
+      AuthRole.CLIENT,
+      transcript.transcript.canonicalTranscript,
+      signature.signature,
+      authProofMessageId,
+      authProofCounter
+    );
+    if (!authProof.ok) {
+      return {
+        ok: false,
+        error: PairingClientHandshakeError.AUTH_PROOF_BUILD_FAILED,
+        frameError: authProof.error,
+        field: authProof.field
+      };
+    }
+    session.rememberServerHello(serverHello.payload);
+    session.markAuthProofSent();
+
+    return {
+      ok: true,
+      authProofFrame: authProof.frame,
+      serverHello: serverHello.payload,
+      transcript: transcript.transcript
     };
   }
 

@@ -218,8 +218,9 @@ harmony/entry/src/main/ets/
   - [x] AUTH_PROOF canonical transcript 构造已与 Rust/fixture 对齐。
   - [x] 建立 Ed25519 CryptoFramework 验签导入边界，覆盖 SPKI DER 和 ED25519 KeySpec 尝试路径；本地单元环境尚未验过 RFC 8032 向量。
   - [x] 抽出通用 `verifyEd25519Signature(publicKey, message, signature)` 入口，并接入 AUTH_PROOF 验签边界；真机算法名/导入格式确认仍待完成。
-  - [ ] 接入 CryptoFramework/HUKS Ed25519 真验签。
-  - [ ] 在 HarmonyOS 6.1 真机上确认 Ed25519 算法名、公钥导入格式和空消息 one-shot 验签行为。
+  - [x] 新增 `Ed25519SignatureService`，封装 CryptoFramework Ed25519 signing 边界，支持用 32 字节私钥材料对 AUTH transcript 签名并返回 64 字节 base64url signature；平台不支持或格式不匹配时明确返回错误类型。
+  - [ ] 接入 HUKS 持久化 Ed25519 私钥生成/签名，替换临时私钥材料入参。
+  - [ ] 在 HarmonyOS 6.1 真机上确认 Ed25519 算法名、公钥/私钥导入格式、空消息 one-shot 验签和 signing 行为。
 - [ ] ArkTS 实现通过 X25519/HKDF 派生向量。
   - [x] 本地 SDK 类型已确认存在 X25519 与 HKDF 相关入口。
   - [x] session key 与 nonce 向量规则已固定。
@@ -275,7 +276,8 @@ harmony/entry/src/main/ets/
   - [x] PairingClientHandshakeSessionService 已接入 AUTH_OK 完成步骤，可基于已得到的 sharedSecret/transcriptSalt 派生 session keys 并创建带 keys 的 `ProtocolTransportSession`。
   - [x] 已新增 PairingClientNetworkHandshakeService，面向 WebSocket 回调串联 CLIENT_HELLO 发送、SERVER_HELLO 接收、AUTH_PROOF 发送、AUTH_OK 接收和带 keys 的 `ProtocolTransportSession` 创建。
   - [x] PairingClientHandshakeSessionService / PairingClientNetworkHandshakeService 已新增从本机临时私钥和 SERVER_HELLO ephemeral public key 派生 sharedSecret 的正式入口，临时私钥不进入 draft 序列化。
-  - [ ] 真实 AUTH_PROOF 签名/验签和握手网络交换待接入。
+  - [x] PairingClientHandshakeSessionService / PairingClientNetworkHandshakeService 已新增基于 `Ed25519SignatureService` 的 AUTH_PROOF 签名入口，不再要求调用方传入测试签名。
+  - [ ] HUKS 私钥签名、服务端 AUTH_PROOF 真验签和握手网络交换待接入。
 - [x] 显示六位人工确认码供双方核对，但不把它当成唯一秘密。
   - [x] PairingPage 已显示六位人工确认码，并要求用户点击“确认码一致，继续配对”后才进入 pending；确认码不作为唯一秘密。
   - [x] PairingStore 确认后会从 UI snapshot 中清空完整邀请文本，只保留摘要和内存待握手材料。
@@ -304,7 +306,8 @@ harmony/entry/src/main/ets/
   - [ ] 将自动生成的配对材料接入真实 WebSocket 握手发送路径。
 - [ ] Ed25519 验证设备身份和空间绑定。
   - [x] 固定 canonical AUTH_PROOF transcript 并在 ArkTS 校验构造结果。
-  - [ ] 真实 Ed25519 验签待接 CryptoFramework/HUKS。
+  - [x] 已新增 Ed25519 signing 边界和客户端 AUTH_PROOF 签名入口；本地单元环境允许平台不支持或格式不匹配时明确失败。
+  - [ ] HUKS 私钥签名与服务端真实 Ed25519 验签待接。
 - [ ] HKDF 派生双向会话密钥。
   - [x] 固定共享 session key 向量并在 ArkTS 校验字段、长度和 nonce 规则。
   - [x] 已接入 ArkTS HKDF-SHA-256 session key 派生边界，输入 sharedSecret/transcriptSalt 后输出双向 session key；真实 X25519 sharedSecret 计算已具备服务和 store 入口边界，真实网络握手接线仍待完成。
