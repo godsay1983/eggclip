@@ -1,8 +1,20 @@
 import { common } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
+import {
+  DeviceRdbRepository,
+  SpaceRdbRepository
+} from '../data/repositories/RdbRepositories';
 import { LocalIdentityRdbRepository } from '../data/repositories/LocalIdentityRdbRepository';
+import {
+  DeviceConnectionState,
+  DeviceTrustState,
+  SpaceState
+} from '../models/DomainModels';
 import { ManualEndpoint } from '../models/PocModels';
-import { MessageType } from '../models/ProtocolModels';
+import {
+  HelloPayload,
+  MessageType
+} from '../models/ProtocolModels';
 import { LocalDeviceIdentityService } from '../services/crypto/LocalDeviceIdentityService';
 import {
   PairingClientNetworkHandshakeError,
@@ -17,6 +29,7 @@ import {
   PairingGeneratedHandshakeMaterialResult,
   PairingStore
 } from './PairingStore';
+import { PairingHandshakeDraft } from '../services/pairing/PairingHandshakeDraftService';
 
 export enum PairingConnectionState {
   IDLE = 'idle',
@@ -45,9 +58,12 @@ export type PairingConnectionSnapshotListener = (snapshot: PairingConnectionSnap
 class PairingConnectionStore {
   private readonly listeners: PairingConnectionSnapshotListener[] = [];
   private readonly transport: WebSocketTransportService;
+  private context: common.Context | null = null;
   private identityService: LocalDeviceIdentityService | null = null;
   private networkHandshake: PairingClientNetworkHandshakeService = new PairingClientNetworkHandshakeService();
   private localIdentityPrivateKeyRef: string = '';
+  private pendingTrustDraft: PairingHandshakeDraft | null = null;
+  private pendingTrustServerHello: HelloPayload | null = null;
   private state: PairingConnectionState = PairingConnectionState.IDLE;
   private manualHost: string = '127.0.0.1';
   private manualPort: string = '0';
@@ -73,6 +89,7 @@ class PairingConnectionStore {
   }
 
   initialize(context: common.Context): void {
+    this.context = context;
     if (this.identityService === null) {
       this.identityService = new LocalDeviceIdentityService(new LocalIdentityRdbRepository(context));
     }
@@ -160,6 +177,8 @@ class PairingConnectionStore {
 
     this.endpointLabel = `${endpoint.host}:${endpoint.port}`;
     this.localIdentityPrivateKeyRef = material.localIdentityPrivateKeyRef;
+    this.pendingTrustDraft = material.draft;
+    this.pendingTrustServerHello = null;
     this.networkHandshake.reset();
     const started = this.networkHandshake.start(
       material.draft,
@@ -224,6 +243,7 @@ class PairingConnectionStore {
         this.fail('AUTH_PROOF 生成失败', this.describeNetworkFailure(proof.error));
         return this.snapshot();
       }
+      this.pendingTrustServerHello = proof.serverHello ?? null;
       const sent = await this.transport.sendTextFrame(proof.outgoingFrame);
       if (!sent) {
         this.fail('AUTH_PROOF 发送失败', 'WebSocket 当前不可用或协议帧超过大小限制。');
@@ -243,9 +263,14 @@ class PairingConnectionStore {
         this.fail('AUTH_OK 处理失败', this.describeNetworkFailure(authenticated.error));
         return this.snapshot();
       }
+      const persisted = await this.persistTrustedPairingMetadata(Date.now());
+      if (!persisted) {
+        this.fail('可信设备保存失败', '配对握手已认证，但无法写入本机 RDB 可信设备记录。请重启应用后重新配对。');
+        return this.snapshot();
+      }
       this.state = PairingConnectionState.AUTHENTICATED;
       this.title = '配对握手已认证';
-      this.description = '已创建正式协议会话；可信设备持久化和 spaceKey 接收仍待接入。';
+      this.description = '已创建正式协议会话，并已保存桌面端可信设备；spaceKey 安全接收仍待接入。';
       this.emit();
       return this.snapshot();
     }
@@ -262,6 +287,8 @@ class PairingConnectionStore {
   close(): void {
     this.transport.close();
     this.localIdentityPrivateKeyRef = '';
+    this.pendingTrustDraft = null;
+    this.pendingTrustServerHello = null;
     this.networkHandshake.reset();
     this.state = PairingConnectionState.IDLE;
     this.title = '已停止配对';
@@ -293,6 +320,43 @@ class PairingConnectionStore {
     this.description = description;
     this.lastError = description;
     this.emit();
+  }
+
+  private async persistTrustedPairingMetadata(nowMs: number): Promise<boolean> {
+    if (this.context === null || this.pendingTrustDraft === null || this.pendingTrustServerHello === null) {
+      return false;
+    }
+    const draft = this.pendingTrustDraft;
+    const serverHello = this.pendingTrustServerHello;
+    const spaceRepository = new SpaceRdbRepository(this.context);
+    const deviceRepository = new DeviceRdbRepository(this.context);
+    try {
+      await spaceRepository.upsert({
+        space: {
+          spaceId: draft.spaceId,
+          displayName: `同步空间 #${shortId(draft.spaceId)}`,
+          keyVersion: draft.spaceKeyVersion,
+          state: SpaceState.ACTIVE,
+          createdAt: nowMs
+        },
+        updatedAt: nowMs
+      });
+      await deviceRepository.upsert({
+        device: {
+          deviceId: serverHello.deviceId,
+          spaceId: draft.spaceId,
+          displayName: `桌面端 #${shortId(serverHello.deviceId)}`,
+          identityPublicKeyRef: serverHello.identityPublicKey,
+          trustState: DeviceTrustState.TRUSTED,
+          connectionState: DeviceConnectionState.ONLINE,
+          lastSeenAt: nowMs
+        },
+        pairedAt: nowMs
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   private emit(): void {
@@ -382,6 +446,10 @@ class PairingConnectionStore {
 
 function nextMessageId(): string {
   return normalizeUuid(util.generateRandomUUID(false), Date.now(), Math.random());
+}
+
+function shortId(value: string): string {
+  return value.length >= 8 ? value.slice(0, 8) : value;
 }
 
 function normalizeUuid(value: string, nowMs: number, randomValue: number): string {

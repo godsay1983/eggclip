@@ -220,7 +220,8 @@ desktop/
   - [x] HarmonyOS 已接入系统 Scan Kit 扫码导入入口，扫码文本直接走邀请解析与确认码流程，不写入历史或 RDB。
 - [x] 六位确认码只用于双方人工核对，不作为唯一秘密。
   - [x] 桌面端生成确认码，鸿蒙端展示并要求人工确认；确认后鸿蒙端从可见 UI 状态中清理完整邀请文本，后续仍需正式握手消费 pairing secret。
-- [ ] 配对完成后持久化 trusted device。
+- [x] 配对完成后持久化 trusted device。
+  - [x] 桌面端在 AUTH_PROOF 验证成功后以事务消费邀请，并将 HarmonyOS 设备写入/更新为 trusted + online；失败则不回 AUTH_OK。
 - [ ] 拒绝过期、重复消费、空间不匹配和身份不匹配邀请。
   - [x] 桌面端本地消费骨架已拒绝过期、重复消费和错误 pairing secret；空间/身份绑定待正式握手 transcript 接入后完成。
 

@@ -298,6 +298,7 @@ harmony/entry/src/main/ets/
   - [x] PairingStore 确认后会从 UI snapshot 中清空完整邀请文本，只保留摘要和内存待握手材料。
 - [ ] 安全接收 `spaceKey` 和成员信息。
 - [ ] 成功后持久化 trusted device 并清理邀请秘密。
+  - [x] HarmonyOS 在 AUTH_OK 处理成功后写入同步空间占位记录和桌面端 trusted device；`spaceKey` 安全接收仍待接入。
 - [ ] 拒绝过期、重复消费、身份不匹配和空间不匹配邀请。
 
 验收标准：

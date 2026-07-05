@@ -100,7 +100,9 @@ pub struct PairingServerAuthProofInput {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PairingServerAuthProofAccepted {
     pub invitation_id: String,
+    pub space_id: String,
     pub peer_device_id: String,
+    pub peer_identity_public_key: String,
     pub transcript_hash: String,
     pub transcript_salt: [u8; 32],
     pub shared_secret: [u8; X25519_SHARED_SECRET_BYTES],
@@ -717,7 +719,9 @@ pub fn accept_pairing_auth_proof(
 
     Ok(PairingServerAuthProofAccepted {
         invitation_id: handshake.invitation_id,
+        space_id: handshake.space_id,
         peer_device_id: handshake.peer_device_id,
+        peer_identity_public_key: handshake.peer_identity_public_key,
         transcript_hash,
         transcript_salt,
         shared_secret,

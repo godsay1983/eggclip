@@ -17,10 +17,14 @@ use crate::{
         open_database,
         repositories::{
             retention_expires_at, ClipboardInsertOutcome, ClipboardItemRecord, ClipboardRepository,
-            DeviceRepository, SettingsRepository, SpaceRepository,
+            DeviceRecord, DeviceRepository, PairingInvitationRepository, SettingsRepository,
+            SpaceRepository,
         },
     },
-    sync::{AppSettings, ContentType as SyncContentType, HlcTimestamp},
+    sync::{
+        AppSettings, ContentType as SyncContentType, Device, DeviceConnectionState,
+        DeviceTrustState, HlcTimestamp,
+    },
 };
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -813,6 +817,17 @@ fn try_accept_pairing_auth_proof(app: &AppHandle, peer: &str, text: &str) -> Pai
     match accept_pairing_auth_proof(input, text, &message_id) {
         Ok(accepted) => {
             let auth_ok_frame = accepted.auth_ok_frame.clone();
+            let accepted_at = match now_ms() {
+                Ok(timestamp) => timestamp,
+                Err(_) => {
+                    return PairingAuthProofRoute::Rejected(
+                        PocRejectionReason::PairingInternalError,
+                    )
+                }
+            };
+            if persist_trusted_pairing_device(app, &accepted, accepted_at).is_err() {
+                return PairingAuthProofRoute::Rejected(PocRejectionReason::PairingInternalError);
+            }
             if remember_authenticated_session(app, peer, accepted).is_err() {
                 return PairingAuthProofRoute::Rejected(PocRejectionReason::PairingInternalError);
             }
@@ -820,6 +835,54 @@ fn try_accept_pairing_auth_proof(app: &AppHandle, peer: &str, text: &str) -> Pai
         }
         Err(error) => PairingAuthProofRoute::Rejected(pairing_auth_proof_rejection(&error)),
     }
+}
+
+fn persist_trusted_pairing_device(
+    app: &AppHandle,
+    accepted: &crate::pairing::PairingServerAuthProofAccepted,
+    accepted_at: u64,
+) -> Result<(), ()> {
+    let path = database_path(app).map_err(|_| ())?;
+    let mut connection = open_database(path).map_err(|_| ())?;
+    persist_trusted_pairing_device_in_connection(&mut connection, accepted, accepted_at)
+}
+
+fn persist_trusted_pairing_device_in_connection(
+    connection: &mut rusqlite::Connection,
+    accepted: &crate::pairing::PairingServerAuthProofAccepted,
+    accepted_at: u64,
+) -> Result<(), ()> {
+    let invitation_id = Uuid::parse_str(&accepted.invitation_id).map_err(|_| ())?;
+    let space_id = Uuid::parse_str(&accepted.space_id).map_err(|_| ())?;
+    let peer_device_id = Uuid::parse_str(&accepted.peer_device_id).map_err(|_| ())?;
+    let transaction = connection.transaction().map_err(|_| ())?;
+    if !PairingInvitationRepository::new(&transaction)
+        .mark_consumed(invitation_id, peer_device_id, accepted_at)
+        .map_err(|_| ())?
+    {
+        return Err(());
+    }
+    DeviceRepository::new(&transaction)
+        .upsert(&DeviceRecord {
+            device: Device {
+                device_id: peer_device_id,
+                space_id,
+                display_name: trusted_pairing_device_display_name(&accepted.peer_device_id),
+                identity_public_key_ref: accepted.peer_identity_public_key.clone(),
+                trust_state: DeviceTrustState::Trusted,
+                connection_state: DeviceConnectionState::Online,
+                last_seen_at: Some(accepted_at),
+            },
+            paired_at: Some(accepted_at),
+            revoked_at: None,
+        })
+        .map_err(|_| ())?;
+    transaction.commit().map_err(|_| ())
+}
+
+fn trusted_pairing_device_display_name(device_id: &str) -> String {
+    let short_id = device_id.get(0..8).unwrap_or("unknown");
+    format!("HarmonyOS 设备 #{short_id}")
 }
 
 fn pairing_client_hello_rejection(error: &PairingError) -> PocRejectionReason {
@@ -1292,6 +1355,85 @@ mod tests {
         assert_eq!(authenticated_message_type(client_hello), None);
         assert_eq!(authenticated_message_type(auth_proof), None);
         assert_eq!(authenticated_message_type(poc_clipboard), None);
+    }
+
+    #[test]
+    fn pairing_auth_success_consumes_invitation_and_trusts_device() {
+        let mut connection =
+            crate::storage::open_in_memory_database().expect("database should initialize");
+        let space_id = Uuid::now_v7();
+        let invitation_id = Uuid::now_v7();
+        let issuer_device_id = Uuid::now_v7();
+        let peer_device_id = Uuid::now_v7();
+        SpaceRepository::new(&connection)
+            .upsert(&crate::storage::repositories::SpaceRecord {
+                space: crate::sync::Space {
+                    space_id,
+                    display_name: "默认空间".to_owned(),
+                    key_version: 1,
+                    state: crate::sync::SpaceState::Active,
+                    created_at: 1_700_000_000_000,
+                },
+                encrypted_space_key_ref: Some("credential://space-key".to_owned()),
+                updated_at: 1_700_000_000_000,
+            })
+            .expect("space should insert");
+        PairingInvitationRepository::new(&connection)
+            .insert(&crate::storage::repositories::PairingInvitationRecord {
+                invitation_id,
+                space_id,
+                issuer_device_id,
+                secret_verifier: "verifier".to_owned(),
+                state: crate::storage::repositories::PairingInvitationState::Active,
+                created_at: 1_700_000_000_000,
+                expires_at: 1_700_000_300_000,
+                consumed_at: None,
+                consumed_by_device_id: None,
+            })
+            .expect("invitation should insert");
+
+        persist_trusted_pairing_device_in_connection(
+            &mut connection,
+            &crate::pairing::PairingServerAuthProofAccepted {
+                invitation_id: invitation_id.to_string(),
+                space_id: space_id.to_string(),
+                peer_device_id: peer_device_id.to_string(),
+                peer_identity_public_key: "peer-public-key".to_owned(),
+                transcript_hash: "transcript-hash".to_owned(),
+                transcript_salt: [1; 32],
+                shared_secret: [2; crate::crypto::X25519_SHARED_SECRET_BYTES],
+                session_keys: crate::crypto::SessionKeys {
+                    client_to_server: [3; 32],
+                    server_to_client: [4; 32],
+                },
+                auth_ok_frame: "{}".to_owned(),
+            },
+            1_700_000_001_000,
+        )
+        .expect("trusted device should persist");
+
+        let invitation = PairingInvitationRepository::new(&connection)
+            .get(invitation_id)
+            .expect("invitation query should succeed")
+            .expect("invitation should exist");
+        assert_eq!(
+            invitation.state,
+            crate::storage::repositories::PairingInvitationState::Consumed
+        );
+        assert_eq!(invitation.consumed_by_device_id, Some(peer_device_id));
+
+        let device = DeviceRepository::new(&connection)
+            .get(peer_device_id)
+            .expect("device query should succeed")
+            .expect("device should exist");
+        assert_eq!(device.device.space_id, space_id);
+        assert_eq!(device.device.trust_state, DeviceTrustState::Trusted);
+        assert_eq!(
+            device.device.connection_state,
+            DeviceConnectionState::Online
+        );
+        assert_eq!(device.device.identity_public_key_ref, "peer-public-key");
+        assert_eq!(device.paired_at, Some(1_700_000_001_000));
     }
 
     #[test]

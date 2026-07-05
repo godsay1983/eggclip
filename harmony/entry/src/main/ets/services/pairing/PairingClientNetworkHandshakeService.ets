@@ -1,4 +1,5 @@
 import { ProtocolTransportSession } from '../transport/ProtocolTransportSession';
+import { HelloPayload } from '../../models/ProtocolModels';
 import {
   PairingClientAuthenticatedSessionResult,
   PairingClientAuthProofResult,
@@ -37,6 +38,7 @@ export interface PairingClientNetworkAuthProofResult {
   ok: boolean;
   phase: PairingClientNetworkHandshakePhase;
   outgoingFrame?: string;
+  serverHello?: HelloPayload;
   transcriptSaltBase64Url?: string;
   error?: PairingClientNetworkHandshakeError;
   handshakeError?: PairingClientHandshakeError;
@@ -139,6 +141,7 @@ export class PairingClientNetworkHandshakeService {
       ok: true,
       phase: this.phaseValue,
       outgoingFrame: proof.authProofFrame,
+      serverHello: proof.serverHello,
       transcriptSaltBase64Url: proof.transcriptSaltBase64Url
     };
   }
@@ -180,6 +183,7 @@ export class PairingClientNetworkHandshakeService {
       ok: true,
       phase: this.phaseValue,
       outgoingFrame: proof.authProofFrame,
+      serverHello: proof.serverHello,
       transcriptSaltBase64Url: proof.transcriptSaltBase64Url
     };
   }
@@ -222,6 +226,7 @@ export class PairingClientNetworkHandshakeService {
       ok: true,
       phase: this.phaseValue,
       outgoingFrame: proof.authProofFrame,
+      serverHello: proof.serverHello,
       transcriptSaltBase64Url: proof.transcriptSaltBase64Url
     };
   }
