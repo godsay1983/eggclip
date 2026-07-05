@@ -2,7 +2,8 @@ import {
   AuthRole,
   HelloPayload,
   MessageType,
-  ProtocolParser
+  ProtocolParser,
+  ProtocolSessionState
 } from '../../models/ProtocolModels';
 import {
   ProtocolFrameBuildError,
@@ -11,8 +12,16 @@ import {
 import {
   ProtocolHandshakeFrameOutcome,
   ProtocolHandshakeTransportSession,
+  ProtocolSessionKeys,
   ProtocolTransportFrameError
 } from '../transport/ProtocolTransportSession';
+import {
+  ProtocolTransportSession
+} from '../transport/ProtocolTransportSession';
+import {
+  SessionKeyDerivationError,
+  SessionKeyDerivationService
+} from '../crypto/SessionKeyDerivationService';
 import {
   PairingAuthTranscriptDraft,
   PairingHandshakeDraft,
@@ -26,7 +35,10 @@ export enum PairingClientHandshakeError {
   UNEXPECTED_SERVER_MESSAGE = 'unexpectedServerMessage',
   INVALID_SERVER_HELLO = 'invalidServerHello',
   SERVER_HELLO_MISMATCH = 'serverHelloMismatch',
-  AUTH_PROOF_BUILD_FAILED = 'authProofBuildFailed'
+  AUTH_PROOF_BUILD_FAILED = 'authProofBuildFailed',
+  AUTH_PROOF_NOT_SENT = 'authProofNotSent',
+  AUTH_OK_REJECTED = 'authOkRejected',
+  SESSION_KEY_DERIVATION_FAILED = 'sessionKeyDerivationFailed'
 }
 
 export interface PairingClientHandshakeStartResult {
@@ -50,9 +62,20 @@ export interface PairingClientAuthProofResult {
   field?: string;
 }
 
+export interface PairingClientAuthenticatedSessionResult {
+  ok: boolean;
+  transportSession?: ProtocolTransportSession;
+  sessionKeys?: ProtocolSessionKeys;
+  error?: PairingClientHandshakeError;
+  transportError?: ProtocolTransportFrameError;
+  derivationError?: SessionKeyDerivationError;
+  field?: string;
+}
+
 export class PairingClientHandshakeSession {
   readonly draft: PairingHandshakeDraft;
   private readonly transportSession: ProtocolHandshakeTransportSession;
+  private authProofSent: boolean = false;
 
   constructor(draft: PairingHandshakeDraft) {
     this.draft = draft;
@@ -62,12 +85,21 @@ export class PairingClientHandshakeSession {
   acceptServerFrame(frame: string) {
     return this.transportSession.acceptTextFrame(frame);
   }
+
+  markAuthProofSent(): void {
+    this.authProofSent = true;
+  }
+
+  hasSentAuthProof(): boolean {
+    return this.authProofSent;
+  }
 }
 
 export class PairingClientHandshakeSessionService {
   private readonly parser: ProtocolParser = new ProtocolParser();
   private readonly frameBuilder: ProtocolFrameBuilderService = new ProtocolFrameBuilderService();
   private readonly draftService: PairingHandshakeDraftService = new PairingHandshakeDraftService();
+  private readonly keyDerivation: SessionKeyDerivationService = new SessionKeyDerivationService();
 
   start(
     draft: PairingHandshakeDraft,
@@ -151,12 +183,58 @@ export class PairingClientHandshakeSessionService {
         field: authProof.field
       };
     }
+    session.markAuthProofSent();
 
     return {
       ok: true,
       authProofFrame: authProof.frame,
       serverHello: serverHello.payload,
       transcript: transcript.transcript
+    };
+  }
+
+  acceptAuthOkAndCreateTransportSession(
+    session: PairingClientHandshakeSession,
+    authOkFrame: string,
+    sharedSecretBase64Url: string,
+    transcriptSaltBase64Url: string
+  ): PairingClientAuthenticatedSessionResult {
+    if (!session.hasSentAuthProof()) {
+      return {
+        ok: false,
+        error: PairingClientHandshakeError.AUTH_PROOF_NOT_SENT
+      };
+    }
+
+    const accepted = session.acceptServerFrame(authOkFrame);
+    if (!accepted.ok || accepted.envelope === undefined ||
+      accepted.outcome !== ProtocolHandshakeFrameOutcome.AUTHENTICATED ||
+      accepted.envelope.messageType !== MessageType.AUTH_OK) {
+      return {
+        ok: false,
+        error: PairingClientHandshakeError.AUTH_OK_REJECTED,
+        transportError: accepted.error
+      };
+    }
+
+    const derived = this.keyDerivation.deriveSessionKeys(sharedSecretBase64Url, transcriptSaltBase64Url);
+    if (!derived.ok || derived.keys === undefined) {
+      return {
+        ok: false,
+        error: PairingClientHandshakeError.SESSION_KEY_DERIVATION_FAILED,
+        derivationError: derived.error,
+        field: derived.field
+      };
+    }
+
+    const sessionKeys: ProtocolSessionKeys = {
+      clientToServerKey: derived.keys.clientToServerKey,
+      serverToClientKey: derived.keys.serverToClientKey
+    };
+    return {
+      ok: true,
+      sessionKeys,
+      transportSession: new ProtocolTransportSession(ProtocolSessionState.AUTHENTICATED, sessionKeys)
     };
   }
 }

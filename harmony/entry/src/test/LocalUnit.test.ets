@@ -1510,6 +1510,80 @@ export default function localUnitTest() {
       expect(proofEnvelope.envelope?.messageType).assertEqual(MessageType.AUTH_PROOF);
     });
 
+    it('createsProtocolTransportSessionAfterPairingAuthOkAndSessionKeyDerivation', 0, () => {
+      const store = new PairingStore();
+      store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);
+      store.confirmCodeMatched();
+      const draft = store.buildPendingClientHandshakeDraft(
+        '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        '3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08',
+        'hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo',
+        1700000000000
+      );
+      if (!draft.ok || draft.draft === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+
+      const service = new PairingClientHandshakeSessionService();
+      const started = service.start(draft.draft, '018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01', 0);
+      if (!started.ok || started.session === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      const authProof = service.acceptServerHelloAndBuildAuthProof(
+        started.session,
+        SERVER_HELLO_FRAME_FOR_PAIRING_FIXTURE,
+        TEST_ED25519_SIGNATURE,
+        '018ff6f1-1d2a-725d-8d1a-894d2f5b0a42',
+        2
+      );
+      expect(authProof.ok).assertEqual(true);
+
+      const authenticated = service.acceptAuthOkAndCreateTransportSession(
+        started.session,
+        AUTH_OK_FIXTURE,
+        'Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I',
+        'RWdnQ2xpcCB2MSB0ZXN0IGhhbmRzaGFrZSBzYWx0'
+      );
+      expect(authenticated.ok).assertEqual(true);
+      expect(authenticated.sessionKeys?.clientToServerKey).assertEqual('_CuE_7SfzdShnxyzHQy4IJ0zQjMAUVq-tynBZ2lBPYQ');
+      expect(authenticated.sessionKeys?.serverToClientKey).assertEqual('TSo91xPhGNnQb2KPW6xyjJJFeHsimcUss0Rm2Tnbo2M');
+      expect(authenticated.transportSession?.state()).assertEqual(ProtocolSessionState.AUTHENTICATED);
+      expect(authenticated.transportSession?.isClosed()).assertEqual(false);
+    });
+
+    it('doesNotCreateProtocolTransportSessionBeforeClientAuthProofIsBuilt', 0, () => {
+      const store = new PairingStore();
+      store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);
+      store.confirmCodeMatched();
+      const draft = store.buildPendingClientHandshakeDraft(
+        '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        '3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08',
+        'hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo',
+        1700000000000
+      );
+      if (!draft.ok || draft.draft === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+
+      const service = new PairingClientHandshakeSessionService();
+      const started = service.start(draft.draft, '018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01', 0);
+      if (!started.ok || started.session === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      const result = service.acceptAuthOkAndCreateTransportSession(
+        started.session,
+        AUTH_OK_FIXTURE,
+        'Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I',
+        'RWdnQ2xpcCB2MSB0ZXN0IGhhbmRzaGFrZSBzYWx0'
+      );
+      expect(result.ok).assertEqual(false);
+      expect(result.error).assertEqual(PairingClientHandshakeError.AUTH_PROOF_NOT_SENT);
+    });
+
     it('rejectsClientPairingHandshakeWhenServerHelloIdentityDiffersFromInvitation', 0, () => {
       const store = new PairingStore();
       store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);

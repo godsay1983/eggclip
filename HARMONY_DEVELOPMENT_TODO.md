@@ -266,6 +266,7 @@ harmony/entry/src/main/ets/
   - [x] 已实现 client AUTH_PROOF envelope 构建：基于 canonical transcript 生成 transcriptHash，校验 64 字节 Ed25519 签名输入，并通过 parser/handshake transport 回读。
   - [x] 已新增 PairingClientHandshakeSessionService，串联 CLIENT_HELLO 输出、SERVER_HELLO 接收校验和 client AUTH_PROOF 输出的内存握手流程。
   - [x] 已新增 PairingAuthProofValidationService，接收 AUTH_PROOF 时校验角色、transcriptHash、canonical transcript 和 64 字节签名形状，为真实 Ed25519 验签预留边界。
+  - [x] PairingClientHandshakeSessionService 已接入 AUTH_OK 完成步骤，可基于已得到的 sharedSecret/transcriptSalt 派生 session keys 并创建带 keys 的 `ProtocolTransportSession`。
   - [ ] 真实 X25519 临时密钥生成、AUTH_PROOF 签名/验签和握手网络交换待接入。
 - [x] 显示六位人工确认码供双方核对，但不把它当成唯一秘密。
   - [x] PairingPage 已显示六位人工确认码，并要求用户点击“确认码一致，继续配对”后才进入 pending；确认码不作为唯一秘密。
@@ -298,7 +299,8 @@ harmony/entry/src/main/ets/
   - [ ] 真实 CryptoFramework HKDF 未接入。
 - [ ] AES-256-GCM 解密认证后业务帧。
   - [x] 已新增 ArkTS AES-GCM 解密服务边界；`ProtocolTransportSession` 已接入可选 session keys 的 AAD 校验、解密和 decrypted payload 输出。
-  - [ ] 使用真实握手派生出的 session keys 驱动 WebSocket 正式连接解密。
+  - [x] 配对握手服务已能在 AUTH_OK 后把派生 session keys 注入 `ProtocolTransportSession`。
+  - [ ] 使用真实网络握手派生出的 session keys 驱动 WebSocket 正式连接解密。
 - [ ] 维护接收计数器和 replay window。
   - [x] ArkTS 协议入站 replay guard 拒绝重复 messageId 与非递增 sessionCounter。
   - [x] ArkTS `ProtocolTransportSession` 已在已认证 transport 帧入口接入 replay guard。
