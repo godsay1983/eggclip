@@ -958,6 +958,31 @@ export default function localUnitTest() {
       expect(diagnostics.lastRejection).assertEqual('正式协议拒绝：sessionClosed');
     });
 
+    it('routesPairingHandshakeFramesThroughWebSocketTransportDiagnostics', 0, () => {
+      const transport = new WebSocketTransportService();
+      const session = new ProtocolHandshakeTransportSession();
+
+      const hello = transport.decodeHandshakeFrameMessage(SERVER_HELLO_FRAME_FOR_PAIRING_FIXTURE, session);
+      expect(hello.ok).assertEqual(true);
+      expect(hello.envelope?.messageType).assertEqual(MessageType.SERVER_HELLO);
+      expect(session.isClosed()).assertEqual(false);
+
+      const encrypted = transport.decodeHandshakeFrameMessage(ENCRYPTED_ITEM_LIVE_FIXTURE, session);
+      expect(encrypted.ok).assertEqual(false);
+      expect(encrypted.error).assertEqual(ProtocolTransportFrameError.PROTOCOL_REJECTED);
+      expect(session.isClosed()).assertEqual(true);
+
+      const afterClosed = transport.decodeHandshakeFrameMessage(AUTH_OK_FIXTURE, session);
+      expect(afterClosed.ok).assertEqual(false);
+      expect(afterClosed.error).assertEqual(ProtocolTransportFrameError.SESSION_CLOSED);
+
+      const diagnostics = transport.currentDiagnostics();
+      expect(diagnostics.receivedFrames).assertEqual(3);
+      expect(diagnostics.acceptedItems).assertEqual(1);
+      expect(diagnostics.rejectedFrames).assertEqual(2);
+      expect(diagnostics.lastRejection).assertEqual('配对握手拒绝：sessionClosed');
+    });
+
     it('parsesProtocolEncryptedItemLiveFixture', 0, () => {
       const parser = new ProtocolParser();
       const result = parser.parseEnvelope(ENCRYPTED_ITEM_LIVE_FIXTURE);

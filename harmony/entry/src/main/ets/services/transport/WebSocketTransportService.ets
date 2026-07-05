@@ -1,7 +1,9 @@
 import webSocket from '@ohos.net.webSocket';
 import { EndpointValidationResult, ManualEndpoint, POC_MAX_FRAME_BYTES, PocLifecycleState } from '../../models/PocModels';
+import { PROTOCOL_MAX_FRAME_BYTES } from '../../models/ProtocolModels';
 import { estimateUtf8Bytes, MAX_TEXT_BYTES } from '../../utils/TextLimits';
 import {
+  ProtocolHandshakeTransportSession,
   ProtocolTransportFrameError,
   ProtocolTransportFrameResult,
   ProtocolTransportSession
@@ -17,6 +19,13 @@ export interface PocTransportCallbacks {
 }
 
 export interface ProtocolTransportCallbacks {
+  onOpen: () => void;
+  onClose: (reason: string) => void;
+  onError: (reason: string) => void;
+  onFrame: (result: ProtocolTransportFrameResult) => void;
+}
+
+export interface PairingHandshakeTransportCallbacks {
   onOpen: () => void;
   onClose: (reason: string) => void;
   onError: (reason: string) => void;
@@ -143,6 +152,50 @@ export class WebSocketTransportService {
     });
   }
 
+  async connectPairingHandshake(
+    endpoint: ManualEndpoint,
+    session: ProtocolHandshakeTransportSession,
+    callbacks: PairingHandshakeTransportCallbacks
+  ): Promise<EndpointValidationResult> {
+    return this.connectInternal(endpoint, {
+      timeoutMessage: '连接桌面配对握手超时',
+      connectFailureMessage: '连接桌面配对握手失败',
+      onOpen: callbacks.onOpen,
+      onClose: callbacks.onClose,
+      onError: callbacks.onError,
+      onTextMessage: (message: string) => {
+        callbacks.onFrame(this.decodeHandshakeFrameMessage(message, session));
+      },
+      onBinaryMessage: () => {
+        session.close();
+        this.recordBinaryRejection('配对握手不支持二进制 WebSocket 消息');
+        callbacks.onFrame({
+          ok: false,
+          error: ProtocolTransportFrameError.BINARY_UNSUPPORTED
+        });
+        callbacks.onError('配对握手不支持二进制 WebSocket 消息');
+      }
+    });
+  }
+
+  decodeHandshakeFrameMessage(
+    message: string,
+    session: ProtocolHandshakeTransportSession
+  ): ProtocolTransportFrameResult {
+    this.diagnostics.receivedFrames += 1;
+    const result = session.acceptTextFrame(message);
+    if (result.ok) {
+      this.diagnostics.acceptedItems += 1;
+      return result;
+    }
+
+    this.diagnostics.rejectedFrames += 1;
+    this.diagnostics.lastRejection = result.protocolError !== undefined ?
+      `配对握手拒绝：${result.protocolError}` :
+      `配对握手拒绝：${result.error ?? ProtocolTransportFrameError.PROTOCOL_REJECTED}`;
+    return result;
+  }
+
   decodeProtocolFrameMessage(
     message: string,
     session: ProtocolTransportSession
@@ -238,6 +291,19 @@ export class WebSocketTransportService {
     }
     try {
       return await this.socket.send(message);
+    } catch (_) {
+      this.state = PocLifecycleState.FAILED;
+      this.connected = false;
+      return false;
+    }
+  }
+
+  async sendTextFrame(frame: string): Promise<boolean> {
+    if (this.socket === null || !this.connected || estimateUtf8Bytes(frame) > PROTOCOL_MAX_FRAME_BYTES) {
+      return false;
+    }
+    try {
+      return await this.socket.send(frame);
     } catch (_) {
       this.state = PocLifecycleState.FAILED;
       this.connected = false;

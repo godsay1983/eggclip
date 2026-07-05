@@ -310,11 +310,13 @@ harmony/entry/src/main/ets/
   - [x] ArkTS `ProtocolTransportSession` 在协议拒绝、replay、超限和明文帧时进入 failed/closed，阻止后续收包。
   - [x] ArkTS `ProtocolTransportSession` 收到正式加密 `ERROR` envelope 后进入 failed/closed，不分发为业务 envelope。
   - [x] ArkTS `ProtocolHandshakeTransportSession` 已接入明文握手 envelope、状态门控、replay guard，并在 `AUTH_ERROR` / `ERROR` 时进入 failed/closed。
+  - [x] WebSocket service 已新增配对握手连接入口和 `decodeHandshakeFrameMessage`，明文握手收包与正式加密协议收包分离统计。
   - [ ] 正式连接生命周期接入已配对设备和握手派生出的真实 session。
 - [ ] 未认证连接不能访问同步 service 和 RDB 正文。
   - [x] ArkTS 协议 session gate 已拒绝认证前业务帧。
   - [x] ArkTS `ProtocolTransportSession` 已拒绝 POC 明文 JSON 进入正式协议入口。
   - [x] WebSocket service 正式协议入口已与 POC 明文入口分离。
+  - [x] WebSocket service 配对握手入口只接受明文握手帧，拒绝二进制消息和正式加密业务帧。
   - [ ] sync service 和 RDB 接入认证状态。
 
 ### 前台连接
