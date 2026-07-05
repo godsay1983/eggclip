@@ -41,6 +41,10 @@ import {
   SessionKeyDerivationService
 } from '../main/ets/services/crypto/SessionKeyDerivationService';
 import {
+  X25519KeyAgreementError,
+  X25519KeyAgreementService
+} from '../main/ets/services/crypto/X25519KeyAgreementService';
+import {
   INITIAL_SPACE_KEY_VERSION,
   SPACE_KEY_BYTES,
   SpaceKeyReferenceError,
@@ -1766,6 +1770,33 @@ export default function localUnitTest() {
       expect(invalidSalt.ok).assertEqual(false);
       expect(invalidSalt.error).assertEqual(SessionKeyDerivationError.INVALID_BASE64URL);
       expect(invalidSalt.field).assertEqual('transcriptSalt');
+    });
+
+    it('derivesX25519SharedSecretWithPlatformBoundaryWhenAvailable', 0, () => {
+      const service = new X25519KeyAgreementService();
+      const derived = service.deriveSharedSecret(
+        'dwdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LCo',
+        '3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08'
+      );
+
+      if (derived.ok) {
+        expect(derived.sharedSecret).assertEqual('Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I');
+      } else {
+        expect(derived.error).assertEqual(X25519KeyAgreementError.PLATFORM_CRYPTO_FAILED);
+      }
+
+      const generated = service.generateEphemeralKeyPair();
+      if (generated.ok) {
+        expect(decodeBase64Url(generated.privateKey ?? '')?.length).assertEqual(32);
+        expect(decodeBase64Url(generated.publicKey ?? '')?.length).assertEqual(32);
+      } else {
+        expect(generated.error).assertEqual(X25519KeyAgreementError.PLATFORM_CRYPTO_FAILED);
+      }
+
+      const invalid = service.deriveSharedSecret('AA', '====');
+      expect(invalid.ok).assertEqual(false);
+      expect(invalid.error).assertEqual(X25519KeyAgreementError.INVALID_LENGTH);
+      expect(invalid.field).assertEqual('privateKey');
     });
 
     it('validatesAesGcmCryptoServiceInputsBeforePlatformCrypto', 0, () => {

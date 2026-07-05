@@ -197,6 +197,7 @@ harmony/entry/src/main/ets/
 ### HUKS/CryptoFramework
 
 - [ ] 验证目标 SDK 上 Ed25519、X25519、HKDF 和 AES-GCM 的具体 API。
+  - [x] 已新增 `X25519KeyAgreementService`，封装 CryptoFramework X25519 临时 keypair 生成和 shared secret 计算边界；本地单测允许平台不支持/输出不匹配时明确返回 `platformCryptoFailed`。
 - [ ] 生成 Ed25519 长期设备身份。
 - [ ] 将私钥和 `spaceKey` 保存到 HUKS 或等效系统安全存储。
   - [x] 建立 `spaceKey` HUKS alias/引用生成与校验边界；RDB repository 只接收 `huks://` 引用，不保存裸 key。
@@ -223,7 +224,9 @@ harmony/entry/src/main/ets/
   - [x] 本地 SDK 类型已确认存在 X25519 与 HKDF 相关入口。
   - [x] session key 与 nonce 向量规则已固定。
   - [x] 已新增 `SessionKeyDerivationService`，基于已得到的 X25519 `sharedSecret` 和 `transcriptSalt` 派生 client-to-server / server-to-client session key，并通过固定向量校验。
-  - [ ] 接入 CryptoFramework/HUKS X25519/HKDF 真派生。
+  - [x] 已接入 CryptoFramework X25519 key agreement 平台边界，覆盖 32 字节 base64url 输入校验、临时密钥输出和 shared secret fixture 校验/平台失败分类。
+  - [ ] 在 HarmonyOS 6.1 真机上确认 X25519 KeySpec 字节序、算法名和 shared secret 输出与 Rust 向量一致。
+  - [ ] 接入握手流程中的真实 X25519 临时密钥生成与 shared secret 计算。
 - [ ] ArkTS 实现通过 AES-GCM 加解密和篡改拒绝向量。
   - [x] 本地 SDK 类型已确认存在 AES-GCM 参数入口。
   - [x] AES-GCM frame 字段、nonce 和 AAD 规则已有 ArkTS 校验基础。
@@ -269,7 +272,8 @@ harmony/entry/src/main/ets/
   - [x] 已新增 PairingAuthProofValidationService，接收 AUTH_PROOF 时校验角色、transcriptHash、canonical transcript 和 64 字节签名形状，为真实 Ed25519 验签预留边界。
   - [x] PairingClientHandshakeSessionService 已接入 AUTH_OK 完成步骤，可基于已得到的 sharedSecret/transcriptSalt 派生 session keys 并创建带 keys 的 `ProtocolTransportSession`。
   - [x] 已新增 PairingClientNetworkHandshakeService，面向 WebSocket 回调串联 CLIENT_HELLO 发送、SERVER_HELLO 接收、AUTH_PROOF 发送、AUTH_OK 接收和带 keys 的 `ProtocolTransportSession` 创建。
-  - [ ] 真实 X25519 临时密钥生成、AUTH_PROOF 签名/验签和握手网络交换待接入。
+  - [x] HarmonyOS 已具备真实 X25519 临时密钥生成/shared secret 的服务边界，待接入 pairing handshake session。
+  - [ ] 真实 AUTH_PROOF 签名/验签和握手网络交换待接入。
 - [x] 显示六位人工确认码供双方核对，但不把它当成唯一秘密。
   - [x] PairingPage 已显示六位人工确认码，并要求用户点击“确认码一致，继续配对”后才进入 pending；确认码不作为唯一秘密。
   - [x] PairingStore 确认后会从 UI snapshot 中清空完整邀请文本，只保留摘要和内存待握手材料。
@@ -292,12 +296,14 @@ harmony/entry/src/main/ets/
   - [x] ArkTS 协议 session gate 覆盖 connecting、handshaking、authenticated、syncing、ready、failed。
   - [ ] discovering 与前台连接管理接入。
 - [ ] X25519 建立临时共享秘密。
+  - [x] 已新增 CryptoFramework X25519 服务边界，可生成 32 字节临时密钥并基于 peer public key 派生 shared secret；本地单测覆盖成功向量或平台失败分类。
+  - [ ] 将 X25519 服务接入 `PairingClientHandshakeSessionService`，用真实临时密钥替换测试 sharedSecret。
 - [ ] Ed25519 验证设备身份和空间绑定。
   - [x] 固定 canonical AUTH_PROOF transcript 并在 ArkTS 校验构造结果。
   - [ ] 真实 Ed25519 验签待接 CryptoFramework/HUKS。
 - [ ] HKDF 派生双向会话密钥。
   - [x] 固定共享 session key 向量并在 ArkTS 校验字段、长度和 nonce 规则。
-  - [x] 已接入 ArkTS HKDF-SHA-256 session key 派生边界，输入 sharedSecret/transcriptSalt 后输出双向 session key；真实 X25519 sharedSecret 计算仍待接入。
+  - [x] 已接入 ArkTS HKDF-SHA-256 session key 派生边界，输入 sharedSecret/transcriptSalt 后输出双向 session key；真实 X25519 sharedSecret 计算已具备服务边界，握手接线仍待完成。
   - [ ] 真实 CryptoFramework HKDF 未接入。
 - [ ] AES-256-GCM 解密认证后业务帧。
   - [x] 已新增 ArkTS AES-GCM 解密服务边界；`ProtocolTransportSession` 已接入可选 session keys 的 AAD 校验、解密和 decrypted payload 输出。
