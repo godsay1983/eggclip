@@ -24,7 +24,9 @@ export struct PairingPage {
   private readonly pairingScanService: PairingScanService = new PairingScanService();
   @State private snapshot: PairingStoreSnapshot = createInitialPairingSnapshot();
   @State private connectionSnapshot: PairingConnectionSnapshot = pairingConnectionStore.snapshot();
+  @State private invitationInputText: string = '';
   @State private pasteImportStatus: string = '可以扫码导入，或点击系统 PasteButton 从剪贴板读取邀请。';
+  private pendingProgrammaticInvitationInput: string | null = null;
   private readonly connectionListener = (snapshot: PairingConnectionSnapshot): void => {
     this.connectionSnapshot = snapshot;
   };
@@ -69,7 +71,7 @@ export struct PairingPage {
       .alignItems(VerticalAlign.Top)
 
       TextInput({
-        text: this.snapshot.invitationText,
+        text: this.invitationInputText,
         placeholder: '粘贴 eggclip://pair?p=...'
       })
         .width('100%')
@@ -77,7 +79,7 @@ export struct PairingPage {
         .backgroundColor(EggClipColors.controlBackground)
         .borderRadius(16)
         .onChange((value: string) => {
-          this.snapshot = this.pairingStore.updateInvitationText(value);
+          this.handleInvitationInputChange(value);
         })
 
       Column({ space: 6 }) {
@@ -112,10 +114,7 @@ export struct PairingPage {
                   this.pasteImportStatus = readResult.message;
                   return;
                 }
-                this.snapshot = this.pairingStore.importInvitationText(readResult.text);
-                this.pasteImportStatus = this.snapshot.state === PairingStoreState.READY
-                  ? '已从剪贴板读取并校验邀请'
-                  : this.snapshot.statusText;
+                this.importInvitationText(readResult.text, '已从剪贴板读取并校验邀请');
               })
               .catch(() => {
                 this.pasteImportStatus = '读取剪贴板失败，请确认当前内容是纯文本邀请';
@@ -139,6 +138,7 @@ export struct PairingPage {
           .backgroundColor(EggClipColors.primary)
           .borderRadius(21)
           .onClick(() => {
+            this.snapshot = this.pairingStore.updateInvitationText(this.invitationInputText);
             this.snapshot = this.pairingStore.parseCurrent();
           })
 
@@ -150,6 +150,7 @@ export struct PairingPage {
           .borderRadius(21)
           .onClick(() => {
             this.snapshot = this.pairingStore.clear();
+            this.updateVisibleInvitationInput('');
           })
       }
       .width('100%')
@@ -164,7 +165,7 @@ export struct PairingPage {
         this.InvitationSummaryCard(this.snapshot.summary)
       }
 
-      if (this.snapshot.state === PairingStoreState.PENDING) {
+      if (this.snapshot.summary !== null) {
         this.ConnectionHandshakeCard()
       }
 
@@ -209,7 +210,7 @@ export struct PairingPage {
         .backgroundColor(this.snapshot.state === PairingStoreState.READY ? EggClipColors.primary : EggClipColors.textSecondary)
         .borderRadius(21)
         .onClick(() => {
-          this.snapshot = this.pairingStore.confirmCodeMatched();
+          this.confirmCodeAndPrepareConnection();
         })
 
       if (this.snapshot.state === PairingStoreState.PENDING) {
@@ -284,9 +285,9 @@ export struct PairingPage {
         Button(this.connectionButtonText())
           .layoutWeight(1)
           .height(42)
-          .enabled(!this.isPairingConnectionBusy())
+          .enabled(this.canStartPairingConnection())
           .fontColor(EggClipColors.onPrimary)
-          .backgroundColor(this.isPairingConnectionBusy() ? EggClipColors.textSecondary : EggClipColors.primary)
+          .backgroundColor(this.canStartPairingConnection() ? EggClipColors.primary : EggClipColors.textSecondary)
           .borderRadius(21)
           .onClick(() => {
             this.startPairingConnection();
@@ -304,7 +305,7 @@ export struct PairingPage {
       }
       .width('100%')
 
-      Text(this.connectionSnapshot.description)
+      Text(this.connectionDescriptionText())
         .width('100%')
         .fontSize(11)
         .fontColor(this.connectionStatusColor())
@@ -398,6 +399,9 @@ export struct PairingPage {
   }
 
   private connectionButtonText(): string {
+    if (this.snapshot.state !== PairingStoreState.PENDING) {
+      return '先确认六位码';
+    }
     if (this.connectionSnapshot.state === PairingConnectionState.FAILED) {
       return '重试配对握手';
     }
@@ -405,6 +409,13 @@ export struct PairingPage {
       return '重新配对握手';
     }
     return '连接并发送握手';
+  }
+
+  private connectionDescriptionText(): string {
+    if (this.snapshot.state !== PairingStoreState.PENDING) {
+      return '先核对桌面端和手机端显示的六位确认码；确认一致后才能连接并发送握手。';
+    }
+    return this.connectionSnapshot.description;
   }
 
   private connectionStatusColor(): ResourceColor {
@@ -427,7 +438,15 @@ export struct PairingPage {
       this.connectionSnapshot.state === PairingConnectionState.WAITING_AUTH_OK;
   }
 
+  private canStartPairingConnection(): boolean {
+    return this.snapshot.state === PairingStoreState.PENDING && !this.isPairingConnectionBusy();
+  }
+
   private startPairingConnection(): void {
+    if (this.snapshot.state !== PairingStoreState.PENDING) {
+      this.pasteImportStatus = '请先核对六位确认码，并点击“确认码一致，继续配对”';
+      return;
+    }
     const hostContext = this.getUIContext().getHostContext();
     if (hostContext === undefined) {
       this.pasteImportStatus = '无法连接桌面端：未获取到页面上下文';
@@ -443,6 +462,37 @@ export struct PairingPage {
       });
   }
 
+  private handleInvitationInputChange(value: string): void {
+    this.invitationInputText = value;
+    if (this.pendingProgrammaticInvitationInput !== null && value === this.pendingProgrammaticInvitationInput) {
+      this.pendingProgrammaticInvitationInput = null;
+      return;
+    }
+    this.pendingProgrammaticInvitationInput = null;
+    this.snapshot = this.pairingStore.updateInvitationText(value);
+  }
+
+  private updateVisibleInvitationInput(value: string): void {
+    this.pendingProgrammaticInvitationInput = value;
+    this.invitationInputText = value;
+  }
+
+  private importInvitationText(value: string, successStatus: string): void {
+    this.updateVisibleInvitationInput(value);
+    this.snapshot = this.pairingStore.importInvitationText(value);
+    this.pasteImportStatus = this.snapshot.state === PairingStoreState.READY
+      ? successStatus
+      : this.snapshot.statusText;
+  }
+
+  private confirmCodeAndPrepareConnection(): void {
+    const nextSnapshot = this.pairingStore.confirmCodeMatched();
+    this.snapshot = nextSnapshot;
+    if (nextSnapshot.state === PairingStoreState.PENDING) {
+      this.updateVisibleInvitationInput('');
+    }
+  }
+
   private importInvitationFromScan(): void {
     const hostContext = this.getUIContext().getHostContext();
     if (hostContext === undefined) {
@@ -456,10 +506,7 @@ export struct PairingPage {
           this.pasteImportStatus = scanResult.message;
           return;
         }
-        this.snapshot = this.pairingStore.importInvitationText(scanResult.invitationText);
-        this.pasteImportStatus = this.snapshot.state === PairingStoreState.READY
-          ? '已从二维码读取并校验邀请'
-          : this.snapshot.statusText;
+        this.importInvitationText(scanResult.invitationText, '已从二维码读取并校验邀请');
       })
       .catch(() => {
         this.pasteImportStatus = '扫码导入失败，请改用复制邀请字符串导入';
