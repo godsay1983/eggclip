@@ -172,7 +172,7 @@ harmony/entry/src/main/ets/
   - [x] 已接入“确认码一致，继续配对”的内存 pending 状态；确认后会从 UI snapshot 清理完整邀请文本。
   - [x] PairingPage 已接入配对连接卡，可填写桌面端 IP/端口并从 pending 邀请发起 CLIENT_HELLO/AUTH_PROOF WebSocket 握手。
   - [x] 真实 WebSocket 配对成功后会等待加密 `SPACE_KEY_ROTATED`，再用同一 RDB transaction 写入同步空间 key 引用占位和桌面端 trusted device。
-  - [ ] `spaceKey` 真实 HUKS import 待接入。
+  - [x] `spaceKey` 已接入真实 HUKS import；HarmonyOS 6.1 真机配对显示“已保存桌面端可信设备和同步空间密钥引用”。
 - [ ] DevicesPage：设备状态、重命名、移除。
   - [x] 将设备页占位文案改为正式空状态和设备规则卡片，明确配对、可信设备和移除轮换边界；真实设备列表、重命名和移除待配对流程接入。
   - [x] 设备页承接 POC 阶段连接入口：连接状态、mDNS 自动发现、候选地址连接、手动 IP/WebSocket 连接和断开操作。
@@ -210,7 +210,8 @@ harmony/entry/src/main/ets/
 - [ ] 将私钥和 `spaceKey` 保存到 HUKS 或等效系统安全存储。
   - [x] 建立 `spaceKey` HUKS alias/引用生成与校验边界；RDB repository 只接收 `huks://` 引用，不保存裸 key。
   - [x] 新增 `SpaceKeyHuksService`，封装 `huks://eggclip/space-key/...` 到 HUKS alias 的映射、AES-256-GCM import 参数和 `importKeyItem` 调用边界；单测覆盖参数契约和非法引用。
-  - [ ] HUKS import 真机结果、spaceKey 读取/缺失重初始化流程待验证后接入。
+  - [x] HarmonyOS 6.1 真机已确认配对成功保存可信设备和同步空间密钥引用，`importKeyItem` 未返回失败。
+  - [ ] spaceKey 读取/缺失重初始化流程待验证后接入。
 - [ ] RDB 只保存公钥、密钥版本和安全存储 alias。
 - [ ] 实现密钥存在、缺失、损坏和重新初始化路径。
 - [ ] 禁止日志输出密钥、邀请、正文、HMAC 摘要和完整帧。
@@ -249,7 +250,8 @@ harmony/entry/src/main/ets/
   - [x] canonical encrypted AAD 构造已与 Rust 规则对齐。
   - [x] 已新增 `AesGcmCryptoService`，封装 CryptoFramework AES-GCM encrypt/decrypt 入口并覆盖 key、nonce、body、tag 的 base64url 和长度拒绝路径。
   - [x] `ProtocolTransportSession` 已在传入 session keys 时校验 canonical AAD、按 keyId 选择双向 session key，并在 AAD 不匹配或解密失败时关闭 session。
-  - [ ] 接入 CryptoFramework/HUKS AES-GCM 真加解密。
+  - [x] `SpaceKeyHuksService` 已新增基于 `encryptedSpaceKeyRef`/HUKS alias 的 AES-GCM encrypt/decrypt 方法和 operation options；本地单测覆盖参数契约与非法输入拒绝。
+  - [ ] 真机验证 HUKS AES-GCM encrypt/decrypt 输出后，接入正式业务帧加解密。
 - [x] 明确字节序、字符串编码、Base64 变体和 transcript 规范化规则。
 
 验收标准：
@@ -303,7 +305,8 @@ harmony/entry/src/main/ets/
   - [x] HarmonyOS 已在 AUTH_OK 后通过认证 session 解密 `SPACE_KEY_ROTATED`，校验 spaceId/keyVersion/32 字节 key，并只把 `huks://` alias 写入 RDB。
   - [x] 已抽出 `SpaceKeyDeliveryService` 覆盖 `SPACE_KEY_ROTATED` payload 校验边界，单测覆盖缺失 payload、spaceId/keyVersion/delivery 不匹配和 key 长度错误。
   - [x] `SpaceKeyDeliveryService` 已接入 `SpaceKeyHuksService`，payload 校验通过后导入 HUKS，再只把 `encryptedSpaceKeyRef` 写入 RDB，并在 finally 中清零明文数组。
-  - [ ] 真机验证 `importKeyItem` 成功后，补齐使用 `encryptedSpaceKeyRef` 做 AES-GCM 业务帧加解密。
+  - [x] HarmonyOS 6.1 真机已验证 `importKeyItem` 路径可完成配对保存。
+  - [ ] 真机验证 HUKS AES-GCM 后，补齐使用 `encryptedSpaceKeyRef` 做业务帧加解密。
 - [ ] 成功后持久化 trusted device 并清理邀请秘密。
   - [x] HarmonyOS 在 AUTH_OK 后不提前落库，收到 `SPACE_KEY_ROTATED` 后用 transaction 同时保存同步空间 key 引用和桌面端 trusted device。
 - [ ] 拒绝过期、重复消费、身份不匹配和空间不匹配邀请。

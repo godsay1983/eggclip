@@ -644,6 +644,8 @@ export default function localUnitTest() {
       const keyRef = `huks://eggclip/space-key/${spaceId}/v1`;
       const alias = service.huksAliasFromRef(keyRef);
       const options = service.importOptions(new Uint8Array(SPACE_KEY_BYTES));
+      const encryptOptions = service.operationOptions(1, new Uint8Array(12), new Uint8Array(4));
+      const decryptOptions = service.operationOptions(2, new Uint8Array(12), new Uint8Array(4), new Uint8Array(16));
 
       expect(alias.ok).assertEqual(true);
       expect(alias.huksAlias).assertEqual(`eggclip.space-key.${spaceId}.v1`);
@@ -651,6 +653,40 @@ export default function localUnitTest() {
         .assertEqual(SpaceKeyHuksError.INVALID_KEY_REF);
       expect(options.inData?.length).assertEqual(SPACE_KEY_BYTES);
       expect(options.properties?.length).assertEqual(6);
+      expect(encryptOptions.properties?.length).assertEqual(8);
+      expect(decryptOptions.properties?.length).assertEqual(9);
+      expect(encryptOptions.inData === undefined).assertEqual(true);
+    });
+
+    it('rejectsInvalidSpaceKeyHuksAesGcmInputsBeforePlatformCrypto', 0, async () => {
+      const spaceId = '018ff6ef-c394-7d08-8b99-4b7d10f2767a';
+      const service = new SpaceKeyHuksService();
+      const keyRef = `huks://eggclip/space-key/${spaceId}/v1`;
+      const invalidRef = await service.encryptBase64Url(
+        'huks://eggclip/space-key/not-a-space/v1',
+        encodeBase64Url(new Uint8Array(12)),
+        encodeBase64Url(new Uint8Array(0)),
+        encodeBase64Url(new Uint8Array(1))
+      );
+      const invalidNonce = await service.encryptBase64Url(
+        keyRef,
+        encodeBase64Url(new Uint8Array(11)),
+        encodeBase64Url(new Uint8Array(0)),
+        encodeBase64Url(new Uint8Array(1))
+      );
+      const invalidTag = await service.decryptBase64Url(
+        keyRef,
+        encodeBase64Url(new Uint8Array(12)),
+        encodeBase64Url(new Uint8Array(0)),
+        encodeBase64Url(new Uint8Array(1)),
+        encodeBase64Url(new Uint8Array(15))
+      );
+
+      expect(invalidRef.error).assertEqual(SpaceKeyHuksError.INVALID_KEY_REF);
+      expect(invalidNonce.error).assertEqual(SpaceKeyHuksError.INVALID_LENGTH);
+      expect(invalidNonce.field).assertEqual('nonce');
+      expect(invalidTag.error).assertEqual(SpaceKeyHuksError.INVALID_LENGTH);
+      expect(invalidTag.field).assertEqual('tag');
     });
 
     it('acceptsEncryptedSpaceKeyDeliveryPayloadWithoutReturningRawKey', 0, async () => {
