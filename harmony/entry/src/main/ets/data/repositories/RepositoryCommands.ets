@@ -12,6 +12,8 @@ import {
 
 export type SqlValue = string | number | Uint8Array | null;
 export const LOCAL_DEVICE_ID_KEY: string = 'localDeviceId';
+export const LOCAL_IDENTITY_PUBLIC_KEY_KEY: string = 'localIdentityPublicKey';
+export const LOCAL_IDENTITY_PRIVATE_KEY_REF_KEY: string = 'localIdentityPrivateKeyRef';
 export const NEXT_ORIGIN_SEQ_KEY: string = 'nextOriginSeq';
 export const INITIAL_ORIGIN_SEQ: number = 1;
 
@@ -392,6 +394,34 @@ export class LocalIdentityRepository {
     };
   }
 
+  loadLocalIdentityPublicKey(): RepositoryCommand {
+    return {
+      sql: 'SELECT value FROM app_metadata WHERE key = ?',
+      args: [LOCAL_IDENTITY_PUBLIC_KEY_KEY]
+    };
+  }
+
+  saveLocalIdentityPublicKey(identityPublicKey: string, updatedAt: number): RepositoryCommand | null {
+    if (!isValidLocalIdentityPublicKey(identityPublicKey)) {
+      return null;
+    }
+    return this.upsertMetadata(LOCAL_IDENTITY_PUBLIC_KEY_KEY, identityPublicKey, updatedAt);
+  }
+
+  loadLocalIdentityPrivateKeyRef(): RepositoryCommand {
+    return {
+      sql: 'SELECT value FROM app_metadata WHERE key = ?',
+      args: [LOCAL_IDENTITY_PRIVATE_KEY_REF_KEY]
+    };
+  }
+
+  saveLocalIdentityPrivateKeyRef(identityPrivateKeyRef: string, updatedAt: number): RepositoryCommand | null {
+    if (!isValidLocalIdentityPrivateKeyRef(identityPrivateKeyRef)) {
+      return null;
+    }
+    return this.upsertMetadata(LOCAL_IDENTITY_PRIVATE_KEY_REF_KEY, identityPrivateKeyRef, updatedAt);
+  }
+
   loadNextOriginSeq(): RepositoryCommand {
     return {
       sql: 'SELECT value FROM app_metadata WHERE key = ?',
@@ -416,4 +446,20 @@ export class LocalIdentityRepository {
       args: [(currentSeq + 1).toString(), updatedAt, NEXT_ORIGIN_SEQ_KEY, currentSeq.toString()]
     };
   }
+
+  private upsertMetadata(key: string, value: string, updatedAt: number): RepositoryCommand {
+    return {
+      sql: `INSERT INTO app_metadata(key, value, updated_at) VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      args: [key, value, updatedAt]
+    };
+  }
+}
+
+export function isValidLocalIdentityPublicKey(value: string): boolean {
+  return /^[A-Za-z0-9_-]{43}$/.test(value);
+}
+
+export function isValidLocalIdentityPrivateKeyRef(value: string): boolean {
+  return /^huks:\/\/eggclip\/local-identity\/ed25519\/[A-Za-z0-9._-]{1,64}$/.test(value);
 }

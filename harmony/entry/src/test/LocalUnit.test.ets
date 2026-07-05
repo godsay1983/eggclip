@@ -120,6 +120,8 @@ import {
   ClipboardRepository,
   DeviceRepository,
   INITIAL_ORIGIN_SEQ,
+  LOCAL_IDENTITY_PRIVATE_KEY_REF_KEY,
+  LOCAL_IDENTITY_PUBLIC_KEY_KEY,
   LOCAL_DEVICE_ID_KEY,
   LocalIdentityRepository,
   LocalClipboardPersistenceCommands,
@@ -650,6 +652,8 @@ export default function localUnitTest() {
     it('buildsLocalIdentityRepositoryCommandsForDeviceIdAndOriginSeq', 0, () => {
       const identity = new LocalIdentityRepository();
       const deviceId = '550e8400-e29b-41d4-a716-446655440000';
+      const publicKey = '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo';
+      const privateKeyRef = 'huks://eggclip/local-identity/ed25519/v1';
 
       const loadDeviceId = identity.loadLocalDeviceId();
       expect(loadDeviceId.sql.indexOf('SELECT value FROM app_metadata') >= 0).assertEqual(true);
@@ -659,6 +663,31 @@ export default function localUnitTest() {
       expect(insertDeviceId.sql.indexOf('INSERT OR IGNORE INTO app_metadata') >= 0).assertEqual(true);
       expect(insertDeviceId.args[0]).assertEqual(LOCAL_DEVICE_ID_KEY);
       expect(insertDeviceId.args[1]).assertEqual(deviceId);
+
+      const loadPublicKey = identity.loadLocalIdentityPublicKey();
+      expect(loadPublicKey.args[0]).assertEqual(LOCAL_IDENTITY_PUBLIC_KEY_KEY);
+      const savePublicKey = identity.saveLocalIdentityPublicKey(publicKey, 1700000000001);
+      expect(savePublicKey === null).assertEqual(false);
+      if (savePublicKey === null) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      expect(savePublicKey.sql.indexOf('ON CONFLICT(key) DO UPDATE') >= 0).assertEqual(true);
+      expect(savePublicKey.args[0]).assertEqual(LOCAL_IDENTITY_PUBLIC_KEY_KEY);
+      expect(savePublicKey.args[1]).assertEqual(publicKey);
+      expect(identity.saveLocalIdentityPublicKey('AA', 1700000000001)).assertEqual(null);
+
+      const loadPrivateKeyRef = identity.loadLocalIdentityPrivateKeyRef();
+      expect(loadPrivateKeyRef.args[0]).assertEqual(LOCAL_IDENTITY_PRIVATE_KEY_REF_KEY);
+      const savePrivateKeyRef = identity.saveLocalIdentityPrivateKeyRef(privateKeyRef, 1700000000001);
+      expect(savePrivateKeyRef === null).assertEqual(false);
+      if (savePrivateKeyRef === null) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      expect(savePrivateKeyRef.args[0]).assertEqual(LOCAL_IDENTITY_PRIVATE_KEY_REF_KEY);
+      expect(savePrivateKeyRef.args[1]).assertEqual(privateKeyRef);
+      expect(identity.saveLocalIdentityPrivateKeyRef(publicKey, 1700000000001)).assertEqual(null);
 
       const initializeSeq = identity.initializeOriginSeq(1700000000001);
       expect(initializeSeq.args[0]).assertEqual(NEXT_ORIGIN_SEQ_KEY);

@@ -4,8 +4,12 @@ import { util } from '@kit.ArkTS';
 import { Database } from '../db/Database';
 import {
   INITIAL_ORIGIN_SEQ,
+  LOCAL_IDENTITY_PRIVATE_KEY_REF_KEY,
+  LOCAL_IDENTITY_PUBLIC_KEY_KEY,
   LOCAL_DEVICE_ID_KEY,
-  NEXT_ORIGIN_SEQ_KEY
+  NEXT_ORIGIN_SEQ_KEY,
+  isValidLocalIdentityPrivateKeyRef,
+  isValidLocalIdentityPublicKey
 } from './RepositoryCommands';
 
 export class LocalIdentityRdbRepository {
@@ -33,6 +37,40 @@ export class LocalIdentityRdbRepository {
     );
     const persisted = await this.metadataValue(store, LOCAL_DEVICE_ID_KEY);
     return persisted ?? deviceId;
+  }
+
+  async loadLocalIdentityPublicKey(): Promise<string | null> {
+    const store = await Database.getStore(this.context);
+    const value = await this.metadataValue(store, LOCAL_IDENTITY_PUBLIC_KEY_KEY);
+    if (value === null || !isValidLocalIdentityPublicKey(value)) {
+      return null;
+    }
+    return value;
+  }
+
+  async saveLocalIdentityPublicKey(identityPublicKey: string, updatedAt: number = Date.now()): Promise<void> {
+    if (!isValidLocalIdentityPublicKey(identityPublicKey)) {
+      throw new Error('Invalid local identity public key metadata');
+    }
+    const store = await Database.getStore(this.context);
+    await this.upsertMetadata(store, LOCAL_IDENTITY_PUBLIC_KEY_KEY, identityPublicKey, updatedAt);
+  }
+
+  async loadLocalIdentityPrivateKeyRef(): Promise<string | null> {
+    const store = await Database.getStore(this.context);
+    const value = await this.metadataValue(store, LOCAL_IDENTITY_PRIVATE_KEY_REF_KEY);
+    if (value === null || !isValidLocalIdentityPrivateKeyRef(value)) {
+      return null;
+    }
+    return value;
+  }
+
+  async saveLocalIdentityPrivateKeyRef(identityPrivateKeyRef: string, updatedAt: number = Date.now()): Promise<void> {
+    if (!isValidLocalIdentityPrivateKeyRef(identityPrivateKeyRef)) {
+      throw new Error('Invalid local identity private key reference metadata');
+    }
+    const store = await Database.getStore(this.context);
+    await this.upsertMetadata(store, LOCAL_IDENTITY_PRIVATE_KEY_REF_KEY, identityPrivateKeyRef, updatedAt);
   }
 
   async peekNextOriginSeq(): Promise<number> {
@@ -96,5 +134,18 @@ export class LocalIdentityRdbRepository {
     } finally {
       resultSet.close();
     }
+  }
+
+  private async upsertMetadata(
+    store: relationalStore.RdbStore,
+    key: string,
+    value: string,
+    updatedAt: number
+  ): Promise<void> {
+    await store.executeSql(
+      `INSERT INTO app_metadata(key, value, updated_at) VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      [key, value, updatedAt]
+    );
   }
 }
