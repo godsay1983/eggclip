@@ -53,6 +53,10 @@ import {
   Ed25519IdentityService
 } from '../main/ets/services/crypto/Ed25519IdentityService';
 import {
+  Ed25519HuksIdentityError,
+  Ed25519HuksIdentityService
+} from '../main/ets/services/crypto/Ed25519HuksIdentityService';
+import {
   INITIAL_SPACE_KEY_VERSION,
   SPACE_KEY_BYTES,
   SpaceKeyReferenceError,
@@ -2099,6 +2103,33 @@ export default function localUnitTest() {
       expect(invalid.ok).assertEqual(false);
       expect(invalid.error).assertEqual(Ed25519IdentityError.INVALID_LENGTH);
       expect(invalid.field).assertEqual('identityPrivateKey');
+    });
+
+    it('buildsEd25519HuksIdentityAliasAndOperationOptions', 0, () => {
+      const service = new Ed25519HuksIdentityService();
+      const keyRef = service.buildLocalIdentityPrivateKeyRef('v1');
+      expect(keyRef.ok).assertEqual(true);
+      expect(keyRef.identityPrivateKeyRef).assertEqual('huks://eggclip/local-identity/ed25519/v1');
+
+      const alias = service.huksAliasFromRef(keyRef.identityPrivateKeyRef ?? '');
+      expect(alias.ok).assertEqual(true);
+      expect(alias.huksAlias).assertEqual('eggclip.local-identity.ed25519.v1');
+
+      const badSlot = service.buildLocalIdentityPrivateKeyRef('../bad');
+      expect(badSlot.ok).assertEqual(false);
+      expect(badSlot.error).assertEqual(Ed25519HuksIdentityError.INVALID_ALIAS_SLOT);
+
+      const badRef = service.huksAliasFromRef('huks://eggclip/local-identity/ed25519/');
+      expect(badRef.ok).assertEqual(false);
+      expect(badRef.error).assertEqual(Ed25519HuksIdentityError.INVALID_KEY_REF);
+
+      const generateOptions = service.generateOptions();
+      expect((generateOptions.properties?.length ?? 0) >= 5).assertEqual(true);
+      expect(generateOptions.inData === undefined).assertEqual(true);
+
+      const signOptions = service.signOptions(AUTH_PROOF_TRANSCRIPT);
+      expect((signOptions.properties?.length ?? 0) >= 3).assertEqual(true);
+      expect((signOptions.inData?.length ?? 0) > 0).assertEqual(true);
     });
   });
 }
