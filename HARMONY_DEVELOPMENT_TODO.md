@@ -199,6 +199,8 @@ harmony/entry/src/main/ets/
 - [ ] 验证目标 SDK 上 Ed25519、X25519、HKDF 和 AES-GCM 的具体 API。
   - [x] 已新增 `X25519KeyAgreementService`，封装 CryptoFramework X25519 临时 keypair 生成和 shared secret 计算边界；本地单测允许平台不支持/输出不匹配时明确返回 `platformCryptoFailed`。
 - [ ] 生成 Ed25519 长期设备身份。
+  - [x] 新增 `Ed25519IdentityService`，封装 CryptoFramework Ed25519 本机身份材料生成边界，输出 32 字节 public/private material 并在平台不支持时明确返回 `platformCryptoFailed`。
+  - [ ] 将身份材料生成切换为 HUKS/系统安全存储中的长期私钥，只向握手流程暴露 public key 和签名能力。
 - [ ] 将私钥和 `spaceKey` 保存到 HUKS 或等效系统安全存储。
   - [x] 建立 `spaceKey` HUKS alias/引用生成与校验边界；RDB repository 只接收 `huks://` 引用，不保存裸 key。
   - [ ] 真实 HUKS import/generate 和读取流程待真机验证后接入。
@@ -219,6 +221,7 @@ harmony/entry/src/main/ets/
   - [x] 建立 Ed25519 CryptoFramework 验签导入边界，覆盖 SPKI DER 和 ED25519 KeySpec 尝试路径；本地单元环境尚未验过 RFC 8032 向量。
   - [x] 抽出通用 `verifyEd25519Signature(publicKey, message, signature)` 入口，并接入 AUTH_PROOF 验签边界；真机算法名/导入格式确认仍待完成。
   - [x] 新增 `Ed25519SignatureService`，封装 CryptoFramework Ed25519 signing 边界，支持用 32 字节私钥材料对 AUTH transcript 签名并返回 64 字节 base64url signature；平台不支持或格式不匹配时明确返回错误类型。
+  - [x] 新增本机 Ed25519 身份材料生成与 AUTH transcript 签名组合边界；当前仍为内存材料传递，未写入 RDB 或日志。
   - [ ] 接入 HUKS 持久化 Ed25519 私钥生成/签名，替换临时私钥材料入参。
   - [ ] 在 HarmonyOS 6.1 真机上确认 Ed25519 算法名、公钥/私钥导入格式、空消息 one-shot 验签和 signing 行为。
 - [ ] ArkTS 实现通过 X25519/HKDF 派生向量。

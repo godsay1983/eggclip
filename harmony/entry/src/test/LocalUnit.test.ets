@@ -49,6 +49,10 @@ import {
   Ed25519SignatureService
 } from '../main/ets/services/crypto/Ed25519SignatureService';
 import {
+  Ed25519IdentityError,
+  Ed25519IdentityService
+} from '../main/ets/services/crypto/Ed25519IdentityService';
+import {
   INITIAL_SPACE_KEY_VERSION,
   SPACE_KEY_BYTES,
   SpaceKeyReferenceError,
@@ -2030,6 +2034,42 @@ export default function localUnitTest() {
       expect(invalid.ok).assertEqual(false);
       expect(invalid.error).assertEqual(Ed25519SignatureError.INVALID_LENGTH);
       expect(invalid.field).assertEqual('privateSeed');
+    });
+
+    it('generatesLocalEd25519IdentityMaterialBoundaryWhenAvailable', 0, () => {
+      const service = new Ed25519IdentityService();
+      const material = service.generateIdentityMaterial();
+
+      if (material.ok) {
+        expect(decodeBase64Url(material.identityPrivateKey ?? '')?.length).assertEqual(32);
+        expect(decodeBase64Url(material.identityPublicKey ?? '')?.length).assertEqual(32);
+
+        const publicOnlySnapshot = JSON.stringify({
+          identityPublicKey: material.identityPublicKey
+        });
+        expect(publicOnlySnapshot.indexOf(material.identityPrivateKey ?? '')).assertEqual(-1);
+
+        const signature = service.signAuthTranscript(
+          material.identityPrivateKey ?? '',
+          AUTH_PROOF_TRANSCRIPT
+        );
+        if (signature.ok) {
+          expect(decodeBase64Url(signature.signature ?? '')?.length).assertEqual(64);
+        } else {
+          expect(signature.error).assertEqual(Ed25519IdentityError.SIGN_FAILED);
+          expect(
+            signature.signatureError === Ed25519SignatureError.PLATFORM_CRYPTO_FAILED ||
+            signature.signatureError === Ed25519SignatureError.SIGNATURE_MISMATCH
+          ).assertEqual(true);
+        }
+      } else {
+        expect(material.error).assertEqual(Ed25519IdentityError.PLATFORM_CRYPTO_FAILED);
+      }
+
+      const invalid = service.signAuthTranscript('AA', AUTH_PROOF_TRANSCRIPT);
+      expect(invalid.ok).assertEqual(false);
+      expect(invalid.error).assertEqual(Ed25519IdentityError.INVALID_LENGTH);
+      expect(invalid.field).assertEqual('identityPrivateKey');
     });
   });
 }
