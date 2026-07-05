@@ -62,7 +62,8 @@ export class PairingClientNetworkHandshakeService {
   start(
     draft: PairingHandshakeDraft,
     clientHelloMessageId: string,
-    clientHelloCounter: number = 0
+    clientHelloCounter: number = 0,
+    localEphemeralPrivateKey?: string
   ): PairingClientNetworkHandshakeStartResult {
     if (this.phaseValue !== PairingClientNetworkHandshakePhase.IDLE &&
       this.phaseValue !== PairingClientNetworkHandshakePhase.FAILED) {
@@ -73,7 +74,7 @@ export class PairingClientNetworkHandshakeService {
       };
     }
 
-    const started = this.handshake.start(draft, clientHelloMessageId, clientHelloCounter);
+    const started = this.handshake.start(draft, clientHelloMessageId, clientHelloCounter, localEphemeralPrivateKey);
     if (!started.ok || started.session === undefined || started.clientHelloFrame === undefined) {
       this.fail();
       return {
@@ -153,6 +154,43 @@ export class PairingClientNetworkHandshakeService {
       sharedSecretBase64Url,
       transcriptSaltBase64Url
     );
+    if (!authenticated.ok || authenticated.transportSession === undefined) {
+      this.fail();
+      return {
+        ok: false,
+        phase: this.phaseValue,
+        error: PairingClientNetworkHandshakeError.AUTH_OK_FAILED,
+        handshakeError: authenticated.error,
+        field: authenticated.field
+      };
+    }
+
+    this.phaseValue = PairingClientNetworkHandshakePhase.AUTHENTICATED;
+    return {
+      ok: true,
+      phase: this.phaseValue,
+      transportSession: authenticated.transportSession
+    };
+  }
+
+  acceptAuthOkAndCreateTransportSessionFromEphemeral(
+    authOkFrame: string,
+    transcriptSaltBase64Url: string
+  ): PairingClientNetworkAuthenticatedResult {
+    if (this.session === null || this.phaseValue !== PairingClientNetworkHandshakePhase.WAITING_AUTH_OK) {
+      return {
+        ok: false,
+        phase: this.phaseValue,
+        error: PairingClientNetworkHandshakeError.INVALID_PHASE
+      };
+    }
+
+    const authenticated: PairingClientAuthenticatedSessionResult =
+      this.handshake.acceptAuthOkAndCreateTransportSessionFromEphemeral(
+        this.session,
+        authOkFrame,
+        transcriptSaltBase64Url
+      );
     if (!authenticated.ok || authenticated.transportSession === undefined) {
       this.fail();
       return {

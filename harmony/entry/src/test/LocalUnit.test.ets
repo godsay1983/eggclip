@@ -1590,6 +1590,87 @@ export default function localUnitTest() {
       expect(authenticated.transportSession?.isClosed()).assertEqual(false);
     });
 
+    it('createsProtocolTransportSessionFromEphemeralX25519WhenPlatformSupportsIt', 0, () => {
+      const store = new PairingStore();
+      store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);
+      store.confirmCodeMatched();
+      const draft = store.buildPendingClientHandshakeDraft(
+        '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        '3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08',
+        'hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo',
+        1700000000000
+      );
+      if (!draft.ok || draft.draft === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+
+      const service = new PairingClientHandshakeSessionService();
+      const started = service.start(
+        draft.draft,
+        '018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01',
+        0,
+        'dwdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LCo'
+      );
+      if (!started.ok || started.session === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      const authProof = service.acceptServerHelloAndBuildAuthProof(
+        started.session,
+        SERVER_HELLO_FRAME_FOR_X25519_FIXTURE,
+        TEST_ED25519_SIGNATURE,
+        '018ff6f1-1d2a-725d-8d1a-894d2f5b0a42',
+        2
+      );
+      expect(authProof.ok).assertEqual(true);
+
+      const authenticated = service.acceptAuthOkAndCreateTransportSessionFromEphemeral(
+        started.session,
+        AUTH_OK_FIXTURE,
+        'RWdnQ2xpcCB2MSB0ZXN0IGhhbmRzaGFrZSBzYWx0'
+      );
+      if (authenticated.ok) {
+        expect(authenticated.sessionKeys?.clientToServerKey).assertEqual('_CuE_7SfzdShnxyzHQy4IJ0zQjMAUVq-tynBZ2lBPYQ');
+        expect(authenticated.sessionKeys?.serverToClientKey).assertEqual('TSo91xPhGNnQb2KPW6xyjJJFeHsimcUss0Rm2Tnbo2M');
+        expect(authenticated.transportSession?.state()).assertEqual(ProtocolSessionState.AUTHENTICATED);
+      } else {
+        expect(authenticated.error).assertEqual(PairingClientHandshakeError.SHARED_SECRET_DERIVATION_FAILED);
+        expect(authenticated.keyAgreementError).assertEqual(X25519KeyAgreementError.PLATFORM_CRYPTO_FAILED);
+      }
+    });
+
+    it('rejectsEphemeralX25519TransportSessionWithoutLocalPrivateKey', 0, () => {
+      const draft = pairingDraftFixture();
+      if (draft === null) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      const service = new PairingClientHandshakeSessionService();
+      const started = service.start(draft, '018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01', 0);
+      if (!started.ok || started.session === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      const authProof = service.acceptServerHelloAndBuildAuthProof(
+        started.session,
+        SERVER_HELLO_FRAME_FOR_X25519_FIXTURE,
+        TEST_ED25519_SIGNATURE,
+        '018ff6f1-1d2a-725d-8d1a-894d2f5b0a42',
+        2
+      );
+      expect(authProof.ok).assertEqual(true);
+
+      const authenticated = service.acceptAuthOkAndCreateTransportSessionFromEphemeral(
+        started.session,
+        AUTH_OK_FIXTURE,
+        'RWdnQ2xpcCB2MSB0ZXN0IGhhbmRzaGFrZSBzYWx0'
+      );
+      expect(authenticated.ok).assertEqual(false);
+      expect(authenticated.error).assertEqual(PairingClientHandshakeError.SHARED_SECRET_DERIVATION_FAILED);
+      expect(authenticated.field).assertEqual('localEphemeralPrivateKey');
+    });
+
     it('doesNotCreateProtocolTransportSessionBeforeClientAuthProofIsBuilt', 0, () => {
       const store = new PairingStore();
       store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);
@@ -1966,6 +2047,8 @@ const AUTH_PROOF_TRANSCRIPT: string = 'EggClip v1 auth transcript\nrole=client\n
 const TEST_ED25519_SIGNATURE: string = 'AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8wMTIzNDU2Nzg5Ojs8PT4_QA';
 
 const SERVER_HELLO_FRAME_FOR_PAIRING_FIXTURE: string = '{"version":1,"type":"SERVER_HELLO","messageId":"018ff6f1-0000-7000-8000-000000000001","sessionCounter":1,"payload":{"spaceId":"018ff6ef-c394-7d08-8b99-4b7d10f2767a","deviceId":"018ff6f0-0a3b-7815-a4db-3eb6e23d9338","identityPublicKey":"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaapcHUro","ephemeralPublicKey":"Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I","capabilities":["textPlain","syncHeads"]}}';
+
+const SERVER_HELLO_FRAME_FOR_X25519_FIXTURE: string = '{"version":1,"type":"SERVER_HELLO","messageId":"018ff6f1-0000-7000-8000-000000000003","sessionCounter":1,"payload":{"spaceId":"018ff6ef-c394-7d08-8b99-4b7d10f2767a","deviceId":"018ff6f0-0a3b-7815-a4db-3eb6e23d9338","identityPublicKey":"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaapcHUro","ephemeralPublicKey":"3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08","capabilities":["textPlain","syncHeads"]}}';
 
 const SERVER_HELLO_FRAME_WITH_WRONG_IDENTITY_FIXTURE: string = '{"version":1,"type":"SERVER_HELLO","messageId":"018ff6f1-0000-7000-8000-000000000002","sessionCounter":1,"payload":{"spaceId":"018ff6ef-c394-7d08-8b99-4b7d10f2767a","deviceId":"018ff6f0-0a3b-7815-a4db-3eb6e23d9338","identityPublicKey":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","ephemeralPublicKey":"Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I","capabilities":["textPlain","syncHeads"]}}';
 
