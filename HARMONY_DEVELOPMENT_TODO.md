@@ -222,6 +222,7 @@ harmony/entry/src/main/ets/
 - [ ] ArkTS 实现通过 X25519/HKDF 派生向量。
   - [x] 本地 SDK 类型已确认存在 X25519 与 HKDF 相关入口。
   - [x] session key 与 nonce 向量规则已固定。
+  - [x] 已新增 `SessionKeyDerivationService`，基于已得到的 X25519 `sharedSecret` 和 `transcriptSalt` 派生 client-to-server / server-to-client session key，并通过固定向量校验。
   - [ ] 接入 CryptoFramework/HUKS X25519/HKDF 真派生。
 - [ ] ArkTS 实现通过 AES-GCM 加解密和篡改拒绝向量。
   - [x] 本地 SDK 类型已确认存在 AES-GCM 参数入口。
@@ -291,6 +292,7 @@ harmony/entry/src/main/ets/
   - [ ] 真实 Ed25519 验签待接 CryptoFramework/HUKS。
 - [ ] HKDF 派生双向会话密钥。
   - [x] 固定共享 session key 向量并在 ArkTS 校验字段、长度和 nonce 规则。
+  - [x] 已接入 ArkTS HKDF-SHA-256 session key 派生边界，输入 sharedSecret/transcriptSalt 后输出双向 session key；真实 X25519 sharedSecret 计算仍待接入。
   - [ ] 真实 CryptoFramework HKDF 未接入。
 - [ ] AES-256-GCM 解密认证后业务帧。
 - [ ] 维护接收计数器和 replay window。

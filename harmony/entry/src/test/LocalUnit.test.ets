@@ -33,6 +33,10 @@ import {
   sessionNonce
 } from '../main/ets/services/crypto/CryptoVectorService';
 import {
+  SessionKeyDerivationError,
+  SessionKeyDerivationService
+} from '../main/ets/services/crypto/SessionKeyDerivationService';
+import {
   INITIAL_SPACE_KEY_VERSION,
   SPACE_KEY_BYTES,
   SpaceKeyReferenceError,
@@ -1535,6 +1539,32 @@ export default function localUnitTest() {
       const badEd25519 = service.validateEd25519SignatureVector('{"algorithm":"Ed25519","privateSeed":"AA","publicKey":"AA","message":"","signature":"AA"}');
       expect(badEd25519.ok).assertEqual(false);
       expect(badEd25519.error).assertEqual(CryptoVectorErrorCode.INVALID_LENGTH);
+    });
+
+    it('derivesSessionKeysFromSharedSecretAndTranscriptSaltVector', 0, () => {
+      const service = new SessionKeyDerivationService();
+      const derived = service.deriveSessionKeys(
+        'Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I',
+        'RWdnQ2xpcCB2MSB0ZXN0IGhhbmRzaGFrZSBzYWx0'
+      );
+
+      expect(derived.ok).assertEqual(true);
+      expect(derived.keys?.clientToServerKey).assertEqual('_CuE_7SfzdShnxyzHQy4IJ0zQjMAUVq-tynBZ2lBPYQ');
+      expect(derived.keys?.serverToClientKey).assertEqual('TSo91xPhGNnQb2KPW6xyjJJFeHsimcUss0Rm2Tnbo2M');
+      expect(service.sessionNonceBase64Url(SessionDirection.CLIENT_TO_SERVER, 12).nonce)
+        .assertEqual('YzJzAQAAAAAAAAAM');
+      expect(service.sessionNonceBase64Url(SessionDirection.SERVER_TO_CLIENT, 12).nonce)
+        .assertEqual('czJjAQAAAAAAAAAM');
+
+      const invalidSecret = service.deriveSessionKeys('AA', 'RWdnQ2xpcCB2MSB0ZXN0IGhhbmRzaGFrZSBzYWx0');
+      expect(invalidSecret.ok).assertEqual(false);
+      expect(invalidSecret.error).assertEqual(SessionKeyDerivationError.INVALID_LENGTH);
+      expect(invalidSecret.field).assertEqual('sharedSecret');
+
+      const invalidSalt = service.deriveSessionKeys('Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I', '====');
+      expect(invalidSalt.ok).assertEqual(false);
+      expect(invalidSalt.error).assertEqual(SessionKeyDerivationError.INVALID_BASE64URL);
+      expect(invalidSalt.field).assertEqual('transcriptSalt');
     });
 
     it('exposesEd25519SignatureVectorCryptoFrameworkBoundary', 0, () => {
