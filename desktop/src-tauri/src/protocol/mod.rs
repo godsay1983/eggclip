@@ -239,6 +239,17 @@ struct RawEnvelope {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct OutboundPreAuthEnvelope<'a> {
+    version: u16,
+    #[serde(rename = "type")]
+    message_type: MessageType,
+    message_id: &'a str,
+    session_counter: u64,
+    payload: &'a Value,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct OutboundEncryptedEnvelope<'a> {
     version: u16,
     #[serde(rename = "type")]
@@ -306,6 +317,25 @@ pub fn parse_envelope(input: &str) -> Result<ProtocolEnvelope, ProtocolError> {
     }
 }
 
+pub fn serialize_pre_auth_envelope(envelope: &PreAuthEnvelope) -> Result<String, ProtocolError> {
+    validate_uuid(&envelope.message_id, "messageId")?;
+    if !envelope.message_type.is_pre_auth_allowed() {
+        return Err(ProtocolError::PlaintextAfterAuth(envelope.message_type));
+    }
+    if !envelope.payload.is_object() {
+        return Err(ProtocolError::InvalidField("payload"));
+    }
+
+    serde_json::to_string(&OutboundPreAuthEnvelope {
+        version: PROTOCOL_VERSION,
+        message_type: envelope.message_type,
+        message_id: &envelope.message_id,
+        session_counter: envelope.session_counter,
+        payload: &envelope.payload,
+    })
+    .map_err(|error| ProtocolError::InvalidJson(error.to_string()))
+}
+
 pub fn serialize_encrypted_envelope(envelope: &EncryptedEnvelope) -> Result<String, ProtocolError> {
     validate_uuid(&envelope.message_id, "messageId")?;
     validate_ciphertext(&envelope.ciphertext)?;
@@ -331,6 +361,8 @@ pub struct HelloPayload {
     pub identity_public_key: String,
     pub ephemeral_public_key: String,
     pub capabilities: Vec<Capability>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pairing_context: Option<String>,
 }
 
 impl HelloPayload {
@@ -339,6 +371,9 @@ impl HelloPayload {
         validate_uuid(&self.device_id, "deviceId")?;
         validate_base64url(&self.identity_public_key, "identityPublicKey")?;
         validate_base64url(&self.ephemeral_public_key, "ephemeralPublicKey")?;
+        if let Some(pairing_context) = &self.pairing_context {
+            validate_transcript_field(pairing_context, "pairingContext")?;
+        }
         if self.capabilities.is_empty() {
             return Err(ProtocolError::InvalidField("capabilities"));
         }
@@ -1054,6 +1089,39 @@ mod tests {
         payload.validate().expect("auth proof should validate");
         assert_eq!(payload.role, AuthRole::Client);
         assert_eq!(payload.signature_algorithm, SignatureAlgorithm::Ed25519);
+    }
+
+    #[test]
+    fn serializes_pre_auth_server_hello_for_handshake_transport() {
+        let payload = serde_json::to_value(HelloPayload {
+            space_id: "018ff6ef-c394-7d08-8b99-4b7d10f2767a".to_string(),
+            device_id: "018ff6f0-4adf-7d31-a987-3ef2b25d0212".to_string(),
+            identity_public_key: "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaapcHUro".to_string(),
+            ephemeral_public_key: "Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I".to_string(),
+            capabilities: vec![Capability::TextPlain, Capability::SyncHeads],
+            pairing_context: Some(
+                "pairing-invitation:v1:018ff6f0-1111-7222-8333-123456789abc".to_string(),
+            ),
+        })
+        .expect("hello payload should serialize");
+        let serialized = serialize_pre_auth_envelope(&PreAuthEnvelope {
+            message_type: MessageType::ServerHello,
+            message_id: "018ff6f1-0000-7000-8000-000000000001".to_string(),
+            session_counter: 1,
+            payload,
+        })
+        .expect("server hello should serialize");
+        let ProtocolEnvelope::PreAuth(parsed) =
+            parse_envelope(&serialized).expect("serialized server hello should parse")
+        else {
+            panic!("server hello should be pre-auth");
+        };
+
+        assert_eq!(parsed.message_type, MessageType::ServerHello);
+        assert_eq!(parsed.session_counter, 1);
+        let hello: HelloPayload =
+            serde_json::from_value(parsed.payload).expect("hello payload should parse");
+        hello.validate().expect("hello payload should validate");
     }
 
     #[test]

@@ -8,6 +8,7 @@
     "deviceId": "018ff6f0-0a3b-7815-a4db-3eb6e23d9338",
     "identityPublicKey": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     "ephemeralPublicKey": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+    "pairingContext": "pairing-invitation:v1:018ff6f0-1111-7222-8333-123456789abc",
     "capabilities": [
       "textPlain",
       "syncHeads",

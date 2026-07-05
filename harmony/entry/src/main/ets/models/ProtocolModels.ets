@@ -111,6 +111,7 @@ export interface HelloPayload {
   identityPublicKey: string;
   ephemeralPublicKey: string;
   capabilities: Capability[];
+  pairingContext?: string;
 }
 
 export interface HelloPayloadResult {
@@ -300,6 +301,10 @@ export class ProtocolParser {
       ephemeralPublicKey: getString(payloadObject, 'ephemeralPublicKey'),
       capabilities
     };
+    const pairingContext = getString(payloadObject, 'pairingContext');
+    if (pairingContext.length > 0) {
+      payload.pairingContext = pairingContext;
+    }
     if (!isUuid(payload.spaceId)) {
       return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'spaceId' };
     }
@@ -311,6 +316,9 @@ export class ProtocolParser {
     }
     if (!isBase64Url(payload.ephemeralPublicKey)) {
       return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'ephemeralPublicKey' };
+    }
+    if (payload.pairingContext !== undefined && !isTranscriptField(payload.pairingContext)) {
+      return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'pairingContext' };
     }
     return { ok: true, payload };
   }

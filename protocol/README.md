@@ -109,9 +109,14 @@ Connection:
   "deviceId": "018ff6f0-0a3b-7815-a4db-3eb6e23d9338",
   "identityPublicKey": "base64url-ed25519-public-key",
   "ephemeralPublicKey": "base64url-x25519-public-key",
+  "pairingContext": "pairing-invitation:v1:018ff6f0-1111-7222-8333-123456789abc",
   "capabilities": ["textPlain", "syncHeads"]
 }
 ```
+
+`pairingContext` is optional for an already trusted-device reconnect, but required for
+invitation-based pairing. It is a public routing and transcript-binding value; it
+must not contain the `pairingSecret`.
 
 `AUTH_PROOF` signs the canonical handshake transcript with the Ed25519 identity key and binds:
 

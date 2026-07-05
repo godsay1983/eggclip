@@ -1232,6 +1232,8 @@ export default function localUnitTest() {
       expect(hello.ok).assertEqual(true);
       expect(hello.payload?.spaceId).assertEqual(draft.draft.spaceId);
       expect(hello.payload?.deviceId).assertEqual('018ff6f0-4adf-7d31-a987-3ef2b25d0212');
+      expect(hello.payload?.pairingContext)
+        .assertEqual('pairing-invitation:v1:018ff6f0-1111-7222-8333-123456789abc');
 
       const session = new ProtocolHandshakeTransportSession();
       const accepted = session.acceptTextFrame(built.frame);

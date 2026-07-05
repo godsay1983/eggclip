@@ -173,6 +173,12 @@
         "ephemeralPublicKey": {
           "$ref": "#/$defs/base64url"
         },
+        "pairingContext": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\r\\n]+$"
+        },
         "capabilities": {
           "type": "array",
           "items": {

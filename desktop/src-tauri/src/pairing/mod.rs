@@ -14,6 +14,10 @@ use crate::{
     clipboard,
     crypto::{decode_base64url, encode_base64url},
     identity::{ensure_local_device_identity, IdentityError},
+    protocol::{
+        parse_envelope, serialize_pre_auth_envelope, Capability, HelloPayload, MessageType,
+        PreAuthEnvelope, ProtocolEnvelope,
+    },
     secret_store::{SecretBytesStore, SecretStoreError},
     settings::{database_path, now_ms},
     storage::{
@@ -60,6 +64,15 @@ pub struct PairingInvitationSummary {
     pub confirmation_code: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PairingServerHelloDraft {
+    pub invitation_id: String,
+    pub peer_device_id: String,
+    pub peer_identity_public_key: String,
+    pub pairing_context: String,
+    pub server_hello_frame: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PairingInvitationPayload {
@@ -92,6 +105,7 @@ pub enum PairingError {
     InvitationExpired,
     InvitationConsumed,
     InvalidInvitationSecret,
+    InvalidClientHello,
     QrCode(String),
     Serialize(String),
 }
@@ -115,6 +129,7 @@ impl fmt::Display for PairingError {
             PairingError::InvalidInvitationSecret => {
                 formatter.write_str("invalid pairing invitation secret")
             }
+            PairingError::InvalidClientHello => formatter.write_str("invalid client hello"),
             PairingError::QrCode(message) => write!(formatter, "qr code error: {message}"),
             PairingError::Serialize(message) => write!(formatter, "serialize error: {message}"),
         }
@@ -479,12 +494,107 @@ pub fn consume_pairing_invitation(
     Ok(())
 }
 
+pub fn accept_pairing_client_hello<S: SecretBytesStore>(
+    connection: &mut Connection,
+    secret_store: &mut S,
+    client_hello_frame: &str,
+    server_ephemeral_public_key: &str,
+    server_hello_message_id: &str,
+    now_ms: u64,
+) -> Result<PairingServerHelloDraft, PairingError> {
+    let ProtocolEnvelope::PreAuth(envelope) =
+        parse_envelope(client_hello_frame).map_err(|_| PairingError::InvalidClientHello)?
+    else {
+        return Err(PairingError::InvalidClientHello);
+    };
+    if envelope.message_type != MessageType::ClientHello {
+        return Err(PairingError::InvalidClientHello);
+    }
+    let client_hello: HelloPayload =
+        serde_json::from_value(envelope.payload).map_err(|_| PairingError::InvalidClientHello)?;
+    client_hello
+        .validate()
+        .map_err(|_| PairingError::InvalidClientHello)?;
+    let pairing_context = client_hello
+        .pairing_context
+        .clone()
+        .ok_or(PairingError::InvalidClientHello)?;
+    let invitation_id = parse_pairing_invitation_context(&pairing_context)?;
+    let invitation = PairingInvitationRepository::new(connection)
+        .get(invitation_id)
+        .map_err(|error| PairingError::Database(error.to_string()))?
+        .ok_or(PairingError::InvitationMissing)?;
+
+    match invitation.state {
+        PairingInvitationState::Consumed => return Err(PairingError::InvitationConsumed),
+        PairingInvitationState::Expired => return Err(PairingError::InvitationExpired),
+        PairingInvitationState::Active => {}
+    }
+    if invitation.expires_at <= now_ms {
+        PairingInvitationRepository::new(connection)
+            .expire_before(now_ms)
+            .map_err(|error| PairingError::Database(error.to_string()))?;
+        return Err(PairingError::InvitationExpired);
+    }
+    let client_space_id =
+        Uuid::parse_str(&client_hello.space_id).map_err(|_| PairingError::InvalidClientHello)?;
+    if client_space_id != invitation.space_id {
+        return Err(PairingError::InvalidClientHello);
+    }
+
+    let local_identity = ensure_local_device_identity(connection, secret_store, now_ms)
+        .map_err(pairing_identity_error)?;
+    if local_identity.device_id != invitation.issuer_device_id.to_string() {
+        return Err(PairingError::InvalidClientHello);
+    }
+
+    let server_hello = HelloPayload {
+        space_id: client_hello.space_id.clone(),
+        device_id: local_identity.device_id,
+        identity_public_key: local_identity.identity_public_key,
+        ephemeral_public_key: server_ephemeral_public_key.to_string(),
+        capabilities: vec![
+            Capability::TextPlain,
+            Capability::SyncHeads,
+            Capability::ItemBatch,
+            Capability::ItemLive,
+        ],
+        pairing_context: Some(pairing_context.clone()),
+    };
+    server_hello
+        .validate()
+        .map_err(|_| PairingError::InvalidClientHello)?;
+    let server_hello_frame = serialize_pre_auth_envelope(&PreAuthEnvelope {
+        message_type: MessageType::ServerHello,
+        message_id: server_hello_message_id.to_string(),
+        session_counter: envelope.session_counter.saturating_add(1),
+        payload: serde_json::to_value(&server_hello)
+            .map_err(|error| PairingError::Serialize(error.to_string()))?,
+    })
+    .map_err(|error| PairingError::Serialize(error.to_string()))?;
+
+    Ok(PairingServerHelloDraft {
+        invitation_id: invitation_id.to_string(),
+        peer_device_id: client_hello.device_id,
+        peer_identity_public_key: client_hello.identity_public_key,
+        pairing_context,
+        server_hello_frame,
+    })
+}
+
 fn normalize_space_display_name(display_name: &str) -> Result<String, PairingError> {
     let normalized = display_name.trim();
     if normalized.is_empty() || normalized.chars().count() > 64 {
         return Err(PairingError::InvalidDisplayName);
     }
     Ok(normalized.to_string())
+}
+
+fn parse_pairing_invitation_context(value: &str) -> Result<Uuid, PairingError> {
+    let invitation_id = value
+        .strip_prefix("pairing-invitation:v1:")
+        .ok_or(PairingError::InvalidClientHello)?;
+    Uuid::parse_str(invitation_id).map_err(|_| PairingError::InvalidClientHello)
 }
 
 fn random_space_key() -> Result<[u8; SPACE_KEY_BYTES], PairingError> {
@@ -943,6 +1053,121 @@ mod tests {
                 .consumed_by_device_id
                 .map(|device_id| device_id.to_string()),
             Some(consumer_device_id)
+        );
+    }
+
+    #[test]
+    fn accepts_pairing_client_hello_and_builds_server_hello_without_consuming_invitation() {
+        let mut connection = open_in_memory_database().expect("database should open");
+        let mut store = MemorySecretStore::default();
+        let space = create_sync_space(&mut connection, &mut store, "默认空间", 1_700_000_000_000)
+            .expect("space should be created");
+        let invitation = create_pairing_invitation_for_space(
+            &mut connection,
+            &mut store,
+            &space.space_id,
+            1_700_000_000_500,
+        )
+        .expect("invitation should be created");
+        let payload = decode_invitation_payload(&invitation.invitation);
+        let client_hello = HelloPayload {
+            space_id: payload.space_id.clone(),
+            device_id: "018ff6f0-4adf-7d31-a987-3ef2b25d0212".to_string(),
+            identity_public_key: encode_base64url(&[1u8; 32]),
+            ephemeral_public_key: encode_base64url(&[2u8; 32]),
+            capabilities: vec![Capability::TextPlain, Capability::SyncHeads],
+            pairing_context: Some(format!("pairing-invitation:v1:{}", payload.invitation_id)),
+        };
+        let client_hello_frame = serialize_pre_auth_envelope(&PreAuthEnvelope {
+            message_type: MessageType::ClientHello,
+            message_id: "018ff6f1-0000-7000-8000-000000000001".to_string(),
+            session_counter: 0,
+            payload: serde_json::to_value(&client_hello).expect("hello should serialize"),
+        })
+        .expect("client hello should serialize");
+
+        let result = accept_pairing_client_hello(
+            &mut connection,
+            &mut store,
+            &client_hello_frame,
+            &encode_base64url(&[3u8; 32]),
+            "018ff6f1-0000-7000-8000-000000000002",
+            1_700_000_001_000,
+        )
+        .expect("client hello should be accepted");
+
+        assert_eq!(result.invitation_id, payload.invitation_id);
+        assert_eq!(result.peer_device_id, client_hello.device_id);
+        assert_eq!(
+            result.peer_identity_public_key,
+            client_hello.identity_public_key
+        );
+        assert_eq!(
+            result.pairing_context,
+            format!("pairing-invitation:v1:{}", payload.invitation_id)
+        );
+        let ProtocolEnvelope::PreAuth(server_hello_envelope) =
+            parse_envelope(&result.server_hello_frame).expect("server hello should parse")
+        else {
+            panic!("server hello should be pre-auth");
+        };
+        assert_eq!(server_hello_envelope.message_type, MessageType::ServerHello);
+        assert_eq!(server_hello_envelope.session_counter, 1);
+        let server_hello: HelloPayload = serde_json::from_value(server_hello_envelope.payload)
+            .expect("server hello payload should parse");
+        assert_eq!(server_hello.space_id, payload.space_id);
+        assert_eq!(server_hello.device_id, payload.issuer_device_id);
+        assert_eq!(
+            server_hello.pairing_context.as_deref(),
+            Some(result.pairing_context.as_str())
+        );
+        let stored = PairingInvitationRepository::new(&connection)
+            .get(Uuid::parse_str(&payload.invitation_id).expect("invitation id should parse"))
+            .expect("invitation should query")
+            .expect("invitation should exist");
+        assert_eq!(stored.state, PairingInvitationState::Active);
+    }
+
+    #[test]
+    fn rejects_pairing_client_hello_without_pairing_context() {
+        let mut connection = open_in_memory_database().expect("database should open");
+        let mut store = MemorySecretStore::default();
+        let space = create_sync_space(&mut connection, &mut store, "默认空间", 1_700_000_000_000)
+            .expect("space should be created");
+        let invitation = create_pairing_invitation_for_space(
+            &mut connection,
+            &mut store,
+            &space.space_id,
+            1_700_000_000_500,
+        )
+        .expect("invitation should be created");
+        let payload = decode_invitation_payload(&invitation.invitation);
+        let client_hello = HelloPayload {
+            space_id: payload.space_id,
+            device_id: "018ff6f0-4adf-7d31-a987-3ef2b25d0212".to_string(),
+            identity_public_key: encode_base64url(&[1u8; 32]),
+            ephemeral_public_key: encode_base64url(&[2u8; 32]),
+            capabilities: vec![Capability::TextPlain],
+            pairing_context: None,
+        };
+        let client_hello_frame = serialize_pre_auth_envelope(&PreAuthEnvelope {
+            message_type: MessageType::ClientHello,
+            message_id: "018ff6f1-0000-7000-8000-000000000001".to_string(),
+            session_counter: 0,
+            payload: serde_json::to_value(&client_hello).expect("hello should serialize"),
+        })
+        .expect("client hello should serialize");
+
+        assert_eq!(
+            accept_pairing_client_hello(
+                &mut connection,
+                &mut store,
+                &client_hello_frame,
+                &encode_base64url(&[3u8; 32]),
+                "018ff6f1-0000-7000-8000-000000000002",
+                1_700_000_001_000,
+            ),
+            Err(PairingError::InvalidClientHello)
         );
     }
 

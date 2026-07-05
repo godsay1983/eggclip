@@ -179,6 +179,7 @@ desktop/
   - [x] ArkTS 镜像校验向量形状、字节长度、transcript 和 nonce 规则。
   - [ ] ArkTS 接入平台 CryptoFramework/HUKS 后消费同一批 crypto 向量做真实算法校验。
 - [x] 桌面 Rust 实现 v1 envelope、message type、ciphertext、hello、clipboard item 和 sync heads 类型。
+  - [x] HelloPayload 已支持可选 `pairingContext`，扫码配对的 CLIENT_HELLO 可携带公开邀请上下文，便于桌面端路由到对应 invitation；不携带 pairingSecret。
 - [x] 桌面 Rust 消费 `protocol/test-vectors/`，覆盖合法握手、加密 envelope、clipboard item、未知版本和认证后明文拒绝。
 - [x] HarmonyOS ArkTS 实现同等协议类型和测试向量消费。
 
@@ -208,6 +209,7 @@ desktop/
   - [x] 桌面端已实现本地消费骨架：拒绝过期、重复消费和错误 pairing secret，并将成功消费标记为 consumed。
   - [x] 桌面端生成新邀请前会机会性标记已过期 active 邀请，避免旧邀请长期保持 active 状态。
   - [x] 桌面端启动后会每分钟后台清理过期 active 邀请，只更新状态，不记录邀请正文或 secret。
+  - [x] 桌面端已新增 `accept_pairing_client_hello` 服务端握手骨架：根据 CLIENT_HELLO `pairingContext` 定位 active invitation，校验空间和发行设备后生成 SERVER_HELLO；不会提前消费邀请。
   - [ ] 远端导入校验和正式握手消费入口待接入。
 - [x] 生成二维码内容和可复制邀请字符串。
   - [x] 后端已生成版本化 `eggclip://pair` 邀请 URI；前端当前只展示确认码和过期信息，避免完整邀请 secret 被剪贴板监听收入历史。

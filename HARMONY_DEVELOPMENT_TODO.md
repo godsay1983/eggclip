@@ -261,6 +261,7 @@ harmony/entry/src/main/ets/
   - [ ] pairingSecret 参与正式配对通道派生/证明待接入。
 - [ ] 完成设备身份交换和握手 transcript 验证。
   - [x] 已新增 PairingHandshakeDraftService，基于邀请、本机身份公钥和临时公钥生成 CLIENT_HELLO payload 与版本化 `pairing-invitation:v1:<invitationId>` 上下文。
+  - [x] CLIENT_HELLO payload 已携带公开 `pairingContext`，桌面端可据此定位 invitation；不包含 pairingSecret。
   - [x] 已新增 ProtocolFrameBuilderService，将 CLIENT_HELLO draft 构造成正式明文握手 envelope，并通过 parser 与 handshake transport 门控测试。
   - [x] 已实现 SERVER_HELLO 与邀请桌面身份/同步空间的本地匹配校验，并生成 client AUTH_PROOF 所需 canonical transcript 输入。
   - [x] 已实现 client AUTH_PROOF envelope 构建：基于 canonical transcript 生成 transcriptHash，校验 64 字节 Ed25519 签名输入，并通过 parser/handshake transport 回读。

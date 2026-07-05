@@ -100,7 +100,8 @@ export class PairingHandshakeDraftService {
         Capability.SYNC_HEADS,
         Capability.ITEM_BATCH,
         Capability.ITEM_LIVE
-      ]
+      ],
+      pairingContext: `pairing-invitation:v1:${input.invitation.invitationId}`
     };
 
     return {
