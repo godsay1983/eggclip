@@ -37,6 +37,7 @@ export interface PairingClientNetworkAuthProofResult {
   ok: boolean;
   phase: PairingClientNetworkHandshakePhase;
   outgoingFrame?: string;
+  transcriptSaltBase64Url?: string;
   error?: PairingClientNetworkHandshakeError;
   handshakeError?: PairingClientHandshakeError;
   huksError?: Ed25519HuksIdentityError;
@@ -137,7 +138,8 @@ export class PairingClientNetworkHandshakeService {
     return {
       ok: true,
       phase: this.phaseValue,
-      outgoingFrame: proof.authProofFrame
+      outgoingFrame: proof.authProofFrame,
+      transcriptSaltBase64Url: proof.transcriptSaltBase64Url
     };
   }
 
@@ -177,7 +179,8 @@ export class PairingClientNetworkHandshakeService {
     return {
       ok: true,
       phase: this.phaseValue,
-      outgoingFrame: proof.authProofFrame
+      outgoingFrame: proof.authProofFrame,
+      transcriptSaltBase64Url: proof.transcriptSaltBase64Url
     };
   }
 
@@ -218,7 +221,8 @@ export class PairingClientNetworkHandshakeService {
     return {
       ok: true,
       phase: this.phaseValue,
-      outgoingFrame: proof.authProofFrame
+      outgoingFrame: proof.authProofFrame,
+      transcriptSaltBase64Url: proof.transcriptSaltBase64Url
     };
   }
 
@@ -277,6 +281,41 @@ export class PairingClientNetworkHandshakeService {
         this.session,
         authOkFrame,
         transcriptSaltBase64Url
+      );
+    if (!authenticated.ok || authenticated.transportSession === undefined) {
+      this.fail();
+      return {
+        ok: false,
+        phase: this.phaseValue,
+        error: PairingClientNetworkHandshakeError.AUTH_OK_FAILED,
+        handshakeError: authenticated.error,
+        field: authenticated.field
+      };
+    }
+
+    this.phaseValue = PairingClientNetworkHandshakePhase.AUTHENTICATED;
+    return {
+      ok: true,
+      phase: this.phaseValue,
+      transportSession: authenticated.transportSession
+    };
+  }
+
+  acceptAuthOkAndCreateTransportSessionFromRememberedTranscript(
+    authOkFrame: string
+  ): PairingClientNetworkAuthenticatedResult {
+    if (this.session === null || this.phaseValue !== PairingClientNetworkHandshakePhase.WAITING_AUTH_OK) {
+      return {
+        ok: false,
+        phase: this.phaseValue,
+        error: PairingClientNetworkHandshakeError.INVALID_PHASE
+      };
+    }
+
+    const authenticated: PairingClientAuthenticatedSessionResult =
+      this.handshake.acceptAuthOkAndCreateTransportSessionFromRememberedTranscript(
+        this.session,
+        authOkFrame
       );
     if (!authenticated.ok || authenticated.transportSession === undefined) {
       this.fail();

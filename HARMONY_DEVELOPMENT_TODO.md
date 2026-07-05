@@ -289,6 +289,7 @@ harmony/entry/src/main/ets/
   - [x] PairingClientHandshakeSessionService / PairingClientNetworkHandshakeService 已新增基于 `Ed25519SignatureService` 的 AUTH_PROOF 签名入口，不再要求调用方传入测试签名。
   - [x] HarmonyOS pending 邀请确认后可通过本机身份服务生成后续网络握手所需 CLIENT_HELLO 材料，并覆盖 HUKS 初始化失败不继续配对的单测。
   - [x] PairingClientHandshakeSessionService / PairingClientNetworkHandshakeService 已接入 HUKS private key ref 签名 AUTH_PROOF 的异步入口，并覆盖签名失败不继续握手、不泄露 HUKS ref 的单测。
+  - [x] PairingClientHandshakeSessionService / PairingClientNetworkHandshakeService 已记住 AUTH_PROOF transcriptHash 作为 HKDF transcript salt，AUTH_OK 阶段可直接基于本机临时私钥和已记住 salt 创建正式 `ProtocolTransportSession`。
   - [ ] HUKS 私钥签名、服务端 AUTH_PROOF 真验签和握手网络交换待接入。
 - [x] 显示六位人工确认码供双方核对，但不把它当成唯一秘密。
   - [x] PairingPage 已显示六位人工确认码，并要求用户点击“确认码一致，继续配对”后才进入 pending；确认码不作为唯一秘密。
@@ -339,6 +340,7 @@ harmony/entry/src/main/ets/
   - [x] ArkTS `ProtocolTransportSession` 收到正式加密 `ERROR` envelope 后进入 failed/closed，不分发为业务 envelope。
   - [x] ArkTS `ProtocolHandshakeTransportSession` 已接入明文握手 envelope、状态门控、replay guard，并在 `AUTH_ERROR` / `ERROR` 时进入 failed/closed。
   - [x] WebSocket service 已新增配对握手连接入口和 `decodeHandshakeFrameMessage`，明文握手收包与正式加密协议收包分离统计。
+  - [x] WebSocket service 配对握手入口已支持向编排层回传原始握手文本帧，便于收到 SERVER_HELLO/AUTH_OK 后继续推进正式握手状态机。
   - [ ] 正式连接生命周期接入已配对设备和握手派生出的真实 session。
 - [ ] 未认证连接不能访问同步 service 和 RDB 正文。
   - [x] ArkTS 协议 session gate 已拒绝认证前业务帧。

@@ -1776,6 +1776,11 @@ export default function localUnitTest() {
       expect(signer.canonicalTranscript.indexOf('pairingSecret')).assertEqual(-1);
       expect((result.authProofFrame?.indexOf('AUTH_PROOF') ?? -1) >= 0).assertEqual(true);
       expect(result.authProofFrame?.indexOf('huks://eggclip/local-identity/ed25519/v1') ?? 0).assertEqual(-1);
+      const parser = new ProtocolParser();
+      const parsed = parser.parseEnvelope(result.authProofFrame ?? '');
+      const proof = parser.parseAuthProofPayload(parsed.envelope?.payload);
+      expect(proof.ok).assertEqual(true);
+      expect(result.transcriptSaltBase64Url).assertEqual(proof.payload?.transcriptHash);
     });
 
     it('failsClientPairingHandshakeWhenHuksRefSigningFails', 0, async () => {
@@ -1936,6 +1941,54 @@ export default function localUnitTest() {
       expect(authenticated.field).assertEqual('localEphemeralPrivateKey');
     });
 
+    it('createsProtocolTransportSessionFromRememberedAuthTranscriptSaltWhenPlatformSupportsX25519', 0, () => {
+      const store = new PairingStore();
+      store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);
+      store.confirmCodeMatched();
+      const draft = store.buildPendingClientHandshakeDraft(
+        '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        '3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08',
+        'hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo',
+        1700000000000
+      );
+      if (!draft.ok || draft.draft === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+
+      const service = new PairingClientHandshakeSessionService();
+      const started = service.start(
+        draft.draft,
+        '018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01',
+        0,
+        'dwdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LCo'
+      );
+      if (!started.ok || started.session === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      const authProof = service.acceptServerHelloAndBuildAuthProof(
+        started.session,
+        SERVER_HELLO_FRAME_FOR_X25519_FIXTURE,
+        TEST_ED25519_SIGNATURE,
+        '018ff6f1-1d2a-725d-8d1a-894d2f5b0a42',
+        2
+      );
+      expect(authProof.ok).assertEqual(true);
+      expect((authProof.transcriptSaltBase64Url?.length ?? 0) > 0).assertEqual(true);
+
+      const authenticated = service.acceptAuthOkAndCreateTransportSessionFromRememberedTranscript(
+        started.session,
+        AUTH_OK_FIXTURE
+      );
+      if (authenticated.ok) {
+        expect(authenticated.transportSession?.state()).assertEqual(ProtocolSessionState.AUTHENTICATED);
+      } else {
+        expect(authenticated.error).assertEqual(PairingClientHandshakeError.SHARED_SECRET_DERIVATION_FAILED);
+        expect(authenticated.keyAgreementError).assertEqual(X25519KeyAgreementError.PLATFORM_CRYPTO_FAILED);
+      }
+    });
+
     it('doesNotCreateProtocolTransportSessionBeforeClientAuthProofIsBuilt', 0, () => {
       const store = new PairingStore();
       store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);
@@ -2028,6 +2081,42 @@ export default function localUnitTest() {
       expect(signer.privateKeyRef).assertEqual('huks://eggclip/local-identity/ed25519/v1');
       expect((proof.outgoingFrame?.indexOf('AUTH_PROOF') ?? -1) >= 0).assertEqual(true);
       expect(proof.outgoingFrame?.indexOf('huks://eggclip/local-identity/ed25519/v1') ?? 0).assertEqual(-1);
+    });
+
+    it('createsNetworkProtocolSessionFromRememberedAuthTranscriptSaltWhenPlatformSupportsX25519', 0, () => {
+      const draft = pairingDraftFixture();
+      if (draft === null) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      const service = new PairingClientNetworkHandshakeService();
+
+      const started = service.start(
+        draft,
+        '018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01',
+        0,
+        'dwdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LCo'
+      );
+      expect(started.ok).assertEqual(true);
+      const proof = service.acceptServerHelloAndBuildAuthProof(
+        SERVER_HELLO_FRAME_FOR_X25519_FIXTURE,
+        TEST_ED25519_SIGNATURE,
+        '018ff6f1-1d2a-725d-8d1a-894d2f5b0a42',
+        2
+      );
+      expect(proof.ok).assertEqual(true);
+      expect((proof.transcriptSaltBase64Url?.length ?? 0) > 0).assertEqual(true);
+
+      const authenticated = service.acceptAuthOkAndCreateTransportSessionFromRememberedTranscript(
+        AUTH_OK_FIXTURE
+      );
+      if (authenticated.ok) {
+        expect(authenticated.phase).assertEqual(PairingClientNetworkHandshakePhase.AUTHENTICATED);
+        expect(authenticated.transportSession?.state()).assertEqual(ProtocolSessionState.AUTHENTICATED);
+      } else {
+        expect(authenticated.error).assertEqual(PairingClientNetworkHandshakeError.AUTH_OK_FAILED);
+        expect(authenticated.handshakeError).assertEqual(PairingClientHandshakeError.SHARED_SECRET_DERIVATION_FAILED);
+      }
     });
 
     it('rejectsClientNetworkHandshakeFramesOutOfOrder', 0, () => {

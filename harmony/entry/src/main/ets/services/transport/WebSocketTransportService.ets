@@ -30,6 +30,7 @@ export interface PairingHandshakeTransportCallbacks {
   onClose: (reason: string) => void;
   onError: (reason: string) => void;
   onFrame: (result: ProtocolTransportFrameResult) => void;
+  onTextFrame?: (message: string, result: ProtocolTransportFrameResult) => void;
 }
 
 export interface PocClipboardTextMessage {
@@ -164,7 +165,11 @@ export class WebSocketTransportService {
       onClose: callbacks.onClose,
       onError: callbacks.onError,
       onTextMessage: (message: string) => {
-        callbacks.onFrame(this.decodeHandshakeFrameMessage(message, session));
+        const result = this.decodeHandshakeFrameMessage(message, session);
+        callbacks.onFrame(result);
+        if (callbacks.onTextFrame !== undefined) {
+          callbacks.onTextFrame(message, result);
+        }
       },
       onBinaryMessage: () => {
         session.close();

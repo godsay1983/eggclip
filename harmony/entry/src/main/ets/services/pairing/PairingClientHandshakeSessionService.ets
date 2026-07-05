@@ -31,6 +31,7 @@ import {
   SessionKeyDerivationError,
   SessionKeyDerivationService
 } from '../crypto/SessionKeyDerivationService';
+import { sha256Utf8Base64Url } from '../crypto/Sha256Service';
 import {
   X25519KeyAgreementError,
   X25519KeyAgreementService
@@ -70,6 +71,7 @@ export interface PairingClientAuthProofResult {
   authProofFrame?: string;
   serverHello?: HelloPayload;
   transcript?: PairingAuthTranscriptDraft;
+  transcriptSaltBase64Url?: string;
   error?: PairingClientHandshakeError;
   transportError?: ProtocolTransportFrameError;
   handshakeError?: PairingHandshakeDraftError;
@@ -103,6 +105,7 @@ export class PairingClientHandshakeSession {
   private readonly localEphemeralPrivateKeyValue: string | null;
   private authProofSent: boolean = false;
   private serverHelloPayloadValue: HelloPayload | null = null;
+  private transcriptSaltBase64UrlValue: string | null = null;
 
   constructor(draft: PairingHandshakeDraft, localEphemeralPrivateKey?: string) {
     this.draft = draft;
@@ -122,6 +125,10 @@ export class PairingClientHandshakeSession {
     this.serverHelloPayloadValue = cloneHelloPayload(serverHello);
   }
 
+  rememberAuthTranscript(transcript: PairingAuthTranscriptDraft): void {
+    this.transcriptSaltBase64UrlValue = sha256Utf8Base64Url(transcript.canonicalTranscript);
+  }
+
   hasSentAuthProof(): boolean {
     return this.authProofSent;
   }
@@ -135,6 +142,10 @@ export class PairingClientHandshakeSession {
       return null;
     }
     return cloneHelloPayload(this.serverHelloPayloadValue);
+  }
+
+  transcriptSaltBase64Url(): string | null {
+    return this.transcriptSaltBase64UrlValue;
   }
 }
 
@@ -248,13 +259,15 @@ export class PairingClientHandshakeSessionService {
       };
     }
     session.rememberServerHello(serverHello.payload);
+    session.rememberAuthTranscript(transcript.transcript);
     session.markAuthProofSent();
 
     return {
       ok: true,
       authProofFrame: authProof.frame,
       serverHello: serverHello.payload,
-      transcript: transcript.transcript
+      transcript: transcript.transcript,
+      transcriptSaltBase64Url: session.transcriptSaltBase64Url() ?? undefined
     };
   }
 
@@ -329,13 +342,15 @@ export class PairingClientHandshakeSessionService {
       };
     }
     session.rememberServerHello(serverHello.payload);
+    session.rememberAuthTranscript(transcript.transcript);
     session.markAuthProofSent();
 
     return {
       ok: true,
       authProofFrame: authProof.frame,
       serverHello: serverHello.payload,
-      transcript: transcript.transcript
+      transcript: transcript.transcript,
+      transcriptSaltBase64Url: session.transcriptSaltBase64Url() ?? undefined
     };
   }
 
@@ -397,13 +412,15 @@ export class PairingClientHandshakeSessionService {
       };
     }
     session.rememberServerHello(serverHello.payload);
+    session.rememberAuthTranscript(transcript.transcript);
     session.markAuthProofSent();
 
     return {
       ok: true,
       authProofFrame: authProof.frame,
       serverHello: serverHello.payload,
-      transcript: transcript.transcript
+      transcript: transcript.transcript,
+      transcriptSaltBase64Url: session.transcriptSaltBase64Url() ?? undefined
     };
   }
 
@@ -499,6 +516,25 @@ export class PairingClientHandshakeSessionService {
       session,
       authOkFrame,
       sharedSecret.sharedSecret,
+      transcriptSaltBase64Url
+    );
+  }
+
+  acceptAuthOkAndCreateTransportSessionFromRememberedTranscript(
+    session: PairingClientHandshakeSession,
+    authOkFrame: string
+  ): PairingClientAuthenticatedSessionResult {
+    const transcriptSaltBase64Url = session.transcriptSaltBase64Url();
+    if (transcriptSaltBase64Url === null) {
+      return {
+        ok: false,
+        error: PairingClientHandshakeError.SESSION_KEY_DERIVATION_FAILED,
+        field: 'transcriptSalt'
+      };
+    }
+    return this.acceptAuthOkAndCreateTransportSessionFromEphemeral(
+      session,
+      authOkFrame,
       transcriptSaltBase64Url
     );
   }
