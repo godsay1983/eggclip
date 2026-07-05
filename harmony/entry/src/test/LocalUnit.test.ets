@@ -77,10 +77,18 @@ import {
 } from '../main/ets/services/crypto/SpaceKeyReferenceService';
 import {
   SpaceKeyHuksError,
+  SpaceKeyHuksDecryptResult,
+  SpaceKeyHuksEncryptResult,
   SpaceKeyHuksImportResult,
   SpaceKeyHuksService,
   SpaceKeySecureImporter
 } from '../main/ets/services/crypto/SpaceKeyHuksService';
+import {
+  SpaceKeyAesGcmGateway,
+  SpaceKeyCryptoSelfTestError,
+  SpaceKeyCryptoSelfTestService,
+  SpaceKeyRefProvider
+} from '../main/ets/services/crypto/SpaceKeyCryptoSelfTestService';
 import {
   PairingInvitationError,
   PairingInvitationService
@@ -687,6 +695,35 @@ export default function localUnitTest() {
       expect(invalidNonce.field).assertEqual('nonce');
       expect(invalidTag.error).assertEqual(SpaceKeyHuksError.INVALID_LENGTH);
       expect(invalidTag.field).assertEqual('tag');
+    });
+
+    it('runsSpaceKeyHuksAesGcmSelfTestWithoutReturningSensitiveMaterial', 0, async () => {
+      const provider = new FakeSpaceKeyRefProvider('huks://eggclip/space-key/018ff6ef-c394-7d08-8b99-4b7d10f2767a/v1');
+      const crypto = new FakeSpaceKeyAesGcmGateway();
+      const service = new SpaceKeyCryptoSelfTestService(provider, crypto);
+      const result = await service.run();
+
+      expect(result.ok).assertEqual(true);
+      expect(crypto.encryptCalls).assertEqual(1);
+      expect(crypto.decryptCalls).assertEqual(1);
+      expect(JSON.stringify(result).indexOf('EggClip')).assertEqual(-1);
+      expect(JSON.stringify(result).indexOf('cipher-body')).assertEqual(-1);
+    });
+
+    it('rejectsSpaceKeyHuksAesGcmSelfTestWhenKeyIsMissingOrPlaintextDiffers', 0, async () => {
+      const missing = await new SpaceKeyCryptoSelfTestService(
+        new FakeSpaceKeyRefProvider(null),
+        new FakeSpaceKeyAesGcmGateway()
+      ).run();
+      const crypto = new FakeSpaceKeyAesGcmGateway();
+      crypto.returnMismatchedPlaintext = true;
+      const mismatch = await new SpaceKeyCryptoSelfTestService(
+        new FakeSpaceKeyRefProvider('huks://eggclip/space-key/018ff6ef-c394-7d08-8b99-4b7d10f2767a/v1'),
+        crypto
+      ).run();
+
+      expect(missing.error).assertEqual(SpaceKeyCryptoSelfTestError.NO_SPACE_KEY);
+      expect(mismatch.error).assertEqual(SpaceKeyCryptoSelfTestError.PLAINTEXT_MISMATCH);
     });
 
     it('acceptsEncryptedSpaceKeyDeliveryPayloadWithoutReturningRawKey', 0, async () => {
@@ -2761,6 +2798,91 @@ class FakeSpaceKeyHuksImportResult implements SpaceKeyHuksImportResult {
     this.ok = ok;
     this.encryptedSpaceKeyRef = encryptedSpaceKeyRef;
     this.huksAlias = huksAlias;
+    this.error = error;
+    this.field = field;
+  }
+}
+
+class FakeSpaceKeyRefProvider implements SpaceKeyRefProvider {
+  private readonly encryptedSpaceKeyRef: string | null;
+
+  constructor(encryptedSpaceKeyRef: string | null) {
+    this.encryptedSpaceKeyRef = encryptedSpaceKeyRef;
+  }
+
+  async loadLatestEncryptedSpaceKeyRef(): Promise<string | null> {
+    return this.encryptedSpaceKeyRef;
+  }
+}
+
+class FakeSpaceKeyAesGcmGateway implements SpaceKeyAesGcmGateway {
+  encryptCalls: number = 0;
+  decryptCalls: number = 0;
+  lastPlaintext: string = '';
+  returnMismatchedPlaintext: boolean = false;
+
+  async encryptBase64Url(
+    _: string,
+    __: string,
+    ___: string,
+    plaintextBase64Url: string
+  ): Promise<SpaceKeyHuksEncryptResult> {
+    this.encryptCalls += 1;
+    this.lastPlaintext = plaintextBase64Url;
+    return new FakeSpaceKeyHuksEncryptResult(true, 'cipher-body', 'cipher-tag', undefined, undefined);
+  }
+
+  async decryptBase64Url(
+    _: string,
+    __: string,
+    ___: string,
+    ____: string,
+    _____: string
+  ): Promise<SpaceKeyHuksDecryptResult> {
+    this.decryptCalls += 1;
+    if (this.returnMismatchedPlaintext) {
+      return new FakeSpaceKeyHuksDecryptResult(true, 'mismatch', undefined, undefined);
+    }
+    return new FakeSpaceKeyHuksDecryptResult(true, this.lastPlaintext, undefined, undefined);
+  }
+}
+
+class FakeSpaceKeyHuksEncryptResult implements SpaceKeyHuksEncryptResult {
+  ok: boolean;
+  body?: string;
+  tag?: string;
+  error?: SpaceKeyHuksError;
+  field?: string;
+
+  constructor(
+    ok: boolean,
+    body: string | undefined,
+    tag: string | undefined,
+    error: SpaceKeyHuksError | undefined,
+    field: string | undefined
+  ) {
+    this.ok = ok;
+    this.body = body;
+    this.tag = tag;
+    this.error = error;
+    this.field = field;
+  }
+}
+
+class FakeSpaceKeyHuksDecryptResult implements SpaceKeyHuksDecryptResult {
+  ok: boolean;
+  plaintext?: string;
+  error?: SpaceKeyHuksError;
+  field?: string;
+
+  constructor(
+    ok: boolean,
+    plaintext: string | undefined,
+    error: SpaceKeyHuksError | undefined,
+    field: string | undefined
+  ) {
+    this.ok = ok;
+    this.plaintext = plaintext;
     this.error = error;
     this.field = field;
   }

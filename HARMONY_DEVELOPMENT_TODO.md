@@ -182,6 +182,7 @@ harmony/entry/src/main/ets/
 - [ ] SettingsPage：历史、隐私、主题和诊断。
   - [x] 接入可见设置页和底部导航入口，支持读取/保存自动同步、自动接收、自动写入、历史数量和保留天数；主题和诊断待补。
   - [x] 接入亮色、暗色和跟随系统主题设置，并在应用入口加载时应用主题偏好。
+  - [x] 设置页诊断卡新增 HUKS 空间密钥加解密自检入口，只显示通过/失败状态，不展示密钥引用、密文、tag 或明文。
 - [ ] 手机使用单栏；平板使用设备/历史与内容预览双栏。
   - [x] 将底部入口从铺满原生 Tabs 调整为官方 HDS Tabs 悬浮式底部页签：首页、设备、设置，并为页面内容预留底部安全空间。
   - [x] 将底部页签按钮改为同风格几何图形图标，避免图形和文字/系统图标混用。
@@ -251,6 +252,7 @@ harmony/entry/src/main/ets/
   - [x] 已新增 `AesGcmCryptoService`，封装 CryptoFramework AES-GCM encrypt/decrypt 入口并覆盖 key、nonce、body、tag 的 base64url 和长度拒绝路径。
   - [x] `ProtocolTransportSession` 已在传入 session keys 时校验 canonical AAD、按 keyId 选择双向 session key，并在 AAD 不匹配或解密失败时关闭 session。
   - [x] `SpaceKeyHuksService` 已新增基于 `encryptedSpaceKeyRef`/HUKS alias 的 AES-GCM encrypt/decrypt 方法和 operation options；本地单测覆盖参数契约与非法输入拒绝。
+  - [x] 新增 `SpaceKeyCryptoSelfTestService` 和设置页诊断入口，可在真机上用已保存 `encryptedSpaceKeyRef` 执行固定明文加解密往返自检，诊断结果不泄露输入/输出材料。
   - [ ] 真机验证 HUKS AES-GCM encrypt/decrypt 输出后，接入正式业务帧加解密。
 - [x] 明确字节序、字符串编码、Base64 变体和 transcript 规范化规则。
 
@@ -440,9 +442,11 @@ harmony/entry/src/main/ets/
 - [x] 亮色、暗色和跟随系统主题。
 - [ ] 局域网诊断：mDNS、候选地址、WebSocket 状态和错误码。
   - [x] SettingsPage 已增加局域网诊断卡：展示 mDNS 状态、候选数量、WebSocket 状态和帧统计。
+  - [x] SettingsPage 诊断卡已增加空间密钥 HUKS AES-GCM 自检按钮，用于真机验证密钥引用可用性；不显示密钥、密文、tag、正文或摘要。
 - [x] 隐私说明：无云服务、前台同步、用户触发读取和本地保留。
 - [x] 诊断信息不显示正文、摘要、邀请和密钥。
   - [x] 局域网诊断卡只展示连接状态、候选数量和错误类型，不展示正文、摘要、邀请或密钥。
+  - [x] 空间密钥自检只展示通过/失败/无密钥引用，不展示 key ref、密文、tag、正文或摘要。
 
 ### 生命周期与适配
 

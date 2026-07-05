@@ -91,6 +91,26 @@ export class SpaceRdbRepository {
       resultSet.close();
     }
   }
+
+  async latestActiveWithKeyRef(): Promise<SpaceRecord | null> {
+    const store = await Database.getStore(this.context);
+    const resultSet = await store.querySql(
+      `SELECT space_id, display_name, encrypted_space_key_ref, key_version, state, created_at, updated_at
+        FROM spaces
+        WHERE state = ? AND encrypted_space_key_ref IS NOT NULL AND encrypted_space_key_ref <> ''
+        ORDER BY updated_at DESC
+        LIMIT 1`,
+      [SpaceState.ACTIVE]
+    );
+    try {
+      if (!resultSet.goToFirstRow()) {
+        return null;
+      }
+      return readSpaceRecord(resultSet);
+    } finally {
+      resultSet.close();
+    }
+  }
 }
 
 export class DeviceRdbRepository {

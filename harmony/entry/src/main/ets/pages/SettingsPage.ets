@@ -10,6 +10,10 @@ import {
   SettingsStoreSnapshot,
   SettingsStoreState
 } from '../store/SettingsStore';
+import {
+  SpaceKeyCryptoSelfTestError,
+  SpaceKeyCryptoSelfTestResult
+} from '../services/crypto/SpaceKeyCryptoSelfTestService';
 import { EggClipColors } from '../theme/Colors';
 import { EggClipSpacing } from '../theme/Spacing';
 import { EggClipTypography } from '../theme/Typography';
@@ -45,6 +49,8 @@ export struct SettingsPage {
   @State private transportDiagnostics: string = '帧诊断：接收 0 · 接受 0 · 拒绝 0';
   @State private connectionTitle: string = '等待桌面端';
   @State private connectionDescription: string = '正在等待 mDNS 候选，也可以使用手动 IP';
+  @State private spaceKeyDiagnosticRunning: boolean = false;
+  @State private spaceKeyDiagnosticStatus: string = '配对成功后可运行 HUKS 空间密钥加解密自检';
 
   aboutToAppear(): void {
     if (this.settingsStore === null) {
@@ -288,6 +294,18 @@ export struct SettingsPage {
       this.DiagnosticsRow('候选地址', `${this.discoveryCandidateCount} 个`)
       this.DiagnosticsRow('WebSocket', `${this.transportState} · ${this.transportStatus}`)
       this.DiagnosticsRow('帧统计', this.transportDiagnostics)
+      this.DiagnosticsRow('空间密钥', this.spaceKeyDiagnosticStatus)
+
+      Button(this.spaceKeyDiagnosticRunning ? '自检中' : '自检空间密钥加解密')
+        .width('100%')
+        .height(38)
+        .enabled(!this.spaceKeyDiagnosticRunning)
+        .fontColor(EggClipColors.textSecondary)
+        .backgroundColor(EggClipColors.controlBackground)
+        .borderRadius(19)
+        .onClick(() => {
+          this.runSpaceKeySelfTest();
+        })
 
       Text('诊断只显示连接状态、候选数量和错误类型，不显示剪贴板正文、摘要、邀请或密钥。')
         .width('100%')
@@ -543,6 +561,47 @@ export struct SettingsPage {
         this.historyActionStatus = '清空历史失败';
         this.statusText = '清空历史失败';
       });
+  }
+
+  private runSpaceKeySelfTest(): void {
+    if (this.settingsStore === null) {
+      this.spaceKeyDiagnosticStatus = '设置服务未初始化，无法运行自检';
+      return;
+    }
+    this.spaceKeyDiagnosticRunning = true;
+    this.spaceKeyDiagnosticStatus = '正在使用已保存的空间密钥引用进行加解密自检';
+    this.settingsStore.runSpaceKeyCryptoSelfTest()
+      .then((result: SpaceKeyCryptoSelfTestResult) => {
+        this.spaceKeyDiagnosticStatus = this.describeSpaceKeySelfTest(result);
+      })
+      .catch(() => {
+        this.spaceKeyDiagnosticStatus = '空间密钥自检异常';
+      })
+      .finally(() => {
+        this.spaceKeyDiagnosticRunning = false;
+      });
+  }
+
+  private describeSpaceKeySelfTest(result: SpaceKeyCryptoSelfTestResult): string {
+    if (result.ok) {
+      return 'HUKS 空间密钥加解密自检通过';
+    }
+    if (result.error === SpaceKeyCryptoSelfTestError.NO_SPACE_KEY) {
+      return '未找到已配对的同步空间密钥引用';
+    }
+    if (result.error === SpaceKeyCryptoSelfTestError.ENCRYPT_FAILED) {
+      return 'HUKS 空间密钥加密自检失败';
+    }
+    if (result.error === SpaceKeyCryptoSelfTestError.DECRYPT_FAILED) {
+      return 'HUKS 空间密钥解密自检失败';
+    }
+    if (result.error === SpaceKeyCryptoSelfTestError.PLAINTEXT_MISMATCH) {
+      return 'HUKS 空间密钥自检结果不一致';
+    }
+    if (result.error === SpaceKeyCryptoSelfTestError.STORE_FAILED) {
+      return '读取同步空间密钥引用失败';
+    }
+    return '空间密钥自检失败';
   }
 
   private applySnapshot(snapshot: SettingsStoreSnapshot): void {

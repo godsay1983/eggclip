@@ -6,8 +6,14 @@ import {
 } from '../models/DomainModels';
 import {
   ClipboardRdbRepository,
-  SettingsRdbRepository
+  SettingsRdbRepository,
+  SpaceRdbRepository
 } from '../data/repositories/RdbRepositories';
+import {
+  SpaceKeyCryptoSelfTestResult,
+  SpaceKeyCryptoSelfTestService,
+  SpaceKeyRefProvider
+} from '../services/crypto/SpaceKeyCryptoSelfTestService';
 
 export enum SettingsStoreState {
   IDLE = 'idle',
@@ -26,6 +32,8 @@ export interface SettingsStoreSnapshot {
 export class SettingsStore {
   private readonly repository: SettingsRdbRepository;
   private readonly clipboardRepository: ClipboardRdbRepository;
+  private readonly spaceRepository: SpaceRdbRepository;
+  private readonly spaceKeySelfTest: SpaceKeyCryptoSelfTestService;
   private currentState: SettingsStoreState = SettingsStoreState.IDLE;
   private currentSettings: AppSettings = defaultAppSettings();
   private currentErrorMessage: string = '';
@@ -33,6 +41,10 @@ export class SettingsStore {
   constructor(context: common.Context) {
     this.repository = new SettingsRdbRepository(context);
     this.clipboardRepository = new ClipboardRdbRepository(context);
+    this.spaceRepository = new SpaceRdbRepository(context);
+    this.spaceKeySelfTest = new SpaceKeyCryptoSelfTestService(
+      new SettingsSpaceKeyRefProvider(this.spaceRepository)
+    );
   }
 
   snapshot(): SettingsStoreSnapshot {
@@ -97,6 +109,23 @@ export class SettingsStore {
       this.currentErrorMessage = '清空历史失败';
     }
     return this.snapshot();
+  }
+
+  async runSpaceKeyCryptoSelfTest(): Promise<SpaceKeyCryptoSelfTestResult> {
+    return this.spaceKeySelfTest.run();
+  }
+}
+
+class SettingsSpaceKeyRefProvider implements SpaceKeyRefProvider {
+  private readonly spaceRepository: SpaceRdbRepository;
+
+  constructor(spaceRepository: SpaceRdbRepository) {
+    this.spaceRepository = spaceRepository;
+  }
+
+  async loadLatestEncryptedSpaceKeyRef(): Promise<string | null> {
+    const record = await this.spaceRepository.latestActiveWithKeyRef();
+    return record?.encryptedSpaceKeyRef ?? null;
   }
 }
 
