@@ -2,6 +2,7 @@ import { common } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
 import {
   PairingRdbRepository,
+  ClipboardRdbRepository,
   SettingsRdbRepository,
   SyncHeadRdbRepository,
   TrustedConnectionEndpointRecord
@@ -19,7 +20,7 @@ import {
   JsonObject,
   MessageType
 } from '../models/ProtocolModels';
-import { ProtocolParser } from '../models/ProtocolModels';
+import { ProtocolParser, RequestRange, SyncHeadsPayload } from '../models/ProtocolModels';
 import { LocalDeviceIdentityService } from '../services/crypto/LocalDeviceIdentityService';
 import {
   PairingClientNetworkHandshakeError,
@@ -459,7 +460,10 @@ class PairingConnectionStore {
         return this.snapshot();
       }
       this.title = '已收到桌面端同步状态';
-      this.description = '已保存桌面端各来源设备的可用序号，准备比较缺失范围。';
+      const requested = await this.requestMissingRanges(frameResult.decryptedPayload);
+      this.description = requested
+        ? '已保存桌面端同步状态，并已请求本机缺失的历史范围。'
+        : '已保存桌面端各来源设备的可用序号，没有需要补齐的历史范围。';
       this.emit();
       return this.snapshot();
     }
@@ -521,13 +525,17 @@ class PairingConnectionStore {
    * authenticated transport. Callers retain local persistence responsibility.
    */
   async sendAuthenticatedItemLive(payload: JsonObject): Promise<boolean> {
+    return await this.sendAuthenticatedBusinessFrame(MessageType.ITEM_LIVE, payload);
+  }
+
+  private async sendAuthenticatedBusinessFrame(messageType: MessageType, payload: JsonObject): Promise<boolean> {
     if (this.state !== PairingConnectionState.AUTHENTICATED ||
       this.authenticatedTransportSession === null ||
       this.authenticatedTransportSession.isClosed()) {
       return false;
     }
     const encoded = this.authenticatedTransportSession.encodeBusinessFrame(
-      MessageType.ITEM_LIVE,
+      messageType,
       nextMessageId(),
       payload
     );
@@ -762,6 +770,34 @@ class PairingConnectionStore {
     } catch (_) {
       return false;
     }
+  }
+
+  private async requestMissingRanges(payload: JsonObject | undefined): Promise<boolean> {
+    if (this.context === null || this.pendingTrustDraft === null || payload === undefined) return false;
+    const parsed = new ProtocolParser().parseSyncHeadsPayload(payload);
+    if (!parsed.ok || parsed.payload === undefined) return false;
+    const localHeads = await new ClipboardRdbRepository(this.context)
+      .summarizeAvailableSequences(this.pendingTrustDraft.spaceId, Date.now());
+    const localLatest: Record<string, number> = {};
+    for (let index = 0; index < localHeads.length; index += 1) {
+      localLatest[localHeads[index].originDeviceId] = localHeads[index].latestOriginSeq;
+    }
+    const ranges: RequestRange[] = [];
+    const remote = parsed.payload as SyncHeadsPayload;
+    for (const originDeviceId of Object.keys(remote.heads)) {
+      const remoteLatest = remote.heads[originDeviceId];
+      const remoteMinimum = remote.minimumAvailable[originDeviceId];
+      const localLatestSeq = localLatest[originDeviceId] ?? 0;
+      if (remoteLatest === undefined || remoteMinimum === undefined || remoteLatest <= localLatestSeq) continue;
+      ranges.push({
+        originDeviceId,
+        fromSeq: Math.max(localLatestSeq + 1, remoteMinimum),
+        toSeq: remoteLatest
+      });
+    }
+    if (ranges.length === 0) return false;
+    const requestPayload: JsonObject = { ranges: ranges as Object };
+    return await this.sendAuthenticatedBusinessFrame(MessageType.REQUEST_RANGE, requestPayload);
   }
 
   private emit(): void {
