@@ -70,6 +70,16 @@ pub struct PocTransportRuntime {
 struct AuthenticatedPeerSession {
     session: AuthenticatedTransportSession,
     space_id: Uuid,
+    device_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AuthenticatedConnectionStateEvent {
+    peer: String,
+    device_id: String,
+    space_id: String,
+    state: &'static str,
 }
 
 #[allow(dead_code)]
@@ -946,7 +956,14 @@ where
         .lock()
     {
         if let Some(mut session) = sessions.remove(&peer) {
+            let event = AuthenticatedConnectionStateEvent {
+                peer: peer.clone(),
+                device_id: session.device_id.to_string(),
+                space_id: session.space_id.to_string(),
+                state: "offline",
+            };
             session.session.close();
+            let _ = app.emit("transport://authenticated-connection", event);
         }
     }
     write_task.abort();
@@ -1496,7 +1513,20 @@ fn remember_authenticated_session(
     accepted: crate::pairing::PairingServerAuthProofAccepted,
 ) -> Result<(), ()> {
     let runtime = app.state::<PocTransportRuntime>();
+    let device_id = Uuid::parse_str(&accepted.peer_device_id).map_err(|_| ())?;
+    let space_id = Uuid::parse_str(&accepted.space_id).map_err(|_| ())?;
     let mut sessions = runtime.authenticated_sessions.lock().map_err(|_| ())?;
+    let displaced: Vec<String> = sessions
+        .iter()
+        .filter_map(|(existing_peer, entry)| {
+            (entry.device_id == device_id && existing_peer != peer).then(|| existing_peer.clone())
+        })
+        .collect();
+    for displaced_peer in &displaced {
+        if let Some(mut session) = sessions.remove(displaced_peer) {
+            session.session.close();
+        }
+    }
     sessions.insert(
         peer.to_owned(),
         AuthenticatedPeerSession {
@@ -1507,7 +1537,25 @@ fn remember_authenticated_session(
                 accepted.session_keys.server_to_client,
                 5,
             ),
-            space_id: Uuid::parse_str(&accepted.space_id).map_err(|_| ())?,
+            space_id,
+            device_id,
+        },
+    );
+    drop(sessions);
+    if let Ok(peers) = runtime.peers.lock() {
+        for displaced_peer in &displaced {
+            if let Some(sender) = peers.get(displaced_peer) {
+                let _ = sender.send(Message::Close(None));
+            }
+        }
+    }
+    let _ = app.emit(
+        "transport://authenticated-connection",
+        AuthenticatedConnectionStateEvent {
+            peer: peer.to_owned(),
+            device_id: device_id.to_string(),
+            space_id: space_id.to_string(),
+            state: "online",
         },
     );
     Ok(())
@@ -1520,7 +1568,14 @@ fn close_authenticated_session(app: &AppHandle, peer: &str) {
         .lock()
     {
         if let Some(mut session) = sessions.remove(peer) {
+            let event = AuthenticatedConnectionStateEvent {
+                peer: peer.to_owned(),
+                device_id: session.device_id.to_string(),
+                space_id: session.space_id.to_string(),
+                state: "offline",
+            };
             session.session.close();
+            let _ = app.emit("transport://authenticated-connection", event);
         }
     }
 }
