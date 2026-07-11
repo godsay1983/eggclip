@@ -15,6 +15,7 @@ import {
   getPocTransportStatus,
   listClipboardHistoryPreview,
   listLocalSyncSpaces,
+  loadActiveSyncSpaceId,
   loadPocRecentEndpoint,
   onAuthenticatedLocalBroadcast,
   onLocalClipboardText,
@@ -25,6 +26,7 @@ import {
   onPocPeerDisconnected,
   readSystemClipboardText,
   sendAuthenticatedClipboardText,
+  selectActiveSyncSpace as selectActiveSyncSpaceApi,
   startPocTransport,
   writeSystemClipboardText,
 } from "$lib/api/shell";
@@ -327,12 +329,16 @@ export const shellSnapshot = {
       },
     }));
     try {
-      const spaces = await listLocalSyncSpaces();
+      const [spaces, activeSpaceId] = await Promise.all([
+        listLocalSyncSpaces(),
+        loadActiveSyncSpaceId(),
+      ]);
       snapshot.update((state) => ({
         ...state,
         syncSpace: {
           state: spaces.length > 0 ? "ready" : "idle",
           spaces,
+          activeSpaceId,
           invitation: state.syncSpace.invitation,
           invitationCopiedAt: state.syncSpace.invitationCopiedAt,
           errorMessage: null,
@@ -361,6 +367,7 @@ export const shellSnapshot = {
     }));
     try {
       const space = await ensureDefaultSyncSpace();
+      const activeSpaceId = await loadActiveSyncSpaceId();
       snapshot.update((state) => {
         const spaces = [
           space,
@@ -371,6 +378,7 @@ export const shellSnapshot = {
           syncSpace: {
             state: "ready",
             spaces,
+            activeSpaceId,
             invitation: state.syncSpace.invitation,
             invitationCopiedAt: state.syncSpace.invitationCopiedAt,
             errorMessage: null,
@@ -400,11 +408,13 @@ export const shellSnapshot = {
     }));
     try {
       const space = await createLocalSyncSpace("默认空间");
+      const activeSpaceId = await loadActiveSyncSpaceId();
       snapshot.update((state) => ({
         ...state,
         syncSpace: {
           state: "ready",
           spaces: [space, ...state.syncSpace.spaces],
+          activeSpaceId,
           invitation: null,
           invitationCopiedAt: null,
           errorMessage: null,
@@ -428,6 +438,42 @@ export const shellSnapshot = {
           state: "authFailed",
           title: "创建同步空间失败",
           description: error instanceof Error ? error.message : "无法创建同步空间",
+        },
+      }));
+    }
+  },
+  async selectActiveSyncSpace(spaceId: string) {
+    snapshot.update((state) => ({
+      ...state,
+      syncSpace: {
+        ...state.syncSpace,
+        state: "loading",
+        errorMessage: null,
+      },
+    }));
+    try {
+      const selected = await selectActiveSyncSpaceApi(spaceId);
+      snapshot.update((state) => ({
+        ...state,
+        syncSpace: {
+          ...state.syncSpace,
+          state: "ready",
+          activeSpaceId: selected.id,
+          errorMessage: null,
+        },
+        connection: {
+          state: "online",
+          title: "已切换活动同步空间",
+          description: `后续本机剪贴板会发送到“${selected.displayName}”。`,
+        },
+      }));
+    } catch (error) {
+      snapshot.update((state) => ({
+        ...state,
+        syncSpace: {
+          ...state.syncSpace,
+          state: "error",
+          errorMessage: error instanceof Error ? error.message : "无法切换活动同步空间",
         },
       }));
     }

@@ -131,6 +131,7 @@ export interface PairingInvitationSummary {
 export interface SyncSpaceState {
   state: "idle" | "loading" | "creating" | "inviting" | "copyingInvitation" | "ready" | "error";
   spaces: SyncSpaceSummary[];
+  activeSpaceId: string | null;
   invitation: PairingInvitationSummary | null;
   errorMessage: string | null;
   invitationCopiedAt: string | null;

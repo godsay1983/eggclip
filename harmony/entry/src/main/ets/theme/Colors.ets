@@ -8,4 +8,3 @@ export class EggClipColors {
   static readonly textSecondary: ResourceColor = $r('app.color.eggclip_text_secondary');
   static readonly statusOnline: ResourceColor = $r('app.color.eggclip_status_online');
 }
-

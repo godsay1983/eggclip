@@ -81,6 +81,8 @@ pub fn run() {
             pairing::create_pairing_invitation,
             pairing::ensure_default_sync_space,
             pairing::list_local_sync_spaces,
+            pairing::load_active_sync_space_id,
+            pairing::select_active_sync_space,
             identity::load_local_device_identity,
             settings::load_app_settings,
             settings::save_app_settings,

@@ -1,12 +1,6 @@
 mod session;
 
-use std::{
-    collections::{HashMap, HashSet},
-    net::Ipv4Addr,
-    str::FromStr,
-    sync::Mutex,
-    time::Duration,
-};
+use std::{collections::HashMap, net::Ipv4Addr, str::FromStr, sync::Mutex, time::Duration};
 
 use crate::{
     clipboard::{ClipboardText, ClipboardTextError},
@@ -17,7 +11,8 @@ use crate::{
     },
     pairing::{
         accept_pairing_auth_proof, accept_pairing_client_hello, accept_trusted_device_client_hello,
-        load_space_key, PairingError, PairingServerAuthProofInput, PairingServerHelloDraft,
+        load_space_key, resolve_active_sync_space_target_at_path, PairingError,
+        PairingServerAuthProofInput, PairingServerHelloDraft,
     },
     protocol::{
         parse_envelope, ClipboardItem as ProtocolClipboardItem, ContentType as ProtocolContentType,
@@ -84,6 +79,7 @@ struct AuthenticatedConnectionStateEvent {
     device_id: String,
     space_id: String,
     state: &'static str,
+    reason: &'static str,
 }
 
 #[allow(dead_code)]
@@ -334,7 +330,7 @@ pub fn stop_poc_transport(
         }
     }
     crate::discovery::unpublish_poc_service(&app);
-    let _ = disconnect_all_poc_peers_with_runtime(&runtime);
+    let _ = disconnect_all_poc_peers_with_runtime(&app, &runtime, "transportStopped");
 
     let status = PocTransportStatus {
         state: PocTransportState::Stopped,
@@ -433,8 +429,11 @@ pub async fn connect_poc_peer(
 }
 
 #[tauri::command]
-pub fn disconnect_all_poc_peers(runtime: State<'_, PocTransportRuntime>) -> Result<usize, String> {
-    disconnect_all_poc_peers_with_runtime(&runtime)
+pub fn disconnect_all_poc_peers(
+    app: AppHandle,
+    runtime: State<'_, PocTransportRuntime>,
+) -> Result<usize, String> {
+    disconnect_all_poc_peers_with_runtime(&app, &runtime, "userDisconnected")
 }
 
 #[tauri::command]
@@ -457,7 +456,18 @@ pub fn load_poc_recent_endpoint(app: AppHandle) -> Result<Option<PocRecentEndpoi
     Ok(Some(endpoint))
 }
 
-fn disconnect_all_poc_peers_with_runtime(runtime: &PocTransportRuntime) -> Result<usize, String> {
+fn disconnect_all_poc_peers_with_runtime(
+    app: &AppHandle,
+    runtime: &PocTransportRuntime,
+    reason: &'static str,
+) -> Result<usize, String> {
+    let authenticated_peers = runtime
+        .authenticated_sessions
+        .lock()
+        .map_err(|_| "认证会话状态锁已损坏".to_owned())?
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>();
     let mut peers = runtime
         .peers
         .lock()
@@ -466,15 +476,12 @@ fn disconnect_all_poc_peers_with_runtime(runtime: &PocTransportRuntime) -> Resul
     for sender in peers.values() {
         let _ = sender.send(Message::Close(None));
     }
+    for peer in authenticated_peers {
+        close_authenticated_session_with_reason(app, &peer, reason, false);
+    }
     peers.clear();
     if let Ok(mut handshakes) = runtime.pairing_handshakes.lock() {
         handshakes.clear();
-    }
-    if let Ok(mut sessions) = runtime.authenticated_sessions.lock() {
-        for session in sessions.values_mut() {
-            session.session.close();
-        }
-        sessions.clear();
     }
     Ok(count)
 }
@@ -570,8 +577,10 @@ fn persist_and_broadcast_authenticated_local_clipboard(
     app: &AppHandle,
     item: &ClipboardText,
 ) -> Result<(AuthenticatedLocalBroadcastStatus, usize), ()> {
-    let runtime = app.state::<PocTransportRuntime>();
-    let (space_id, ambiguous_space) = single_authenticated_space(&runtime)?;
+    let path = database_path(app).map_err(|_| ())?;
+    let (space_id, ambiguous_space) =
+        resolve_active_sync_space_target_at_path(&path, now_ms().map_err(|_| ())?)
+            .map_err(|_| ())?;
     let Some(space_id) = space_id else {
         let status = if ambiguous_space {
             AuthenticatedLocalBroadcastStatus::SkippedAmbiguousSpace
@@ -582,7 +591,6 @@ fn persist_and_broadcast_authenticated_local_clipboard(
         return Ok((status, 0));
     };
 
-    let path = database_path(app).map_err(|_| ())?;
     let mut connection = open_database(path).map_err(|_| ())?;
     let settings = SettingsRepository::new(&connection)
         .load_app_settings()
@@ -627,11 +635,11 @@ fn persist_and_broadcast_authenticated_local_clipboard(
     })();
     space_key.fill(0);
     let payload = persisted_payload?;
-    let sent_peers = broadcast_authenticated_item_live(&runtime, space_id, &payload);
+    let sent_peers = broadcast_authenticated_item_live(app, space_id, &payload);
     let status = if sent_peers > 0 {
         AuthenticatedLocalBroadcastStatus::Sent
     } else {
-        AuthenticatedLocalBroadcastStatus::Failed
+        AuthenticatedLocalBroadcastStatus::SkippedNoAuthenticatedPeer
     };
     Ok((status, sent_peers))
 }
@@ -666,15 +674,6 @@ fn persist_local_history_fallback(app: &AppHandle, item: &ClipboardText) -> Resu
     )
     .map_err(|_| ())?;
     Ok(())
-}
-
-fn single_authenticated_space(runtime: &PocTransportRuntime) -> Result<(Option<Uuid>, bool), ()> {
-    let sessions = runtime.authenticated_sessions.lock().map_err(|_| ())?;
-    let spaces: HashSet<Uuid> = sessions.values().map(|session| session.space_id).collect();
-    if spaces.len() > 1 {
-        return Ok((None, true));
-    }
-    Ok((spaces.into_iter().next(), false))
 }
 
 fn encrypt_local_clipboard_content(
@@ -816,10 +815,11 @@ fn build_sync_heads_payload(app: &AppHandle, space_id: Uuid) -> Result<serde_jso
 }
 
 fn broadcast_authenticated_item_live(
-    runtime: &PocTransportRuntime,
+    app: &AppHandle,
     space_id: Uuid,
     payload: &serde_json::Value,
 ) -> usize {
+    let runtime = app.state::<PocTransportRuntime>();
     let mut frames = Vec::new();
     let mut stale_sessions = Vec::new();
     if let Ok(mut sessions) = runtime.authenticated_sessions.lock() {
@@ -834,16 +834,15 @@ fn broadcast_authenticated_item_live(
             ) {
                 Ok(frame) => frames.push((peer.clone(), frame)),
                 Err(_) => {
-                    entry.session.close();
                     stale_sessions.push(peer.clone());
                 }
             }
         }
-        for peer in &stale_sessions {
-            sessions.remove(peer);
-        }
     } else {
         return 0;
+    }
+    for peer in stale_sessions {
+        close_authenticated_session_with_reason(app, &peer, "outboundEncodingFailed", true);
     }
 
     let mut sent_peers = 0;
@@ -859,14 +858,8 @@ fn broadcast_authenticated_item_live(
             peers.remove(peer);
         }
     }
-    if !stale_peers.is_empty() {
-        if let Ok(mut sessions) = runtime.authenticated_sessions.lock() {
-            for peer in &stale_peers {
-                if let Some(mut session) = sessions.remove(peer) {
-                    session.session.close();
-                }
-            }
-        }
+    for peer in stale_peers {
+        close_authenticated_session_with_reason(app, &peer, "outboundChannelClosed", false);
     }
     sent_peers
 }
@@ -1115,23 +1108,7 @@ where
     if let Ok(mut handshakes) = app.state::<PocTransportRuntime>().pairing_handshakes.lock() {
         handshakes.remove(&peer);
     }
-    if let Ok(mut sessions) = app
-        .state::<PocTransportRuntime>()
-        .authenticated_sessions
-        .lock()
-    {
-        if let Some(mut session) = sessions.remove(&peer) {
-            let _ = mark_trusted_device_offline(&app, session.device_id);
-            let event = AuthenticatedConnectionStateEvent {
-                peer: peer.clone(),
-                device_id: session.device_id.to_string(),
-                space_id: session.space_id.to_string(),
-                state: "offline",
-            };
-            session.session.close();
-            let _ = app.emit("transport://authenticated-connection", event);
-        }
-    }
+    close_authenticated_session_with_reason(&app, &peer, "peerDisconnected", false);
     heartbeat_task.abort();
     write_task.abort();
     let _ = app.emit("transport://poc-peer-disconnected", PocPeerEvent { peer });
@@ -1450,7 +1427,7 @@ fn try_accept_authenticated_frame(
     let Some(message_type) = authenticated_message_type(text) else {
         return AuthenticatedFrameRoute::NotAuthenticated;
     };
-    let payload = {
+    let accepted_payload = {
         let runtime = app.state::<PocTransportRuntime>();
         let mut sessions = match runtime.authenticated_sessions.lock() {
             Ok(sessions) => sessions,
@@ -1459,18 +1436,18 @@ fn try_accept_authenticated_frame(
         let Some(session) = sessions.get_mut(peer) else {
             return AuthenticatedFrameRoute::Rejected;
         };
-        match session.session.accept_text_frame(text) {
-            Ok(payload) => payload,
-            Err(_) => {
-                session.session.close();
-                sessions.remove(peer);
-                return AuthenticatedFrameRoute::Rejected;
-            }
+        session.session.accept_text_frame(text)
+    };
+    let payload = match accepted_payload {
+        Ok(payload) => payload,
+        Err(_) => {
+            close_authenticated_session_with_reason(app, peer, "protocolRejected", true);
+            return AuthenticatedFrameRoute::Rejected;
         }
     };
 
     if dispatch_authenticated_payload(app, peer, message_type, &payload).is_err() {
-        close_authenticated_session(app, peer);
+        close_authenticated_session_with_reason(app, peer, "payloadRejected", true);
         return AuthenticatedFrameRoute::Rejected;
     }
     let _ = app.emit(
@@ -1501,7 +1478,12 @@ fn dispatch_authenticated_payload(
             return Ok(());
         }
         MessageType::ItemLive => {}
-        _ => return Ok(()),
+        MessageType::Ping => {
+            return send_authenticated_business_payload(app, peer, MessageType::Pong, payload)
+        }
+        MessageType::Pong => return Ok(()),
+        MessageType::DeviceRevoked | MessageType::SpaceKeyRotated => return Err(()),
+        _ => return Err(()),
     }
     let (protocol_item, clipboard_item) =
         authenticated_clipboard_text_from_payload(message_type, payload)?;
@@ -1944,7 +1926,7 @@ fn remember_authenticated_session(
             session.session.close();
         }
     }
-    sessions.insert(
+    let replaced = sessions.insert(
         peer.to_owned(),
         AuthenticatedPeerSession {
             session: AuthenticatedTransportSession::new(
@@ -1958,6 +1940,9 @@ fn remember_authenticated_session(
             device_id,
         },
     );
+    if let Some(mut replaced) = replaced {
+        replaced.session.close();
+    }
     drop(sessions);
     if let Ok(peers) = runtime.peers.lock() {
         for displaced_peer in &displaced {
@@ -1973,29 +1958,54 @@ fn remember_authenticated_session(
             device_id: device_id.to_string(),
             space_id: space_id.to_string(),
             state: "online",
+            reason: "authenticated",
         },
     );
     Ok(())
 }
 
-fn close_authenticated_session(app: &AppHandle, peer: &str) {
-    if let Ok(mut sessions) = app
-        .state::<PocTransportRuntime>()
+fn close_authenticated_session_with_reason(
+    app: &AppHandle,
+    peer: &str,
+    reason: &'static str,
+    notify_peer: bool,
+) {
+    let runtime = app.state::<PocTransportRuntime>();
+    let removed = runtime
         .authenticated_sessions
         .lock()
-    {
-        if let Some(mut session) = sessions.remove(peer) {
-            let _ = mark_trusted_device_offline(app, session.device_id);
-            let event = AuthenticatedConnectionStateEvent {
-                peer: peer.to_owned(),
-                device_id: session.device_id.to_string(),
-                space_id: session.space_id.to_string(),
-                state: "offline",
-            };
-            session.session.close();
-            let _ = app.emit("transport://authenticated-connection", event);
+        .ok()
+        .and_then(|mut sessions| {
+            let mut removed = sessions.remove(peer)?;
+            removed.session.close();
+            let device_still_online = sessions
+                .values()
+                .any(|candidate| candidate.device_id == removed.device_id);
+            Some((removed.device_id, removed.space_id, device_still_online))
+        });
+    let Some((device_id, space_id, device_still_online)) = removed else {
+        return;
+    };
+    if notify_peer {
+        if let Ok(peers) = runtime.peers.lock() {
+            if let Some(sender) = peers.get(peer) {
+                let _ = sender.send(Message::Close(None));
+            }
         }
     }
+    if !device_still_online {
+        let _ = mark_trusted_device_offline(app, device_id);
+    }
+    let _ = app.emit(
+        "transport://authenticated-connection",
+        AuthenticatedConnectionStateEvent {
+            peer: peer.to_owned(),
+            device_id: device_id.to_string(),
+            space_id: space_id.to_string(),
+            state: "offline",
+            reason,
+        },
+    );
 }
 
 fn take_pairing_handshake(
@@ -2335,16 +2345,6 @@ mod tests {
         assert_eq!(diagnostics.accepted_items, 0);
         assert_eq!(diagnostics.rejected_frames, 0);
         assert_eq!(diagnostics.last_rejection, None);
-    }
-
-    #[test]
-    fn skips_authenticated_local_broadcast_without_an_authenticated_space() {
-        let runtime = PocTransportRuntime::default();
-
-        assert_eq!(
-            single_authenticated_space(&runtime).expect("runtime lock should be available"),
-            (None, false)
-        );
     }
 
     #[test]

@@ -29,7 +29,7 @@ use crate::{
         open_database,
         repositories::{
             DeviceRepository, PairingInvitationRecord, PairingInvitationRepository,
-            PairingInvitationState, SpaceRecord, SpaceRepository,
+            PairingInvitationState, SettingsRepository, SpaceRecord, SpaceRepository,
         },
     },
     sync::{DeviceTrustState, Space, SpaceState},
@@ -42,6 +42,7 @@ pub const PAIRING_INVITATION_TTL_MS: u64 = 5 * 60 * 1000;
 pub const DEFAULT_SPACE_DISPLAY_NAME: &str = "默认空间";
 const PAIRING_INVITATION_EXPIRY_SWEEP_SECONDS: u64 = 60;
 const PAIRING_INVITATION_QR_MIN_DIMENSIONS: u32 = 224;
+pub const ACTIVE_SYNC_SPACE_ID_KEY: &str = "activeSyncSpaceId";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -235,6 +236,26 @@ pub fn ensure_default_sync_space(app: tauri::AppHandle) -> Result<SyncSpaceSumma
 }
 
 #[tauri::command]
+pub fn load_active_sync_space_id(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let path = database_path(&app)?;
+    let connection = open_database(path).map_err(|error| format!("无法打开本地数据库：{error}"))?;
+    resolve_active_sync_space(&connection, now_ms()?)
+        .map(|space_id| space_id.map(|value| value.to_string()))
+        .map_err(|error| format!("无法读取活动同步空间：{error}"))
+}
+
+#[tauri::command]
+pub fn select_active_sync_space(
+    app: tauri::AppHandle,
+    space_id: String,
+) -> Result<SyncSpaceSummary, String> {
+    let path = database_path(&app)?;
+    let connection = open_database(path).map_err(|error| format!("无法打开本地数据库：{error}"))?;
+    select_active_sync_space_in_database(&connection, &space_id, now_ms()?)
+        .map_err(|error| format!("无法选择活动同步空间：{error}"))
+}
+
+#[tauri::command]
 pub fn create_pairing_invitation(
     app: tauri::AppHandle,
     space_id: String,
@@ -324,6 +345,28 @@ pub fn list_sync_spaces_at_path(path: &Path) -> Result<Vec<SyncSpaceSummary>, Pa
     let connection =
         open_database(path).map_err(|error| PairingError::Database(error.to_string()))?;
     list_sync_spaces(&connection)
+}
+
+pub fn resolve_active_sync_space_at_path(
+    path: &Path,
+    updated_at: u64,
+) -> Result<Option<Uuid>, PairingError> {
+    let connection =
+        open_database(path).map_err(|error| PairingError::Database(error.to_string()))?;
+    resolve_active_sync_space(&connection, updated_at)
+}
+
+pub fn resolve_active_sync_space_target_at_path(
+    path: &Path,
+    updated_at: u64,
+) -> Result<(Option<Uuid>, bool), PairingError> {
+    let connection =
+        open_database(path).map_err(|error| PairingError::Database(error.to_string()))?;
+    let selected = resolve_active_sync_space(&connection, updated_at)?;
+    if selected.is_some() {
+        return Ok((selected, false));
+    }
+    Ok((None, selectable_space_ids(&connection)?.len() > 1))
 }
 
 pub fn expire_pairing_invitations_at_path(path: &Path, now_ms: u64) -> Result<usize, PairingError> {
@@ -441,6 +484,73 @@ pub fn list_sync_spaces(connection: &Connection) -> Result<Vec<SyncSpaceSummary>
             created_at_ms: record.space.created_at,
         })
         .collect())
+}
+
+pub fn resolve_active_sync_space(
+    connection: &Connection,
+    updated_at: u64,
+) -> Result<Option<Uuid>, PairingError> {
+    let settings = SettingsRepository::new(connection);
+    if let Some(value) = settings
+        .get(ACTIVE_SYNC_SPACE_ID_KEY)
+        .map_err(|error| PairingError::Database(error.to_string()))?
+    {
+        if let Ok(space_id) = Uuid::parse_str(&value) {
+            if is_selectable_space(connection, space_id)? {
+                return Ok(Some(space_id));
+            }
+        }
+    }
+
+    let candidates = selectable_space_ids(connection)?;
+    if candidates.len() != 1 {
+        return Ok(None);
+    }
+    let space_id = candidates[0];
+    settings
+        .set(ACTIVE_SYNC_SPACE_ID_KEY, &space_id.to_string(), updated_at)
+        .map_err(|error| PairingError::Database(error.to_string()))?;
+    Ok(Some(space_id))
+}
+
+pub fn select_active_sync_space_in_database(
+    connection: &Connection,
+    space_id: &str,
+    updated_at: u64,
+) -> Result<SyncSpaceSummary, PairingError> {
+    let space_id = Uuid::parse_str(space_id).map_err(|_| PairingError::InvalidSpaceId)?;
+    if !is_selectable_space(connection, space_id)? {
+        return Err(PairingError::MissingSpaceKeyRef);
+    }
+    SettingsRepository::new(connection)
+        .set(ACTIVE_SYNC_SPACE_ID_KEY, &space_id.to_string(), updated_at)
+        .map_err(|error| PairingError::Database(error.to_string()))?;
+    list_sync_spaces(connection)?
+        .into_iter()
+        .find(|space| space.space_id == space_id.to_string())
+        .ok_or(PairingError::MissingSpace)
+}
+
+fn selectable_space_ids(connection: &Connection) -> Result<Vec<Uuid>, PairingError> {
+    let records = SpaceRepository::new(connection)
+        .list()
+        .map_err(|error| PairingError::Database(error.to_string()))?;
+    Ok(records
+        .into_iter()
+        .filter(|record| {
+            record.space.state == SpaceState::Active && record.encrypted_space_key_ref.is_some()
+        })
+        .map(|record| record.space.space_id)
+        .collect())
+}
+
+fn is_selectable_space(connection: &Connection, space_id: Uuid) -> Result<bool, PairingError> {
+    let record = SpaceRepository::new(connection)
+        .get(space_id)
+        .map_err(|error| PairingError::Database(error.to_string()))?;
+    Ok(record.is_some_and(|value| {
+        value.space.state == SpaceState::Active && value.encrypted_space_key_ref.is_some()
+    }))
 }
 
 pub fn expire_pairing_invitations(
@@ -1129,6 +1239,43 @@ mod tests {
         assert!(spaces
             .iter()
             .all(|space| space.space_key_ref.starts_with("credential://")));
+    }
+
+    #[test]
+    fn auto_selects_only_space_and_requires_choice_when_multiple_exist() {
+        let mut connection = open_in_memory_database().expect("database should open");
+        let mut store = MemorySecretStore::default();
+        let first = create_sync_space(&mut connection, &mut store, "默认空间", 1_700_000_000_000)
+            .expect("first space should be created");
+
+        assert_eq!(
+            resolve_active_sync_space(&connection, 1_700_000_000_100)
+                .expect("single space should resolve")
+                .map(|value| value.to_string()),
+            Some(first.space_id.clone())
+        );
+
+        let second = create_sync_space(&mut connection, &mut store, "第二空间", 1_700_000_000_200)
+            .expect("second space should be created");
+        SettingsRepository::new(&connection)
+            .set(ACTIVE_SYNC_SPACE_ID_KEY, "invalid", 1_700_000_000_300)
+            .expect("invalid selection fixture should save");
+        assert_eq!(
+            resolve_active_sync_space(&connection, 1_700_000_000_400)
+                .expect("ambiguous spaces should not guess"),
+            None
+        );
+
+        let selected =
+            select_active_sync_space_in_database(&connection, &second.space_id, 1_700_000_000_500)
+                .expect("explicit selection should save");
+        assert_eq!(selected.space_id, second.space_id);
+        assert_eq!(
+            resolve_active_sync_space(&connection, 1_700_000_000_600)
+                .expect("saved selection should resolve")
+                .map(|value| value.to_string()),
+            Some(selected.space_id)
+        );
     }
 
     #[test]

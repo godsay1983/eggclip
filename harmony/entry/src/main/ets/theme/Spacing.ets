@@ -6,4 +6,3 @@ export class EggClipSpacing {
   static readonly radiusLarge: number = 28;
   static readonly radiusMedium: number = 18;
 }
-

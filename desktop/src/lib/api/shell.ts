@@ -158,6 +158,7 @@ export function createInitialShellSnapshot(): ShellSnapshot {
     syncSpace: {
       state: "idle",
       spaces: [],
+      activeSpaceId: null,
       invitation: null,
       errorMessage: null,
       invitationCopiedAt: null,
@@ -234,6 +235,15 @@ export async function createLocalSyncSpace(displayName: string): Promise<SyncSpa
 export async function listLocalSyncSpaces(): Promise<SyncSpaceSummary[]> {
   const spaces = await invoke<SyncSpaceSummaryDto[]>("list_local_sync_spaces");
   return spaces.map(toSyncSpaceSummary);
+}
+
+export async function loadActiveSyncSpaceId(): Promise<string | null> {
+  return invoke<string | null>("load_active_sync_space_id");
+}
+
+export async function selectActiveSyncSpace(spaceId: string): Promise<SyncSpaceSummary> {
+  const space = await invoke<SyncSpaceSummaryDto>("select_active_sync_space", { spaceId });
+  return toSyncSpaceSummary(space);
 }
 
 export async function ensureDefaultSyncSpace(): Promise<SyncSpaceSummary> {
