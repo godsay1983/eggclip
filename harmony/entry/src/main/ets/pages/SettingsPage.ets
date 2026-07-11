@@ -638,7 +638,7 @@ export struct SettingsPage {
 
   private describeSpaceKeySelfTest(result: SpaceKeyCryptoSelfTestResult): string {
     if (result.ok) {
-      return 'HUKS 空间密钥加解密自检通过';
+      return 'HUKS 空间密钥加解密与摘要自检通过';
     }
     if (result.error === SpaceKeyCryptoSelfTestError.NO_SPACE_KEY) {
       return '未找到已配对的同步空间密钥引用';
@@ -663,7 +663,7 @@ export struct SettingsPage {
 
   private describeSpaceKeySelfTestDetail(result: SpaceKeyCryptoSelfTestResult): string {
     if (result.ok) {
-      return '已完成固定文本加密、解密和一致性校验；未展示明文、密文、tag 或密钥引用。';
+      return '已完成固定文本加密、解密、一致性和 HMAC 摘要校验；未展示明文、密文、tag、摘要或密钥引用。';
     }
     if (result.error === SpaceKeyCryptoSelfTestError.NO_SPACE_KEY) {
       return '请先完成一次桌面端配对，让本机保存同步空间密钥引用。';
