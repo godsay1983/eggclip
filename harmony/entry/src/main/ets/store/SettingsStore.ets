@@ -14,6 +14,11 @@ import {
   SpaceKeyCryptoSelfTestService,
   SpaceKeyRefProvider
 } from '../services/crypto/SpaceKeyCryptoSelfTestService';
+import {
+  SpaceKeyRecoveryRepository,
+  SpaceKeyRecoveryResult,
+  SpaceKeyRecoveryService
+} from '../services/crypto/SpaceKeyRecoveryService';
 
 export enum SettingsStoreState {
   IDLE = 'idle',
@@ -34,6 +39,7 @@ export class SettingsStore {
   private readonly clipboardRepository: ClipboardRdbRepository;
   private readonly spaceRepository: SpaceRdbRepository;
   private readonly spaceKeySelfTest: SpaceKeyCryptoSelfTestService;
+  private readonly spaceKeyRecovery: SpaceKeyRecoveryService;
   private currentState: SettingsStoreState = SettingsStoreState.IDLE;
   private currentSettings: AppSettings = defaultAppSettings();
   private currentErrorMessage: string = '';
@@ -47,6 +53,9 @@ export class SettingsStore {
       undefined,
       undefined,
       true
+    );
+    this.spaceKeyRecovery = new SpaceKeyRecoveryService(
+      new SettingsSpaceKeyRecoveryRepository(this.spaceRepository)
     );
   }
 
@@ -117,6 +126,10 @@ export class SettingsStore {
   async runSpaceKeyCryptoSelfTest(): Promise<SpaceKeyCryptoSelfTestResult> {
     return this.spaceKeySelfTest.run();
   }
+
+  async reinitializePairingSecurityState(): Promise<SpaceKeyRecoveryResult> {
+    return this.spaceKeyRecovery.reinitializePairingSecurityState();
+  }
 }
 
 class SettingsSpaceKeyRefProvider implements SpaceKeyRefProvider {
@@ -129,6 +142,22 @@ class SettingsSpaceKeyRefProvider implements SpaceKeyRefProvider {
   async loadLatestEncryptedSpaceKeyRef(): Promise<string | null> {
     const record = await this.spaceRepository.latestActiveWithKeyRef();
     return record?.encryptedSpaceKeyRef ?? null;
+  }
+}
+
+class SettingsSpaceKeyRecoveryRepository implements SpaceKeyRecoveryRepository {
+  private readonly spaceRepository: SpaceRdbRepository;
+
+  constructor(spaceRepository: SpaceRdbRepository) {
+    this.spaceRepository = spaceRepository;
+  }
+
+  async listEncryptedSpaceKeyRefs(): Promise<string[]> {
+    return this.spaceRepository.listEncryptedSpaceKeyRefs();
+  }
+
+  async resetPairingSecurityState(): Promise<void> {
+    return this.spaceRepository.resetPairingSecurityState();
   }
 }
 

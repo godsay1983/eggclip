@@ -88,11 +88,21 @@ export interface PocNetworkAddressSummary {
   isTunnel: boolean;
 }
 
+export interface MdnsServiceCandidateSummary {
+  instanceId: string;
+  deviceId: string;
+  addresses: string[];
+  port: number;
+  protocolVersion: number;
+  capabilities: string[];
+}
+
 export interface PocTransportSummary {
   state: "running" | "stopped" | "failed";
   port: number;
   discoveryPublished: boolean;
   networkAddresses: PocNetworkAddressSummary[];
+  discoveredServices: MdnsServiceCandidateSummary[];
   connectedPeers: number;
   lastError: string | null;
 }

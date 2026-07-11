@@ -15,7 +15,7 @@ import {
   InboundClipboardEventKind,
   SpaceState
 } from '../models/DomainModels';
-import { ManualEndpoint } from '../models/PocModels';
+import { ManualEndpoint, MdnsServiceCandidate } from '../models/PocModels';
 import {
   HelloPayload,
   JsonObject,
@@ -328,6 +328,24 @@ class PairingConnectionStore {
     }
     this.closingByUserOrLifecycle = false;
     if (this.reconnectTarget !== null && this.state !== PairingConnectionState.AUTHENTICATED) {
+      this.scheduleTrustedReconnect(0);
+    }
+  }
+
+  updateTrustedDiscoveryCandidates(candidates: MdnsServiceCandidate[]): void {
+    if (this.reconnectTarget === null) {
+      return;
+    }
+    const endpoint = trustedDiscoveryEndpoint(this.reconnectTarget.deviceId, candidates);
+    if (endpoint === null || (this.manualHost === endpoint.host && this.manualPort === `${endpoint.port}`)) {
+      return;
+    }
+    this.manualHost = endpoint.host;
+    this.manualPort = `${endpoint.port}`;
+    this.endpointLabel = `${endpoint.host}:${endpoint.port}`;
+    this.emit();
+    if (this.foreground && this.state !== PairingConnectionState.AUTHENTICATED) {
+      this.clearReconnectTimer();
       this.scheduleTrustedReconnect(0);
     }
   }
@@ -1112,3 +1130,15 @@ function isUuid(value: string): boolean {
 
 export const pairingConnectionStore: PairingConnectionStore = new PairingConnectionStore();
 export { PairingConnectionStore };
+
+export function trustedDiscoveryEndpoint(
+  trustedDeviceId: string,
+  candidates: MdnsServiceCandidate[]
+): ManualEndpoint | null {
+  const candidate = candidates.find((item: MdnsServiceCandidate) =>
+    item.protocolVersion === 1 && item.instanceId === trustedDeviceId && item.port > 0 && item.port <= 65535);
+  if (candidate === undefined) {
+    return null;
+  }
+  return { host: candidate.host, port: candidate.port };
+}

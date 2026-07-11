@@ -57,6 +57,12 @@ export interface SpaceKeyHuksMacResult {
   field?: string;
 }
 
+export interface SpaceKeyHuksDeleteResult {
+  ok: boolean;
+  error?: SpaceKeyHuksError;
+  field?: string;
+}
+
 export class SpaceKeyHuksService implements SpaceKeySecureImporter {
   huksAliasFromRef(encryptedSpaceKeyRef: string): SpaceKeyHuksImportResult {
     if (!encryptedSpaceKeyRef.startsWith(SPACE_KEY_REF_PREFIX)) {
@@ -233,6 +239,21 @@ export class SpaceKeyHuksService implements SpaceKeySecureImporter {
     };
   }
 
+  async deleteSpaceKey(encryptedSpaceKeyRef: string): Promise<SpaceKeyHuksDeleteResult> {
+    const aesAlias = this.huksAliasFromRef(encryptedSpaceKeyRef);
+    const hmacAlias = this.hmacAliasFromSpaceKeyRef(encryptedSpaceKeyRef);
+    if (!aesAlias.ok || aesAlias.huksAlias === undefined || !hmacAlias.ok || hmacAlias.huksAlias === undefined) {
+      return { ok: false, error: SpaceKeyHuksError.INVALID_KEY_REF, field: 'encryptedSpaceKeyRef' };
+    }
+    if (!await this.deleteIfPresent(aesAlias.huksAlias)) {
+      return { ok: false, error: SpaceKeyHuksError.PLATFORM_CRYPTO_FAILED, field: 'deleteAesKeyItem' };
+    }
+    if (!await this.deleteIfPresent(hmacAlias.huksAlias)) {
+      return { ok: false, error: SpaceKeyHuksError.PLATFORM_CRYPTO_FAILED, field: 'deleteHmacKeyItem' };
+    }
+    return { ok: true };
+  }
+
   async hmacSha256Base64Url(encryptedSpaceKeyRef: string, messageBase64Url: string): Promise<SpaceKeyHuksMacResult> {
     const alias = this.hmacAliasFromSpaceKeyRef(encryptedSpaceKeyRef);
     if (!alias.ok || alias.huksAlias === undefined) {
@@ -360,6 +381,18 @@ export class SpaceKeyHuksService implements SpaceKeySecureImporter {
       return true;
     } catch (_) {
       return await this.keyExists(huksAlias);
+    }
+  }
+
+  private async deleteIfPresent(huksAlias: string): Promise<boolean> {
+    if (!await this.keyExists(huksAlias)) {
+      return true;
+    }
+    try {
+      await huks.deleteKeyItem(huksAlias, {});
+      return !await this.keyExists(huksAlias);
+    } catch (_) {
+      return !await this.keyExists(huksAlias);
     }
   }
 

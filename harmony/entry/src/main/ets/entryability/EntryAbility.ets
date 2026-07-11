@@ -2,11 +2,19 @@ import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.Ab
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { pairingConnectionStore } from '../store/PairingConnectionStore';
+import {
+  PocConnectionSnapshot,
+  pocConnectionStore
+} from '../store/PocConnectionStore';
 import { APP_FOREGROUND_STORAGE_KEY } from '../utils/AppLifecycle';
 
 const DOMAIN = 0x0000;
 
 export default class EntryAbility extends UIAbility {
+  private readonly discoveryListener = (snapshot: PocConnectionSnapshot): void => {
+    pairingConnectionStore.updateTrustedDiscoveryCandidates(snapshot.discoveryCandidates);
+  };
+
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     AppStorage.setOrCreate<boolean>(APP_FOREGROUND_STORAGE_KEY, false);
     // Trusted reconnect belongs to the ability lifecycle, not to the Devices
@@ -14,6 +22,8 @@ export default class EntryAbility extends UIAbility {
     // the application is in the foreground.
     pairingConnectionStore.setForeground(false);
     pairingConnectionStore.initialize(this.context);
+    pocConnectionStore.initialize(this.context);
+    pocConnectionStore.subscribe(this.discoveryListener);
     try {
       this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
     } catch (err) {
@@ -23,6 +33,8 @@ export default class EntryAbility extends UIAbility {
   }
 
   onDestroy(): void {
+    pocConnectionStore.unsubscribe(this.discoveryListener);
+    pocConnectionStore.stopDiscovery();
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onDestroy');
   }
 
@@ -46,11 +58,13 @@ export default class EntryAbility extends UIAbility {
 
   onForeground(): void {
     pairingConnectionStore.setForeground(true);
+    pocConnectionStore.startDiscovery();
     AppStorage.setOrCreate<boolean>(APP_FOREGROUND_STORAGE_KEY, true);
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground');
   }
 
   onBackground(): void {
+    pocConnectionStore.stopDiscovery();
     pairingConnectionStore.setForeground(false);
     AppStorage.setOrCreate<boolean>(APP_FOREGROUND_STORAGE_KEY, false);
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');

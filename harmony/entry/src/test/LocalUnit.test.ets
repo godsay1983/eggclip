@@ -82,11 +82,18 @@ import {
 import {
   SpaceKeyHuksError,
   SpaceKeyHuksDecryptResult,
+  SpaceKeyHuksDeleteResult,
   SpaceKeyHuksEncryptResult,
   SpaceKeyHuksImportResult,
   SpaceKeyHuksService,
   SpaceKeySecureImporter
 } from '../main/ets/services/crypto/SpaceKeyHuksService';
+import {
+  SpaceKeyDestroyer,
+  SpaceKeyRecoveryError,
+  SpaceKeyRecoveryRepository,
+  SpaceKeyRecoveryService
+} from '../main/ets/services/crypto/SpaceKeyRecoveryService';
 import {
   SpaceKeyAesGcmGateway,
   SpaceKeyCryptoSelfTestError,
@@ -129,7 +136,8 @@ import {
 } from '../main/ets/store/PairingStore';
 import {
   PairingConnectionState,
-  PairingConnectionStore
+  PairingConnectionStore,
+  trustedDiscoveryEndpoint
 } from '../main/ets/store/PairingConnectionStore';
 import {
   InboundItemLiveService,
@@ -2932,10 +2940,108 @@ export default function localUnitTest() {
       expect(crypto.encryptCalls).assertEqual(0);
       expect(storage.records.length).assertEqual(0);
     });
+
+    it('reinitializesPairingSecurityOnlyAfterAllHuksKeysAreRemoved', 0, async () => {
+      const repository = new FakeSpaceKeyRecoveryRepository([
+        'huks://eggclip/space-key/018ff6ef-c394-7d08-8b99-4b7d10f2767a/v1',
+        'huks://eggclip/space-key/018ff6ef-c394-7d08-8b99-4b7d10f2767b/v2'
+      ]);
+      const destroyer = new FakeSpaceKeyDestroyer();
+      const result = await new SpaceKeyRecoveryService(repository, destroyer)
+        .reinitializePairingSecurityState();
+
+      expect(result.ok).assertEqual(true);
+      expect(result.clearedKeyRefs).assertEqual(2);
+      expect(destroyer.deletedRefs.length).assertEqual(2);
+      expect(repository.resetCalls).assertEqual(1);
+    });
+
+    it('keepsPairingDatabaseWhenHuksKeyRemovalFails', 0, async () => {
+      const repository = new FakeSpaceKeyRecoveryRepository([
+        'huks://eggclip/space-key/018ff6ef-c394-7d08-8b99-4b7d10f2767a/v1'
+      ]);
+      const destroyer = new FakeSpaceKeyDestroyer();
+      destroyer.failDelete = true;
+      const result = await new SpaceKeyRecoveryService(repository, destroyer)
+        .reinitializePairingSecurityState();
+
+      expect(result.ok).assertEqual(false);
+      expect(result.error).assertEqual(SpaceKeyRecoveryError.HUKS_DELETE_FAILED);
+      expect(repository.resetCalls).assertEqual(0);
+    });
+
+    it('clearsDamagedSpaceKeyReferenceMetadataThatCannotResolveHuksAlias', 0, async () => {
+      const repository = new FakeSpaceKeyRecoveryRepository(['damaged-key-reference']);
+      const destroyer = new FakeSpaceKeyDestroyer();
+      destroyer.invalidRef = true;
+      const result = await new SpaceKeyRecoveryService(repository, destroyer)
+        .reinitializePairingSecurityState();
+
+      expect(result.ok).assertEqual(true);
+      expect(result.clearedKeyRefs).assertEqual(0);
+      expect(result.invalidKeyRefs).assertEqual(1);
+      expect(repository.resetCalls).assertEqual(1);
+    });
+
+    it('prefersMatchingFormalMdnsCandidateAndIgnoresUntrustedDeviceIds', 0, () => {
+      const trustedDeviceId = '018ff6f0-0a3b-7815-a4db-3eb6e23d9338';
+      const endpoint = trustedDiscoveryEndpoint(trustedDeviceId, [{
+        instanceId: trustedDeviceId,
+        serviceName: 'eggclip-desktop',
+        host: '192.168.1.20',
+        port: 4567,
+        protocolVersion: 1
+      }]);
+      const rejected = trustedDiscoveryEndpoint(trustedDeviceId, [{
+        instanceId: '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        serviceName: 'eggclip-other',
+        host: '192.168.1.21',
+        port: 4567,
+        protocolVersion: 1
+      }]);
+
+      expect(endpoint?.host).assertEqual('192.168.1.20');
+      expect(endpoint?.port).assertEqual(4567);
+      expect(rejected === null).assertEqual(true);
+    });
   });
 }
 
 const FAKE_LOCAL_IDENTITY_PUBLIC_KEY: string = '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo';
+
+class FakeSpaceKeyRecoveryRepository implements SpaceKeyRecoveryRepository {
+  private readonly refs: string[];
+  resetCalls: number = 0;
+
+  constructor(refs: string[]) {
+    this.refs = refs;
+  }
+
+  async listEncryptedSpaceKeyRefs(): Promise<string[]> {
+    return this.refs.slice();
+  }
+
+  async resetPairingSecurityState(): Promise<void> {
+    this.resetCalls += 1;
+  }
+}
+
+class FakeSpaceKeyDestroyer implements SpaceKeyDestroyer {
+  deletedRefs: string[] = [];
+  failDelete: boolean = false;
+  invalidRef: boolean = false;
+
+  async deleteSpaceKey(encryptedSpaceKeyRef: string): Promise<SpaceKeyHuksDeleteResult> {
+    this.deletedRefs.push(encryptedSpaceKeyRef);
+    if (this.failDelete) {
+      return { ok: false, error: SpaceKeyHuksError.PLATFORM_CRYPTO_FAILED, field: 'deleteAesKeyItem' };
+    }
+    if (this.invalidRef) {
+      return { ok: false, error: SpaceKeyHuksError.INVALID_KEY_REF, field: 'encryptedSpaceKeyRef' };
+    }
+    return { ok: true };
+  }
+}
 
 function spaceKeyDeliveryPayload(
   spaceId: string,

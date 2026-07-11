@@ -134,6 +134,44 @@ export class SpaceRdbRepository {
       resultSet.close();
     }
   }
+
+  async listEncryptedSpaceKeyRefs(): Promise<string[]> {
+    const store = await Database.getStore(this.context);
+    const resultSet = await store.querySql(
+      `SELECT DISTINCT encrypted_space_key_ref FROM spaces
+        WHERE encrypted_space_key_ref IS NOT NULL AND encrypted_space_key_ref <> ''
+        ORDER BY encrypted_space_key_ref`,
+      []
+    );
+    const refs: string[] = [];
+    try {
+      if (!resultSet.goToFirstRow()) {
+        return refs;
+      }
+      do {
+        refs.push(getString(resultSet, 'encrypted_space_key_ref'));
+      } while (resultSet.goToNextRow());
+      return refs;
+    } finally {
+      resultSet.close();
+    }
+  }
+
+  async resetPairingSecurityState(): Promise<void> {
+    const store = await Database.getStore(this.context);
+    store.beginTransaction();
+    try {
+      await store.executeSql('DELETE FROM spaces', []);
+      await store.executeSql('DELETE FROM app_metadata WHERE key = ?', [TRUSTED_CONNECTION_ENDPOINT_KEY]);
+      store.commit();
+    } catch (error) {
+      store.rollBack();
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Reset pairing security state failed');
+    }
+  }
 }
 
 export class DeviceRdbRepository {

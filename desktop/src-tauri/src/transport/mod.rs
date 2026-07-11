@@ -26,8 +26,8 @@ use crate::{
         repositories::{
             persist_local_clipboard_text, retention_expires_at, ClipboardInsertOutcome,
             ClipboardItemRecord, ClipboardRepository, DeviceRecord, DeviceRepository,
-            LocalClipboardPersistInput, PairingInvitationRepository, SettingsRepository,
-            SpaceRepository, SyncHeadRecord, SyncHeadRepository,
+            LocalClipboardPersistInput, LocalIdentityRepository, PairingInvitationRepository,
+            SettingsRepository, SpaceRepository, SyncHeadRecord, SyncHeadRepository,
         },
     },
     sync::{
@@ -109,6 +109,7 @@ pub struct PocTransportStatus {
     port: u16,
     discovery_published: bool,
     network_addresses: Vec<crate::discovery::PocNetworkAddress>,
+    discovered_services: Vec<crate::discovery::MdnsServiceCandidate>,
     connected_peers: usize,
     diagnostics: PocTransportDiagnostics,
     last_error: Option<String>,
@@ -259,7 +260,7 @@ pub async fn start_poc_transport(
     runtime: State<'_, PocTransportRuntime>,
     port: Option<u16>,
 ) -> Result<PocTransportStatus, String> {
-    if let Some(status) = current_running_status(&runtime) {
+    if let Some(status) = current_running_status(&app, &runtime) {
         return Ok(status);
     }
 
@@ -273,7 +274,19 @@ pub async fn start_poc_transport(
 
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
     reset_poc_diagnostics(&runtime)?;
-    let discovery_published = match crate::discovery::publish_poc_service(&app, local_addr.port()) {
+    let local_device_id = {
+        let path = database_path(&app)?;
+        let mut connection =
+            open_database(path).map_err(|error| format!("无法打开本地数据库：{error}"))?;
+        LocalIdentityRepository::new(&mut connection)
+            .get_or_create_device_id(now_ms()?)
+            .map_err(|error| format!("无法初始化 mDNS 本机设备 ID：{error}"))?
+    };
+    let discovery_published = match crate::discovery::publish_service(
+        &app,
+        local_addr.port(),
+        &local_device_id.to_string(),
+    ) {
         Ok(()) => true,
         Err(error) => {
             let _ = app.emit("discovery://poc-error", error);
@@ -286,6 +299,7 @@ pub async fn start_poc_transport(
         port: local_addr.port(),
         discovery_published,
         network_addresses: crate::discovery::local_ipv4_candidates().unwrap_or_default(),
+        discovered_services: crate::discovery::discovered_services(&app),
         connected_peers: 0,
         diagnostics: PocTransportDiagnostics::default(),
         last_error: None,
@@ -329,7 +343,7 @@ pub fn stop_poc_transport(
             let _ = shutdown.send(());
         }
     }
-    crate::discovery::unpublish_poc_service(&app);
+    crate::discovery::unpublish_service(&app);
     let _ = disconnect_all_poc_peers_with_runtime(&app, &runtime, "transportStopped");
 
     let status = PocTransportStatus {
@@ -338,6 +352,7 @@ pub fn stop_poc_transport(
         port: 0,
         discovery_published: false,
         network_addresses: crate::discovery::local_ipv4_candidates().unwrap_or_default(),
+        discovered_services: Vec::new(),
         connected_peers: 0,
         diagnostics: diagnostics_snapshot(&runtime),
         last_error: None,
@@ -348,15 +363,17 @@ pub fn stop_poc_transport(
 
 #[tauri::command]
 pub fn get_poc_transport_status(
+    app: AppHandle,
     runtime: State<'_, PocTransportRuntime>,
 ) -> Result<PocTransportStatus, String> {
     Ok(
-        current_running_status(&runtime).unwrap_or(PocTransportStatus {
+        current_running_status(&app, &runtime).unwrap_or(PocTransportStatus {
             state: PocTransportState::Stopped,
             bind_address: "0.0.0.0".to_owned(),
             port: 0,
             discovery_published: false,
             network_addresses: crate::discovery::local_ipv4_candidates().unwrap_or_default(),
+            discovered_services: Vec::new(),
             connected_peers: 0,
             diagnostics: diagnostics_snapshot(&runtime),
             last_error: None,
@@ -368,7 +385,7 @@ pub(crate) fn pairing_invitation_endpoints(
     app: &AppHandle,
 ) -> Vec<crate::pairing::PairingConnectionEndpoint> {
     let runtime = app.state::<PocTransportRuntime>();
-    let Some(status) = current_running_status(&runtime) else {
+    let Some(status) = current_running_status(app, &runtime) else {
         return Vec::new();
     };
     if status.port == 0 {
@@ -864,7 +881,10 @@ fn broadcast_authenticated_item_live(
     sent_peers
 }
 
-fn current_running_status(runtime: &State<'_, PocTransportRuntime>) -> Option<PocTransportStatus> {
+fn current_running_status(
+    app: &AppHandle,
+    runtime: &State<'_, PocTransportRuntime>,
+) -> Option<PocTransportStatus> {
     let mut status = runtime
         .server
         .lock()
@@ -872,6 +892,7 @@ fn current_running_status(runtime: &State<'_, PocTransportRuntime>) -> Option<Po
         .and_then(|server| server.as_ref().map(|handle| handle.status.clone()))?;
     status.connected_peers = runtime.peers.lock().map(|peers| peers.len()).unwrap_or(0);
     status.diagnostics = diagnostics_snapshot(runtime);
+    status.discovered_services = crate::discovery::discovered_services(app);
     Some(status)
 }
 
@@ -921,6 +942,7 @@ async fn run_poc_server(
                             port: 0,
                             discovery_published: false,
                             network_addresses: Vec::new(),
+                            discovered_services: crate::discovery::discovered_services(&app),
                             connected_peers: 0,
                             diagnostics: PocTransportDiagnostics::default(),
                             last_error: Some(format!("WebSocket POC 接收连接失败：{error}")),
@@ -937,7 +959,7 @@ async fn run_poc_server(
             }
         }
     }
-    crate::discovery::unpublish_poc_service(&app);
+    crate::discovery::unpublish_service(&app);
 }
 
 async fn handle_poc_peer(app: AppHandle, peer: String, stream: tokio::net::TcpStream) {
@@ -952,6 +974,7 @@ async fn handle_poc_peer(app: AppHandle, peer: String, stream: tokio::net::TcpSt
                     port: 0,
                     discovery_published: false,
                     network_addresses: Vec::new(),
+                    discovered_services: crate::discovery::discovered_services(&app),
                     connected_peers: 0,
                     diagnostics: PocTransportDiagnostics::default(),
                     last_error: Some(format!("WebSocket POC 握手失败：{error}")),

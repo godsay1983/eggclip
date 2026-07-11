@@ -6,6 +6,7 @@
     port: 0,
     discoveryPublished: false,
     networkAddresses: [],
+    discoveredServices: [],
     connectedPeers: 0,
     lastError: null,
   };
@@ -66,6 +67,26 @@
   {:else}
     <p>未发现可用 IPv4。请检查 Wi‑Fi、VPN/TUN、虚拟网卡、Windows 防火墙或 AP 隔离。</p>
   {/if}
+
+  <div class="history-list" aria-label="mDNS 浏览结果">
+    {#if transport.discoveredServices.length > 0}
+      {#each transport.discoveredServices.slice(0, 5) as service (service.instanceId)}
+        <article class="history-item">
+          <div class="history-item-copy">
+            <div>
+              <strong>{service.addresses[0]}:{service.port}</strong>
+              <p>协议 v{service.protocolVersion} · 设备 {service.deviceId.slice(0, 8)} · {service.capabilities.join(" / ")}</p>
+            </div>
+          </div>
+        </article>
+      {/each}
+    {:else}
+      <article class="history-item">
+        <strong>未发现其他 EggClip 服务</strong>
+        <p>点击刷新可查看正式 mDNS 浏览结果；可信设备仍会使用最近成功地址回退。</p>
+      </article>
+    {/if}
+  </div>
 
   {#if transport.lastError}
     <p class="poc-diagnostics">最近错误：{transport.lastError}</p>

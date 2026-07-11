@@ -24,3 +24,6 @@ cd D:\Develop\eggclip\harmony
 
 脚本默认使用 `C:\Program Files\Huawei\DevEco Studio`，也可以通过 `-DevEcoHome` 指定安装目录。
 
+## 密钥诊断与恢复
+
+设置页可以运行 HUKS 空间密钥加解密与 HMAC 自检。密钥引用缺失时会提示重新配对；引用存在但 HUKS 运算失败时，可以使用“重新初始化配对安全状态”。该操作会先删除对应的 HUKS AES/HMAC 密钥，再事务清理同步空间、可信设备、同步历史和最近可信地址，保留应用设置与本机 Ed25519 长期身份。恢复完成后必须重新扫码或粘贴邀请配对。

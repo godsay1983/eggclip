@@ -47,9 +47,19 @@ interface PocTransportStatus {
   port: number;
   discoveryPublished: boolean;
   networkAddresses: PocNetworkAddress[];
+  discoveredServices: MdnsServiceCandidateDto[];
   connectedPeers: number;
   diagnostics: PocDiagnostics;
   lastError: string | null;
+}
+
+interface MdnsServiceCandidateDto {
+  instanceId: string;
+  deviceId: string;
+  addresses: string[];
+  port: number;
+  protocolVersion: number;
+  capabilities: string[];
 }
 
 interface PocNetworkAddress {
@@ -158,6 +168,7 @@ export function createInitialShellSnapshot(): ShellSnapshot {
       port: 0,
       discoveryPublished: false,
       networkAddresses: [],
+      discoveredServices: [],
       connectedPeers: 0,
       lastError: null,
     },
@@ -386,6 +397,14 @@ function toPocTransportSummary(status: PocTransportStatus): PocTransportSummary 
       interfaceName: item.interfaceName,
       address: item.address,
       isTunnel: item.isTunnel,
+    })),
+    discoveredServices: status.discoveredServices.map((item) => ({
+      instanceId: item.instanceId,
+      deviceId: item.deviceId,
+      addresses: [...item.addresses],
+      port: item.port,
+      protocolVersion: item.protocolVersion,
+      capabilities: [...item.capabilities],
     })),
     connectedPeers: status.connectedPeers,
     lastError: status.lastError,

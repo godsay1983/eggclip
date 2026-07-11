@@ -10,10 +10,15 @@ import {
   SettingsStoreSnapshot,
   SettingsStoreState
 } from '../store/SettingsStore';
+import { pairingConnectionStore } from '../store/PairingConnectionStore';
 import {
   SpaceKeyCryptoSelfTestError,
   SpaceKeyCryptoSelfTestResult
 } from '../services/crypto/SpaceKeyCryptoSelfTestService';
+import {
+  SpaceKeyRecoveryError,
+  SpaceKeyRecoveryResult
+} from '../services/crypto/SpaceKeyRecoveryService';
 import { EggClipColors } from '../theme/Colors';
 import { EggClipSpacing } from '../theme/Spacing';
 import { EggClipTypography } from '../theme/Typography';
@@ -54,6 +59,7 @@ export struct SettingsPage {
   @State private spaceKeyDiagnosticDetail: string = '自检只使用固定测试文本，不读取或显示剪贴板内容。';
   @State private spaceKeyDiagnosticTone: number = 0;
   @State private spaceKeyDiagnosticUpdatedAt: string = '尚未运行';
+  @State private spaceKeyRecoveryRunning: boolean = false;
 
   aboutToAppear(): void {
     if (this.settingsStore === null) {
@@ -310,7 +316,18 @@ export struct SettingsPage {
           this.runSpaceKeySelfTest();
         })
 
-      Text('诊断不显示剪贴板正文、完整摘要、邀请或密钥；六位跨端确认码仅用于核对两端 HMAC 结果。')
+      Button(this.spaceKeyRecoveryRunning ? '正在重新初始化' : '重新初始化配对安全状态')
+        .width('100%')
+        .height(38)
+        .enabled(!this.spaceKeyDiagnosticRunning && !this.spaceKeyRecoveryRunning)
+        .fontColor(Color.Red)
+        .backgroundColor(EggClipColors.controlBackground)
+        .borderRadius(19)
+        .onClick(() => {
+          this.confirmSpaceKeyRecovery();
+        })
+
+      Text('自检不显示正文、完整摘要或密钥。重新初始化只用于密钥缺失/损坏，会清除本机配对、同步空间及历史，保留应用设置和本机长期身份，随后必须重新配对。')
         .width('100%')
         .fontSize(11)
         .fontColor(EggClipColors.textSecondary)
@@ -634,6 +651,72 @@ export struct SettingsPage {
         this.spaceKeyDiagnosticUpdatedAt = this.formatDiagnosticTime(new Date());
         this.spaceKeyDiagnosticRunning = false;
       });
+  }
+
+  private confirmSpaceKeyRecovery(): void {
+    this.getUIContext().showAlertDialog({
+      title: '重新初始化配对安全状态？',
+      message: '这会断开当前连接，删除本机同步空间密钥、可信设备和剪贴板历史。应用设置与本机长期身份会保留；完成后需要重新扫码或粘贴邀请配对。',
+      primaryButton: {
+        value: '取消',
+        action: () => {
+        }
+      },
+      secondaryButton: {
+        value: '确认重新初始化',
+        fontColor: Color.Red,
+        action: () => {
+          this.reinitializePairingSecurityState();
+        }
+      }
+    });
+  }
+
+  private reinitializePairingSecurityState(): void {
+    if (this.settingsStore === null || this.spaceKeyRecoveryRunning) {
+      return;
+    }
+    this.spaceKeyRecoveryRunning = true;
+    this.spaceKeyDiagnosticTone = 1;
+    this.spaceKeyDiagnosticStatus = '正在重新初始化配对安全状态';
+    this.spaceKeyDiagnosticDetail = '正在删除本机 HUKS 空间密钥并清理配对记录。';
+    this.spaceKeyDiagnosticUpdatedAt = this.formatDiagnosticTime(new Date());
+    pairingConnectionStore.close();
+    this.settingsStore.reinitializePairingSecurityState()
+      .then((result: SpaceKeyRecoveryResult) => {
+        this.spaceKeyRecoveryRunning = false;
+        this.spaceKeyDiagnosticUpdatedAt = this.formatDiagnosticTime(new Date());
+        if (result.ok) {
+          this.spaceKeyDiagnosticTone = 2;
+          this.spaceKeyDiagnosticStatus = '配对安全状态已重新初始化';
+          const invalidHint = result.invalidKeyRefs > 0 ? `；忽略 ${result.invalidKeyRefs} 条已损坏且无法定位 HUKS 别名的引用` : '';
+          this.spaceKeyDiagnosticDetail = `已清理 ${result.clearedKeyRefs} 组 HUKS 空间密钥和本机配对数据${invalidHint}，请重新配对。`;
+          return;
+        }
+        this.spaceKeyDiagnosticTone = 3;
+        this.spaceKeyDiagnosticStatus = '重新初始化失败';
+        this.spaceKeyDiagnosticDetail = this.describeSpaceKeyRecoveryFailure(result);
+      })
+      .catch(() => {
+        this.spaceKeyRecoveryRunning = false;
+        this.spaceKeyDiagnosticTone = 3;
+        this.spaceKeyDiagnosticStatus = '重新初始化失败';
+        this.spaceKeyDiagnosticDetail = '恢复流程发生异常；未生成或展示任何密钥材料，请重启应用后重试。';
+        this.spaceKeyDiagnosticUpdatedAt = this.formatDiagnosticTime(new Date());
+      });
+  }
+
+  private describeSpaceKeyRecoveryFailure(result: SpaceKeyRecoveryResult): string {
+    if (result.error === SpaceKeyRecoveryError.STORE_READ_FAILED) {
+      return '无法读取同步空间密钥引用，数据库尚未修改。';
+    }
+    if (result.error === SpaceKeyRecoveryError.HUKS_DELETE_FAILED) {
+      return `HUKS 密钥清理失败（阶段：${result.field ?? 'deleteSpaceKey'}），配对数据库尚未清除，可重启后重试。`;
+    }
+    if (result.error === SpaceKeyRecoveryError.STORE_RESET_FAILED) {
+      return 'HUKS 空间密钥已清理，但配对数据库重置失败；请重启应用后再次执行重新初始化。';
+    }
+    return '重新初始化未完成，请重启应用后重试。';
   }
 
   private describeSpaceKeySelfTest(result: SpaceKeyCryptoSelfTestResult): string {

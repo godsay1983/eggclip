@@ -1,6 +1,6 @@
 # EggClip Desktop
 
-EggClip 桌面端是基于 Tauri 2、Svelte 5 和 Rust 的 Windows 托盘应用。当前 D1 POC 已实现 Windows 文本剪贴板监听、WebSocket server/手动客户端、最小 mDNS 服务发布、Desktop ↔ Desktop/HarmonyOS 双向手动文本传输，以及 sequence/digest/TTL 回环抑制基础。当前链路仍是未认证的临时明文 POC，不能视为正式同步协议。
+EggClip 桌面端是基于 Tauri 2、Svelte 5 和 Rust 的 Windows 托盘应用。当前已实现 Windows 文本剪贴板监听、认证 WebSocket 同步、协议 v1 mDNS 发布/浏览、邀请配对、可信重连和断线补同步；未认证 POC 只保留为手动诊断入口，不能视为正式同步协议。
 
 ## 开发
 
@@ -11,7 +11,9 @@ pnpm tauri dev
 
 应用启动后默认隐藏，请从系统托盘打开“蛋定 Clip”。
 
-启动 POC server 后，桌面端会发布 `_eggclip._tcp.local.` 临时服务，并在状态卡中列出可用 IPv4、所属网卡及隧道标记；HarmonyOS 或另一桌面实例可使用这些地址和面板端口手动连接。桌面端在“连接另一桌面 POC”区域输入对端 IPv4 和端口即可建立出站连接，设备区域会显示当前 POC peer。两端正文上限为 256 KiB，1 MiB 只作为临时外层帧保护。未认证 POC 不自动广播或写入系统剪贴板：桌面发送需要点击面板操作，收到远端文本后也需要用户点击复制。
+启动同步监听后，桌面端会发布 `_eggclip._tcp.local.` 协议 v1 服务，并同时浏览其他 EggClip 服务。TXT 只包含稳定设备 ID、协议版本、传输类型和能力，不包含设备名称、正文、邀请或密钥。诊断卡列出可用 IPv4、所属网卡、隧道标记和浏览结果；HarmonyOS 会优先使用与可信设备 ID 匹配的 mDNS 地址，解析不到时回退到最近一次认证成功的地址，用户仍可使用诊断卡显示的 IPv4 和端口手动排障。
+
+两端正文上限为 256 KiB，1 MiB 只作为临时外层帧保护。未认证 POC 不自动广播或写入系统剪贴板：桌面发送需要点击面板操作，收到远端文本后也需要用户点击复制。
 
 手动连接卡片显示当前会话接收、接受、拒绝帧数和上次拒绝类型。诊断不包含剪贴板正文、摘要或完整网络帧。
 

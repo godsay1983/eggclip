@@ -6,6 +6,7 @@
     port: 0,
     discoveryPublished: false,
     networkAddresses: [],
+    discoveredServices: [],
     connectedPeers: 0,
     lastError: null,
   };
