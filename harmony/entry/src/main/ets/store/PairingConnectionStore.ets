@@ -24,6 +24,12 @@ import {
   ProtocolTransportSession
 } from '../services/transport/ProtocolTransportSession';
 import { SpaceKeyDeliveryService } from '../services/pairing/SpaceKeyDeliveryService';
+import {
+  InboundItemLiveService,
+  InboundItemLiveResult,
+  InboundItemLiveStatus,
+  RdbInboundItemLiveStorageGateway
+} from '../services/sync/InboundItemLiveService';
 import { WebSocketTransportService } from '../services/transport/WebSocketTransportService';
 import {
   PairingGeneratedHandshakeMaterialResult,
@@ -209,7 +215,7 @@ class PairingConnectionStore {
         this.sendClientHello(started.outgoingFrame ?? '');
       },
       onClose: (reason: string) => {
-        if (this.state !== PairingConnectionState.AUTHENTICATED) {
+        if (this.state !== PairingConnectionState.AUTHENTICATED && this.state !== PairingConnectionState.FAILED) {
           this.fail(this.describeCloseTitle(), this.describeCloseReason(reason));
         }
       },
@@ -291,6 +297,32 @@ class PairingConnectionStore {
       this.title = '配对已保存';
       this.description = '已保存桌面端可信设备和同步空间密钥引用；后续将接入正式剪贴板同步。';
       this.emit();
+      return this.snapshot();
+    }
+
+    if (frameResult.envelope.messageType === MessageType.ITEM_LIVE) {
+      const received = await this.persistInboundItemLive(frameResult.decryptedPayload, Date.now());
+      if (received.status === InboundItemLiveStatus.STORED) {
+        this.title = '已安全保存桌面端文本';
+        this.description = '内容已使用同步空间密钥加密写入最近记录；请到首页查看并按需复制到本机。';
+        this.emit();
+        return this.snapshot();
+      }
+      if (received.status === InboundItemLiveStatus.DUPLICATE) {
+        this.title = '已忽略重复桌面端文本';
+        this.description = '该实时事件已存在于本机历史，未重复写入。';
+        this.emit();
+        return this.snapshot();
+      }
+      if (received.status === InboundItemLiveStatus.IGNORED_BY_POLICY) {
+        this.title = '自动接收已暂停';
+        this.description = '收到的桌面端实时文本已按当前同步策略忽略。';
+        this.emit();
+        return this.snapshot();
+      }
+      this.fail('桌面端实时文本被拒绝', '该 ITEM_LIVE 未通过可信设备、空间或本地加密存储校验。');
+      this.authenticatedTransportSession?.close();
+      this.transport.close();
       return this.snapshot();
     }
 
@@ -394,6 +426,22 @@ class PairingConnectionStore {
     } catch (error) {
       return failedPersist(`rdb:${rdbFailureStage(error)}`);
     }
+  }
+
+  private async persistInboundItemLive(payload: JsonObject | undefined, nowMs: number): Promise<InboundItemLiveResult> {
+    if (this.context === null || this.pendingTrustDraft === null ||
+      this.pendingTrustServerHello === null || payload === undefined) {
+      return { status: InboundItemLiveStatus.REJECTED, field: 'context' };
+    }
+    const service = new InboundItemLiveService(
+      new RdbInboundItemLiveStorageGateway(this.context)
+    );
+    return await service.accept({
+      payload,
+      expectedSpaceId: this.pendingTrustDraft.spaceId,
+      expectedOriginDeviceId: this.pendingTrustServerHello.deviceId,
+      nowMs
+    });
   }
 
   private emit(): void {

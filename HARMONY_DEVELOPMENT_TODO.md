@@ -254,7 +254,7 @@ harmony/entry/src/main/ets/
   - [x] `ProtocolTransportSession` 已在传入 session keys 时校验 canonical AAD、按 keyId 选择双向 session key，并在 AAD 不匹配或解密失败时关闭 session。
   - [x] `SpaceKeyHuksService` 已新增基于 `encryptedSpaceKeyRef`/HUKS alias 的 AES-GCM encrypt/decrypt 方法和 operation options；本地单测覆盖参数契约与非法输入拒绝。
   - [x] 新增 `SpaceKeyCryptoSelfTestService` 和设置页诊断入口，可在真机上用已保存 `encryptedSpaceKeyRef` 执行固定明文加解密往返自检，诊断结果不泄露输入/输出材料。
-  - [ ] 真机验证 HUKS AES-GCM encrypt/decrypt 输出后，接入正式业务帧加解密。
+  - [x] HarmonyOS 6.1 真机已验证 HUKS AES-GCM 加解密；`ITEM_LIVE` 正式传输仍使用连接派生的 session key，空间密钥用于本地 RDB 正文密文封装。
 - [x] 明确字节序、字符串编码、Base64 变体和 transcript 规范化规则。
 
 验收标准：
@@ -300,7 +300,7 @@ harmony/entry/src/main/ets/
   - [x] PairingClientHandshakeSessionService / PairingClientNetworkHandshakeService 已记住 AUTH_PROOF transcriptHash 作为 HKDF transcript salt，AUTH_OK 阶段可直接基于本机临时私钥和已记住 salt 创建正式 `ProtocolTransportSession`。
   - [x] 新增 PairingConnectionStore 并接入 PairingPage，可通过真实 WebSocket 配对入口发送 CLIENT_HELLO、处理 SERVER_HELLO、发送 AUTH_PROOF 并等待/处理 AUTH_OK。
   - [x] AUTH_OK 后同一 WebSocket 已切换到认证协议 session，可接收桌面端加密 `SPACE_KEY_ROTATED`。
-  - [ ] 服务端 AUTH_PROOF 真验签和真实 HUKS `spaceKey` import 待接入。
+  - [ ] 服务端 AUTH_PROOF 真验签仍待安全互通回归；HarmonyOS 真实 HUKS `spaceKey` import 已完成并已真机验证。
 - [x] 显示六位人工确认码供双方核对，但不把它当成唯一秘密。
   - [x] PairingPage 已显示六位人工确认码，并要求用户点击“确认码一致，继续配对”后才进入 pending；确认码不作为唯一秘密。
   - [x] PairingStore 确认后会从 UI snapshot 中清空完整邀请文本，只保留摘要和内存待握手材料。
@@ -309,7 +309,7 @@ harmony/entry/src/main/ets/
   - [x] 已抽出 `SpaceKeyDeliveryService` 覆盖 `SPACE_KEY_ROTATED` payload 校验边界，单测覆盖缺失 payload、spaceId/keyVersion/delivery 不匹配和 key 长度错误。
   - [x] `SpaceKeyDeliveryService` 已接入 `SpaceKeyHuksService`，payload 校验通过后导入 HUKS，再只把 `encryptedSpaceKeyRef` 写入 RDB，并在 finally 中清零明文数组。
   - [x] HarmonyOS 6.1 真机已验证 `importKeyItem` 路径可完成配对保存。
-  - [ ] 真机验证 HUKS AES-GCM 后，补齐使用 `encryptedSpaceKeyRef` 做业务帧加解密。
+  - [x] 已使用 `encryptedSpaceKeyRef` 对认证后 `ITEM_LIVE` 的本地 RDB 正文密文封装；网络业务帧继续使用握手派生 session key，避免混淆两类密钥职责。
 - [ ] 成功后持久化 trusted device 并清理邀请秘密。
   - [x] HarmonyOS 在 AUTH_OK 后不提前落库，收到 `SPACE_KEY_ROTATED` 后用 transaction 同时保存同步空间 key 引用和桌面端 trusted device。
   - [x] 配对完成持久化改为分阶段执行并回滚，失败时可区分同步空间记录、可信设备记录和密钥处理阶段。
@@ -348,7 +348,8 @@ harmony/entry/src/main/ets/
   - [x] 已新增 ArkTS AES-GCM 解密服务边界；`ProtocolTransportSession` 已接入可选 session keys 的 AAD 校验、解密和 decrypted payload 输出。
   - [x] 配对握手服务已能在 AUTH_OK 后把派生 session keys 注入 `ProtocolTransportSession`。
   - [x] 已新增客户端配对网络握手编排器，输出 CLIENT_HELLO/AUTH_PROOF 待发送帧，并在 AUTH_OK 后交付带 session keys 的 `ProtocolTransportSession`。
-  - [ ] 使用真实网络握手派生出的 session keys 驱动 WebSocket 正式连接解密。
+  - [x] 使用真实网络握手派生出的 session keys 驱动同一 WebSocket 的认证后业务帧解密。
+  - [x] `InboundItemLiveService` 已接入配对后的 `ITEM_LIVE` 收包路径：校验可信空间/来源设备与接收策略，使用 HUKS 空间密钥生成本地 RDB 正文密文，去重并执行保留策略；不会自动写入系统剪贴板。
 - [ ] 维护接收计数器和 replay window。
   - [x] ArkTS 协议入站 replay guard 拒绝重复 messageId 与非递增 sessionCounter。
   - [x] ArkTS `ProtocolTransportSession` 已在已认证 transport 帧入口接入 replay guard。
@@ -364,7 +365,7 @@ harmony/entry/src/main/ets/
   - [x] ArkTS `ProtocolTransportSession` 已拒绝 POC 明文 JSON 进入正式协议入口。
   - [x] WebSocket service 正式协议入口已与 POC 明文入口分离。
   - [x] WebSocket service 配对握手入口只接受明文握手帧，拒绝二进制消息和正式加密业务帧。
-  - [ ] sync service 和 RDB 接入认证状态。
+  - [x] `ITEM_LIVE` sync service 与 RDB 已接入配对认证状态和 trusted device/space 校验；`ITEM_BATCH` 与正式连接管理仍待接入。
 
 ### 前台连接
 

@@ -127,6 +127,12 @@ import {
   PairingConnectionStore
 } from '../main/ets/store/PairingConnectionStore';
 import {
+  InboundItemLiveService,
+  InboundItemLiveStatus,
+  InboundItemLiveStorageGateway,
+  SecureRandomGateway
+} from '../main/ets/services/sync/InboundItemLiveService';
+import {
   ClipboardValidationError,
   EGGCLIP_MDNS_DISCOVERY_TYPE,
   EGGCLIP_MDNS_SERVICE_TYPE,
@@ -138,12 +144,14 @@ import {
   AppSettings,
   ContentType as DomainContentType,
   ClipboardDedupDecision,
+  Device as DomainDevice,
   DomainValidationError,
   HlcTimestamp,
   InboundClipboardEventKind,
   OriginSeqAllocator,
   SyncPauseReason,
   ThemeMode,
+  Space as DomainSpace,
   buildLocalClipboardItemDraft,
   deduplicateClipboardItem,
   defaultAppSettings,
@@ -161,7 +169,9 @@ import {
 } from '../main/ets/data/migrations/SchemaMigrations';
 import { DATABASE_VERSION, STORE_CONFIG } from '../main/ets/data/db/DbConstants';
 import {
+  ClipboardItemRecord,
   ClipboardRepository,
+  DeviceRecord,
   DeviceRepository,
   INITIAL_ORIGIN_SEQ,
   LOCAL_IDENTITY_PRIVATE_KEY_REF_KEY,
@@ -171,6 +181,7 @@ import {
   LocalClipboardPersistenceCommands,
   NEXT_ORIGIN_SEQ_KEY,
   SettingsRepository,
+  SpaceRecord,
   SpaceRepository,
   SyncHeadRepository
 } from '../main/ets/data/repositories/RepositoryCommands';
@@ -2721,6 +2732,66 @@ export default function localUnitTest() {
       expect(metadata.savedPublicKey).assertEqual(FAKE_LOCAL_IDENTITY_PUBLIC_KEY);
       expect(metadata.savedPrivateKeyRef).assertEqual('');
     });
+
+    it('storesTrustedInboundItemLiveWithSpaceKeyEncryptedContent', 0, async () => {
+      const storage = new FakeInboundItemLiveStorageGateway();
+      const crypto = new FakeSpaceKeyAesGcmGateway();
+      const service = new InboundItemLiveService(storage, crypto, new FakeSecureRandomGateway());
+      const item = JSON.parse(CLIPBOARD_ITEM_FIXTURE) as JsonObject;
+
+      const result = await service.accept({
+        payload: item,
+        expectedSpaceId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
+        expectedOriginDeviceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
+        nowMs: 1781946001123
+      });
+
+      expect(result.status).assertEqual(InboundItemLiveStatus.STORED);
+      expect(storage.records.length).assertEqual(1);
+      expect(storage.retentionCalls).assertEqual(1);
+      expect(crypto.encryptCalls).assertEqual(1);
+      const localEnvelope = String.fromCharCode(...storage.records[0].encryptedContent);
+      expect(localEnvelope.indexOf('EggClip test text')).assertEqual(-1);
+      expect(localEnvelope.indexOf('"body":"cipher-body"') >= 0).assertEqual(true);
+    });
+
+    it('rejectsItemLiveFromUnexpectedOriginBeforeLocalEncryption', 0, async () => {
+      const storage = new FakeInboundItemLiveStorageGateway();
+      const crypto = new FakeSpaceKeyAesGcmGateway();
+      const service = new InboundItemLiveService(storage, crypto, new FakeSecureRandomGateway());
+      const item = JSON.parse(CLIPBOARD_ITEM_FIXTURE) as JsonObject;
+
+      const result = await service.accept({
+        payload: item,
+        expectedSpaceId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
+        expectedOriginDeviceId: '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        nowMs: 1781946001123
+      });
+
+      expect(result.status).assertEqual(InboundItemLiveStatus.REJECTED);
+      expect(result.field).assertEqual('originDeviceId');
+      expect(crypto.encryptCalls).assertEqual(0);
+      expect(storage.records.length).assertEqual(0);
+    });
+
+    it('honorsInboundReceivePolicyBeforeWritingItemLiveHistory', 0, async () => {
+      const storage = new FakeInboundItemLiveStorageGateway();
+      storage.settings.autoReceiveEnabled = false;
+      const crypto = new FakeSpaceKeyAesGcmGateway();
+      const service = new InboundItemLiveService(storage, crypto, new FakeSecureRandomGateway());
+      const item = JSON.parse(CLIPBOARD_ITEM_FIXTURE) as JsonObject;
+
+      const result = await service.accept({
+        payload: item,
+        expectedSpaceId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
+        expectedOriginDeviceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
+        nowMs: 1781946001123
+      });
+
+      expect(result.status).assertEqual(InboundItemLiveStatus.IGNORED_BY_POLICY);
+      expect(crypto.encryptCalls).assertEqual(0);
+      expect(storage.records.length).assertEqual(0);
+    });
   });
 }
 
@@ -2848,6 +2919,62 @@ class FakeSpaceKeyAesGcmGateway implements SpaceKeyAesGcmGateway {
       return new FakeSpaceKeyHuksDecryptResult(true, 'mismatch', undefined, undefined);
     }
     return new FakeSpaceKeyHuksDecryptResult(true, this.lastPlaintext, undefined, undefined);
+  }
+}
+
+class FakeInboundItemLiveStorageGateway implements InboundItemLiveStorageGateway {
+  settings: AppSettings = defaultAppSettings();
+  records: ClipboardItemRecord[] = [];
+  retentionCalls: number = 0;
+  decision: ClipboardDedupDecision = ClipboardDedupDecision.NEW;
+
+  async loadSettings(): Promise<AppSettings> {
+    return this.settings;
+  }
+
+  async loadSpace(_: string): Promise<SpaceRecord | null> {
+    const space: DomainSpace = {
+      spaceId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
+      displayName: '测试空间',
+      keyVersion: 1,
+      state: DomainSpaceState.ACTIVE,
+      createdAt: 1781946000000
+    };
+    return {
+      space,
+      encryptedSpaceKeyRef: 'huks://eggclip/space-key/018ff6ef-c394-7d08-8b99-4b7d10f2767a/v1',
+      updatedAt: 1781946000000
+    };
+  }
+
+  async loadDevice(_: string): Promise<DeviceRecord | null> {
+    const device: DomainDevice = {
+      deviceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
+      spaceId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
+      displayName: '测试桌面端',
+      identityPublicKeyRef: FAKE_LOCAL_IDENTITY_PUBLIC_KEY,
+      trustState: DomainDeviceTrustState.TRUSTED,
+      connectionState: DomainDeviceConnectionState.ONLINE,
+      lastSeenAt: 1781946000000
+    };
+    return { device, pairedAt: 1781946000000 };
+  }
+
+  async insertDeduplicated(record: ClipboardItemRecord): Promise<ClipboardDedupDecision> {
+    if (this.decision === ClipboardDedupDecision.NEW) {
+      this.records.push(record);
+    }
+    return this.decision;
+  }
+
+  async applyRetention(_: string, __: AppSettings, ___: number): Promise<void> {
+    this.retentionCalls += 1;
+  }
+}
+
+class FakeSecureRandomGateway implements SecureRandomGateway {
+  async randomBytes(length: number): Promise<Uint8Array> {
+    return new Uint8Array(length).fill(0x5a);
   }
 }
 
