@@ -30,6 +30,10 @@ import {
   InboundItemLiveStatus,
   RdbInboundItemLiveStorageGateway
 } from '../services/sync/InboundItemLiveService';
+import {
+  OutboundItemLiveService,
+  OutboundItemLiveStatus
+} from '../services/sync/OutboundItemLiveService';
 import { WebSocketTransportService } from '../services/transport/WebSocketTransportService';
 import {
   PairingGeneratedHandshakeMaterialResult,
@@ -57,6 +61,18 @@ export interface PairingConnectionSnapshot {
   lastError: string;
   clientHelloSent: boolean;
   authProofSent: boolean;
+}
+
+export enum AuthenticatedLocalSendStatus {
+  SENT = 'sent',
+  PAUSED = 'paused',
+  NOT_READY = 'notReady',
+  FAILED = 'failed'
+}
+
+export interface AuthenticatedLocalSendResult {
+  status: AuthenticatedLocalSendStatus;
+  field?: string;
 }
 
 export type PairingConnectionSnapshotListener = (snapshot: PairingConnectionSnapshot) => void;
@@ -371,6 +387,28 @@ class PairingConnectionStore {
       this.authenticatedTransportSession.close();
     }
     return sent;
+  }
+
+  async persistAndSendAuthenticatedLocalText(text: string): Promise<AuthenticatedLocalSendResult> {
+    if (this.context === null || this.pendingTrustDraft === null ||
+      this.state !== PairingConnectionState.AUTHENTICATED ||
+      this.authenticatedTransportSession === null || this.authenticatedTransportSession.isClosed()) {
+      return { status: AuthenticatedLocalSendStatus.NOT_READY };
+    }
+    const prepared = await new OutboundItemLiveService(this.context).persist(
+      this.pendingTrustDraft.spaceId,
+      text,
+      Date.now()
+    );
+    if (prepared.status === OutboundItemLiveStatus.PAUSED) {
+      return { status: AuthenticatedLocalSendStatus.PAUSED, field: prepared.field };
+    }
+    if (prepared.status !== OutboundItemLiveStatus.READY || prepared.payload === undefined) {
+      return { status: AuthenticatedLocalSendStatus.FAILED, field: prepared.field };
+    }
+    return await this.sendAuthenticatedItemLive(prepared.payload) ?
+      { status: AuthenticatedLocalSendStatus.SENT } :
+      { status: AuthenticatedLocalSendStatus.FAILED, field: 'transport' };
   }
 
   private sendClientHello(frame: string): void {

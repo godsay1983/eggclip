@@ -21,6 +21,9 @@ export interface PersistLocalClipboardInput {
   encryptedContent: Uint8Array;
   settings: AppSettings;
   nowMs: number;
+  itemId?: string;
+  originDeviceId?: string;
+  originSeq?: number;
 }
 
 export enum LocalClipboardBroadcastStatus {
@@ -48,10 +51,11 @@ export class LocalClipboardPersistenceService {
 
   async persist(input: PersistLocalClipboardInput): Promise<PersistLocalClipboardResult> {
     const store = await Database.getStore(this.context);
-    const originDeviceId = await this.identity.getOrCreateDeviceIdWithStore(store, input.nowMs);
-    const originSeq = await this.identity.peekNextOriginSeqWithStore(store);
+    const originDeviceId = input.originDeviceId ??
+      await this.identity.getOrCreateDeviceIdWithStore(store, input.nowMs);
+    const originSeq = input.originSeq ?? await this.identity.peekNextOriginSeqWithStore(store);
     const plan = this.commands.build({
-      itemId: util.generateRandomUUID(false).toLowerCase(),
+      itemId: input.itemId ?? util.generateRandomUUID(false).toLowerCase(),
       spaceId: input.spaceId,
       originDeviceId,
       originSeq,

@@ -396,7 +396,10 @@ harmony/entry/src/main/ets/
   - [x] POC 发送路径已在 PasteButton 读取后读取本机同步策略；自动同步关闭时只更新本机历史，不发送临时文本。
   - [x] POC 发送路径已调整为先确认本机历史/本机记录事务，再检查同步策略和 WebSocket 连接，避免本机保存失败时仍显示发送成功。
   - [x] `ProtocolTransportSession` 已能构造客户端方向的加密业务帧：固定 `session-v1-client-to-server` keyId、方向独立 nonce、单调发送计数器、canonical AAD 和帧大小校验；`PairingConnectionStore` 仅在 authenticated session 上暴露 `ITEM_LIVE` 发送入口。
-  - [ ] PasteButton 正式出站仍待接入可信同步空间的本地事务和 HUKS 内容摘要能力；现有空间密钥别名只具备 AES-GCM 本地加密用途，不能把裸 `spaceKey` 回写到 RDB 或 UI 以计算 HMAC digest。
+  - [x] 新增 `OutboundItemLiveService`：读取可信 active space 与 HUKS key ref，计算 `HMAC(spaceKey, "text/plain\\n" + UTF-8 内容)`，用同一空间 AES-GCM 别名封装本地正文，并在 `LocalClipboardPersistenceService` 事务成功后生成正式 `ITEM_LIVE` payload。
+  - [x] `LocalClipboardPersistenceService` 支持由出站服务预先固定 `itemId`、`originDeviceId` 和 `originSeq`，保证本地密文 AAD、持久化记录和网络 payload 使用同一不可变事件标识。
+  - [x] `PairingConnectionStore.persistAndSendAuthenticatedLocalText` 已编排“本地事务成功后才发送认证帧”；失败不会发送，发送失败不会回滚本地记录。
+  - [ ] 首页 PasteButton 尚未切换到该正式路径；未配对或未认证时的 POC 回退策略与待发送状态将在页面接线时统一处理。
 - [ ] 网络失败时保留待同步记录，不能假装发送成功。
 - [ ] 显示已发送、待同步和失败状态。
   - [x] 首页增加发送状态卡，区分本机记录、待连接、发送中、已发送、失败和同步暂停。
