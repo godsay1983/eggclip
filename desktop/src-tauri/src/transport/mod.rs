@@ -368,6 +368,28 @@ pub fn get_poc_transport_status(
     )
 }
 
+pub(crate) fn pairing_invitation_endpoints(
+    app: &AppHandle,
+) -> Vec<crate::pairing::PairingConnectionEndpoint> {
+    let runtime = app.state::<PocTransportRuntime>();
+    let Some(status) = current_running_status(&runtime) else {
+        return Vec::new();
+    };
+    if status.port == 0 {
+        return Vec::new();
+    }
+    let mut addresses = status.network_addresses;
+    addresses.sort_by_key(|address| address.is_tunnel);
+    addresses
+        .into_iter()
+        .take(5)
+        .map(|address| crate::pairing::PairingConnectionEndpoint {
+            host: address.address,
+            port: status.port,
+        })
+        .collect()
+}
+
 #[tauri::command]
 pub fn send_poc_clipboard_text(
     runtime: State<'_, PocTransportRuntime>,

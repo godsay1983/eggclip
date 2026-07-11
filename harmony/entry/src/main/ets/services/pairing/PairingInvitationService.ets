@@ -1,6 +1,6 @@
 import { decodeBase64Url } from '../crypto/CryptoVectorService';
 import { sha256 } from '../crypto/Sha256Service';
-import { JsonObject } from '../../models/ProtocolModels';
+import { JsonObject, JsonValue } from '../../models/ProtocolModels';
 
 const INVITATION_PREFIX: string = 'eggclip://pair?p=';
 const PAIRING_SECRET_BYTES: number = 32;
@@ -30,6 +30,17 @@ export interface PairingInvitationPayload {
   issuerIdentityPublicKey: string;
   pairingSecret: string;
   expiresAtMs: number;
+  connectionHints?: PairingConnectionHints;
+}
+
+export interface PairingConnectionEndpoint {
+  host: string;
+  port: number;
+}
+
+export interface PairingConnectionHints {
+  transport: string;
+  endpoints: PairingConnectionEndpoint[];
 }
 
 export interface PairingInvitationSummary {
@@ -43,6 +54,7 @@ export interface PairingInvitationSummary {
   expiresAtMs: number;
   expiresInSeconds: number;
   confirmationCode: string;
+  endpoints: PairingConnectionEndpoint[];
 }
 
 export interface PairingInvitationParseResult {
@@ -115,7 +127,7 @@ export class PairingInvitationService {
 function parsePayloadJson(payloadText: string): PairingInvitationPayload | null {
   try {
     const value = JSON.parse(payloadText) as JsonObject;
-    return {
+    const payload: PairingInvitationPayload = {
       app: readString(value, 'app'),
       version: readNumber(value, 'version'),
       kind: readString(value, 'kind'),
@@ -128,6 +140,9 @@ function parsePayloadJson(payloadText: string): PairingInvitationPayload | null 
       pairingSecret: readString(value, 'pairingSecret'),
       expiresAtMs: readNumber(value, 'expiresAtMs')
     };
+    const connectionHints = parseConnectionHints(value.connectionHints);
+    if (connectionHints !== null) payload.connectionHints = connectionHints;
+    return payload;
   } catch (_) {
     return null;
   }
@@ -170,6 +185,11 @@ function validatePayload(payload: PairingInvitationPayload, nowMs: number): Pair
   if (payload.expiresAtMs <= nowMs) {
     return { ok: false, error: PairingInvitationError.EXPIRED };
   }
+  if (payload.connectionHints !== undefined &&
+    (payload.connectionHints.transport !== 'ws' || payload.connectionHints.endpoints.length === 0 ||
+      payload.connectionHints.endpoints.length > 5)) {
+    return invalidField('connectionHints');
+  }
   return { ok: true };
 }
 
@@ -184,8 +204,41 @@ function buildSummary(payload: PairingInvitationPayload, nowMs: number, payloadB
     issuerShortFingerprint: payload.issuerIdentityPublicKey.substring(0, 8),
     expiresAtMs: payload.expiresAtMs,
     expiresInSeconds: Math.max(0, Math.floor((payload.expiresAtMs - nowMs) / 1000)),
-    confirmationCode: confirmationCode(payloadBytes)
+    confirmationCode: confirmationCode(payloadBytes),
+    endpoints: payload.connectionHints?.endpoints ?? []
   };
+}
+
+function parseConnectionHints(value: JsonValue | undefined): PairingConnectionHints | null {
+  if (value === undefined) return null;
+  if (typeof value !== 'object' || value === null) throw new Error('invalid connectionHints');
+  const object = value as JsonObject;
+  if (object.transport !== 'ws' || !Array.isArray(object.endpoints)) throw new Error('invalid connectionHints');
+  const values = object.endpoints as JsonValue[];
+  if (values.length === 0 || values.length > 5) throw new Error('invalid endpoints');
+  const endpoints: PairingConnectionEndpoint[] = [];
+  for (let index = 0; index < values.length; index += 1) {
+    const endpoint = values[index];
+    if (typeof endpoint !== 'object' || endpoint === null) throw new Error('invalid endpoint');
+    const candidate = endpoint as JsonObject;
+    if (typeof candidate.host !== 'string' || typeof candidate.port !== 'number' ||
+      !isIpv4(candidate.host) || !Number.isInteger(candidate.port) || candidate.port < 1 || candidate.port > 65535) {
+      throw new Error('invalid endpoint');
+    }
+    endpoints.push({ host: candidate.host, port: candidate.port });
+  }
+  return { transport: 'ws', endpoints };
+}
+
+function isIpv4(value: string): boolean {
+  const parts = value.split('.');
+  if (parts.length !== 4) return false;
+  for (let index = 0; index < parts.length; index += 1) {
+    if (!/^\d{1,3}$/.test(parts[index])) return false;
+    const octet = Number(parts[index]);
+    if (octet < 0 || octet > 255) return false;
+  }
+  return value !== '0.0.0.0' && !value.startsWith('127.');
 }
 
 function confirmationCode(payloadBytes: Uint8Array): string {

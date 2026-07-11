@@ -1,5 +1,6 @@
 import {
   PairingInvitationError,
+  PairingConnectionEndpoint,
   PairingInvitationPayload,
   PairingInvitationParseResult,
   PairingInvitationService,
@@ -282,6 +283,12 @@ function clonePayload(payload: PairingInvitationPayload): PairingInvitationPaylo
   if (payload.issuerDeviceName !== undefined) {
     clone.issuerDeviceName = payload.issuerDeviceName;
   }
+  if (payload.connectionHints !== undefined) {
+    clone.connectionHints = {
+      transport: payload.connectionHints.transport,
+      endpoints: cloneEndpoints(payload.connectionHints.endpoints)
+    };
+  }
   return clone;
 }
 
@@ -309,6 +316,16 @@ function cloneSummary(summary: PairingInvitationSummary | null): PairingInvitati
     issuerShortFingerprint: summary.issuerShortFingerprint,
     expiresAtMs: summary.expiresAtMs,
     expiresInSeconds: summary.expiresInSeconds,
-    confirmationCode: summary.confirmationCode
+    confirmationCode: summary.confirmationCode,
+    endpoints: cloneEndpoints(summary.endpoints)
   };
+}
+
+function cloneEndpoints(source: PairingConnectionEndpoint[]): PairingConnectionEndpoint[] {
+  const endpoints: PairingConnectionEndpoint[] = [];
+  for (let index = 0; index < source.length; index += 1) {
+    const endpoint: PairingConnectionEndpoint = { host: source[index].host, port: source[index].port };
+    endpoints.push(endpoint);
+  }
+  return endpoints;
 }

@@ -11,7 +11,10 @@ import {
 } from '../store/PairingConnectionStore';
 import { TrustedDeviceStore } from '../store/TrustedDeviceStore';
 import { common } from '@kit.AbilityKit';
-import { PairingInvitationSummary } from '../services/pairing/PairingInvitationService';
+import {
+  PairingConnectionEndpoint,
+  PairingInvitationSummary
+} from '../services/pairing/PairingInvitationService';
 import { PairingScanService } from '../services/pairing/PairingScanService';
 import { ClipboardBridgeService } from '../services/clipboard/ClipboardBridgeService';
 import { EggClipColors } from '../theme/Colors';
@@ -193,6 +196,10 @@ export struct PairingPage {
       this.SummaryRow('发行设备', `${summary.issuerDeviceName} · #${summary.issuerShortFingerprint}`)
       this.SummaryRow('剩余时间', `${summary.expiresInSeconds} 秒`)
 
+      if (summary.endpoints.length > 0) {
+        this.ConnectionCandidateSelector(summary)
+      }
+
       Column({ space: 4 }) {
         Text('人工确认码')
           .fontSize(11)
@@ -210,7 +217,7 @@ export struct PairingPage {
       .borderRadius(16)
       .alignItems(HorizontalAlign.Center)
 
-      Button(this.snapshot.state === PairingStoreState.PENDING ? '已确认，填写桌面端地址后连接' : '确认码一致，继续配对')
+      Button(this.snapshot.state === PairingStoreState.PENDING ? '已确认，正在连接桌面端' : '确认码一致，连接所选地址')
         .width('100%')
         .height(42)
         .enabled(this.snapshot.state === PairingStoreState.READY)
@@ -233,6 +240,54 @@ export struct PairingPage {
     .padding(12)
     .backgroundColor(EggClipColors.controlBackground)
     .borderRadius(16)
+  }
+
+  @Builder
+  private ConnectionCandidateSelector(summary: PairingInvitationSummary) {
+    Column({ space: 8 }) {
+      Row() {
+        Text('选择桌面端地址')
+          .fontSize(11)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(EggClipColors.textPrimary)
+          .layoutWeight(1)
+
+        Text(`${summary.endpoints.length} 个候选`)
+          .fontSize(10)
+          .fontColor(EggClipColors.textSecondary)
+      }
+      .width('100%')
+
+      Scroll() {
+        Row({ space: 8 }) {
+          ForEach(summary.endpoints, (endpoint: PairingConnectionEndpoint) => {
+            Button(`${endpoint.host}:${endpoint.port}`)
+              .height(32)
+              .fontSize(10)
+              .fontColor(this.isSelectedEndpoint(endpoint.host, endpoint.port) ?
+                EggClipColors.onPrimary : EggClipColors.textSecondary)
+              .backgroundColor(this.isSelectedEndpoint(endpoint.host, endpoint.port) ?
+                EggClipColors.primary : EggClipColors.cardBackground)
+              .borderRadius(16)
+              .onClick(() => {
+                this.connectionSnapshot = pairingConnectionStore.updateEndpoint(endpoint.host, `${endpoint.port}`);
+                this.pasteImportStatus = `已选择桌面端地址 ${endpoint.host}:${endpoint.port}`;
+              })
+          }, (endpoint: PairingConnectionEndpoint) => `${endpoint.host}:${endpoint.port}`)
+        }
+      }
+      .scrollable(ScrollDirection.Horizontal)
+      .scrollBar(BarState.Off)
+      .width('100%')
+
+      Text('默认选择普通网卡优先的地址；如果电脑开启了 VPN、虚拟网卡或多网络，请在确认配对前切换。')
+        .width('100%')
+        .fontSize(10)
+        .fontColor(EggClipColors.textSecondary)
+        .lineHeight(16)
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
   }
 
   @Builder
@@ -457,6 +512,10 @@ export struct PairingPage {
       this.connectionSnapshot.state === PairingConnectionState.WAITING_AUTH_OK;
   }
 
+  private isSelectedEndpoint(host: string, port: number): boolean {
+    return this.connectionSnapshot.manualHost === host && this.connectionSnapshot.manualPort === `${port}`;
+  }
+
   private canStartPairingConnection(): boolean {
     return this.snapshot.state === PairingStoreState.PENDING && !this.isPairingConnectionBusy();
   }
@@ -526,8 +585,14 @@ export struct PairingPage {
   private importInvitationText(value: string, successStatus: string): void {
     this.updateVisibleInvitationInput(value);
     this.snapshot = this.pairingStore.importInvitationText(value);
+    if (this.snapshot.state === PairingStoreState.READY && this.snapshot.summary !== null &&
+      this.snapshot.summary.endpoints.length > 0) {
+      const endpoint = this.snapshot.summary.endpoints[0];
+      this.connectionSnapshot = pairingConnectionStore.updateEndpoint(endpoint.host, `${endpoint.port}`);
+    }
     this.pasteImportStatus = this.snapshot.state === PairingStoreState.READY
-      ? successStatus
+      ? (this.snapshot.summary !== null && this.snapshot.summary.endpoints.length > 0 ?
+        `${successStatus}；已识别桌面端地址 ${this.connectionSnapshot.endpointLabel}` : successStatus)
       : this.snapshot.statusText;
   }
 
@@ -536,6 +601,10 @@ export struct PairingPage {
     this.snapshot = nextSnapshot;
     if (nextSnapshot.state === PairingStoreState.PENDING) {
       this.updateVisibleInvitationInput('');
+      if (this.connectionSnapshot.manualPort !== '0') {
+        this.pasteImportStatus = `确认码一致，正在连接 ${this.connectionSnapshot.endpointLabel}`;
+        this.startPairingConnection();
+      }
     }
   }
 

@@ -124,6 +124,22 @@ struct PairingInvitationPayload {
     issuer_identity_public_key: String,
     pairing_secret: String,
     expires_at_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    connection_hints: Option<PairingConnectionHints>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PairingConnectionHints {
+    pub transport: String,
+    pub endpoints: Vec<PairingConnectionEndpoint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PairingConnectionEndpoint {
+    pub host: String,
+    pub port: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -229,8 +245,31 @@ pub fn create_pairing_invitation(
     #[cfg(not(windows))]
     let mut store = crate::secret_store::UnavailableSecretStore;
 
-    create_pairing_invitation_at_path(&path, &mut store, &space_id, now_ms()?)
-        .map_err(|error| format!("无法生成配对邀请：{error}"))
+    let mut summary = create_pairing_invitation_at_path(&path, &mut store, &space_id, now_ms()?)
+        .map_err(|error| format!("无法生成配对邀请：{error}"))?;
+    let endpoints = crate::transport::pairing_invitation_endpoints(&app);
+    if !endpoints.is_empty() {
+        let encoded = summary
+            .invitation
+            .strip_prefix("eggclip://pair?p=")
+            .ok_or_else(|| "无法生成配对邀请：邀请格式无效".to_string())?;
+        let bytes = URL_SAFE_NO_PAD
+            .decode(encoded)
+            .map_err(|_| "无法生成配对邀请：邀请编码无效".to_string())?;
+        let mut payload: PairingInvitationPayload = serde_json::from_slice(&bytes)
+            .map_err(|_| "无法生成配对邀请：邀请载荷无效".to_string())?;
+        payload.connection_hints = Some(PairingConnectionHints {
+            transport: "ws".to_string(),
+            endpoints,
+        });
+        let payload_json =
+            serde_json::to_vec(&payload).map_err(|error| format!("无法生成配对邀请：{error}"))?;
+        summary.invitation = format!("eggclip://pair?p={}", URL_SAFE_NO_PAD.encode(&payload_json));
+        summary.qr_svg = pairing_invitation_qr_svg(&summary.invitation)
+            .map_err(|error| format!("无法生成配对邀请：{error}"))?;
+        summary.confirmation_code = confirmation_code(&payload_json);
+    }
+    Ok(summary)
 }
 
 #[tauri::command]
@@ -452,6 +491,7 @@ pub fn create_pairing_invitation_for_space<S: SecretBytesStore>(
         issuer_identity_public_key: identity.identity_public_key.clone(),
         pairing_secret: pairing_secret_encoded,
         expires_at_ms,
+        connection_hints: None,
     };
     let payload_json =
         serde_json::to_vec(&payload).map_err(|error| PairingError::Serialize(error.to_string()))?;
@@ -949,6 +989,24 @@ fn validate_pairing_invitation_uri(invitation: &str) -> Result<(), PairingError>
             .unwrap_or(true)
     {
         return Err(PairingError::InvalidInvitation);
+    }
+    if let Some(hints) = &decoded.connection_hints {
+        if hints.transport != "ws" || hints.endpoints.is_empty() || hints.endpoints.len() > 5 {
+            return Err(PairingError::InvalidInvitation);
+        }
+        for endpoint in &hints.endpoints {
+            let address = endpoint
+                .host
+                .parse::<std::net::Ipv4Addr>()
+                .map_err(|_| PairingError::InvalidInvitation)?;
+            if endpoint.port == 0
+                || address.is_unspecified()
+                || address.is_loopback()
+                || address.is_multicast()
+            {
+                return Err(PairingError::InvalidInvitation);
+            }
+        }
     }
     Ok(())
 }

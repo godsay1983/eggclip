@@ -6,6 +6,7 @@ EggClip v1 protocol is a local-network, paired-device clipboard sync protocol. m
 
 - Application protocol version: `1`.
 - Transport: WebSocket text frames for v1.
+- Pairing invitations may include up to five validated IPv4 WebSocket endpoint hints. Hints are connection candidates only; device identity is still established exclusively by the authenticated handshake.
 - Encoding: JSON envelope. Binary crypto inputs and outputs are represented as Base64URL without padding in JSON.
 - Maximum frame size: 1 MiB.
 - Maximum plaintext clipboard text: 256 KiB UTF-8.

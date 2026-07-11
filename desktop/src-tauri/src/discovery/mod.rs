@@ -14,9 +14,9 @@ pub const EGGCLIP_MDNS_SERVICE_TYPE: &str = "_eggclip._tcp.local.";
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PocNetworkAddress {
-    interface_name: String,
-    address: String,
-    is_tunnel: bool,
+    pub(crate) interface_name: String,
+    pub(crate) address: String,
+    pub(crate) is_tunnel: bool,
 }
 
 #[derive(Default)]
