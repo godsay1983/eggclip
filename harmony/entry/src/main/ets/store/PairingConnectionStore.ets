@@ -3,8 +3,10 @@ import { util } from '@kit.ArkTS';
 import {
   PairingRdbRepository,
   SettingsRdbRepository,
+  SyncHeadRdbRepository,
   TrustedConnectionEndpointRecord
 } from '../data/repositories/RdbRepositories';
+import { SyncHeadRecord } from '../data/repositories/RepositoryCommands';
 import { LocalIdentityRdbRepository } from '../data/repositories/LocalIdentityRdbRepository';
 import {
   DeviceConnectionState,
@@ -17,6 +19,7 @@ import {
   JsonObject,
   MessageType
 } from '../models/ProtocolModels';
+import { ProtocolParser } from '../models/ProtocolModels';
 import { LocalDeviceIdentityService } from '../services/crypto/LocalDeviceIdentityService';
 import {
   PairingClientNetworkHandshakeError,
@@ -449,6 +452,18 @@ class PairingConnectionStore {
       return this.snapshot();
     }
 
+    if (frameResult.envelope.messageType === MessageType.SYNC_HEADS) {
+      const stored = await this.persistRemoteSyncHeads(frameResult.decryptedPayload, Date.now());
+      if (!stored) {
+        this.fail('桌面端同步头被拒绝', '收到的 SYNC_HEADS 不符合协议，或本机可信设备上下文已失效。');
+        return this.snapshot();
+      }
+      this.title = '已收到桌面端同步状态';
+      this.description = '已保存桌面端各来源设备的可用序号，准备比较缺失范围。';
+      this.emit();
+      return this.snapshot();
+    }
+
     if (frameResult.envelope.messageType === MessageType.ITEM_LIVE) {
       const received = await this.persistInboundItemLive(frameResult.decryptedPayload, Date.now());
       if (received.status === InboundItemLiveStatus.STORED) {
@@ -712,6 +727,41 @@ class PairingConnectionStore {
       expectedOriginDeviceId: this.pendingTrustServerHello.deviceId,
       nowMs
     });
+  }
+
+  private async persistRemoteSyncHeads(payload: JsonObject | undefined, nowMs: number): Promise<boolean> {
+    if (this.context === null || this.pendingTrustDraft === null ||
+      this.pendingTrustServerHello === null || payload === undefined) {
+      return false;
+    }
+    const parsed = new ProtocolParser().parseSyncHeadsPayload(payload);
+    if (!parsed.ok || parsed.payload === undefined) {
+      return false;
+    }
+    const repository = new SyncHeadRdbRepository(this.context);
+    const deviceIds = Object.keys(parsed.payload.heads);
+    try {
+      for (let index = 0; index < deviceIds.length; index += 1) {
+        const originDeviceId = deviceIds[index];
+        const latestOriginSeq = parsed.payload.heads[originDeviceId];
+        const minimumAvailable = parsed.payload.minimumAvailable[originDeviceId];
+        if (latestOriginSeq === undefined || minimumAvailable === undefined) return false;
+        const record: SyncHeadRecord = {
+          head: {
+            spaceId: this.pendingTrustDraft.spaceId,
+            originDeviceId,
+            latestOriginSeq,
+            minimumAvailable,
+            updatedAt: nowMs
+          },
+          peerDeviceId: this.pendingTrustServerHello.deviceId
+        };
+        await repository.upsert(record);
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   private emit(): void {
