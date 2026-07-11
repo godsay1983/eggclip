@@ -43,7 +43,10 @@ export class SettingsStore {
     this.clipboardRepository = new ClipboardRdbRepository(context);
     this.spaceRepository = new SpaceRdbRepository(context);
     this.spaceKeySelfTest = new SpaceKeyCryptoSelfTestService(
-      new SettingsSpaceKeyRefProvider(this.spaceRepository)
+      new SettingsSpaceKeyRefProvider(this.spaceRepository),
+      undefined,
+      undefined,
+      true
     );
   }
 

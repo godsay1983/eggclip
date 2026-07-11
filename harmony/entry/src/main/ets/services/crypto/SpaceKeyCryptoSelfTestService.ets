@@ -4,17 +4,20 @@ import {
 import {
   SpaceKeyHuksDecryptResult,
   SpaceKeyHuksEncryptResult,
+  SpaceKeyHuksMacResult,
   SpaceKeyHuksService
 } from './SpaceKeyHuksService';
 
 const SELF_TEST_AAD: string = 'eggclip:huks-space-key-self-test:v1';
 const SELF_TEST_PLAINTEXT: string = 'EggClip HUKS space key self-test v1';
+const SELF_TEST_HMAC_MESSAGE: string = 'text/plain\nEggClip HUKS space key hmac self-test v1';
 
 export enum SpaceKeyCryptoSelfTestError {
   NO_SPACE_KEY = 'noSpaceKey',
   ENCRYPT_FAILED = 'encryptFailed',
   DECRYPT_FAILED = 'decryptFailed',
   PLAINTEXT_MISMATCH = 'plaintextMismatch',
+  HMAC_FAILED = 'hmacFailed',
   STORE_FAILED = 'storeFailed'
 }
 
@@ -45,16 +48,26 @@ export interface SpaceKeyAesGcmGateway {
   ): Promise<SpaceKeyHuksDecryptResult>;
 }
 
+export interface SpaceKeyHmacGateway {
+  hmacSha256Base64Url(encryptedSpaceKeyRef: string, messageBase64Url: string): Promise<SpaceKeyHuksMacResult>;
+}
+
 export class SpaceKeyCryptoSelfTestService {
   private readonly keyRefProvider: SpaceKeyRefProvider;
   private readonly crypto: SpaceKeyAesGcmGateway;
+  private readonly hmac: SpaceKeyHmacGateway;
+  private readonly verifyHmac: boolean;
 
   constructor(
     keyRefProvider: SpaceKeyRefProvider,
-    crypto: SpaceKeyAesGcmGateway = new SpaceKeyHuksService()
+    crypto: SpaceKeyAesGcmGateway = new SpaceKeyHuksService(),
+    hmac: SpaceKeyHmacGateway = new SpaceKeyHuksService(),
+    verifyHmac: boolean = false
   ) {
     this.keyRefProvider = keyRefProvider;
     this.crypto = crypto;
+    this.hmac = hmac;
+    this.verifyHmac = verifyHmac;
   }
 
   async run(): Promise<SpaceKeyCryptoSelfTestResult> {
@@ -83,6 +96,15 @@ export class SpaceKeyCryptoSelfTestService {
     }
     if (decrypted.plaintext !== plaintext) {
       return failed(SpaceKeyCryptoSelfTestError.PLAINTEXT_MISMATCH, 'plaintext');
+    }
+    if (this.verifyHmac) {
+      const digest = await this.hmac.hmacSha256Base64Url(
+        encryptedSpaceKeyRef,
+        encodeBase64Url(utf8Encode(SELF_TEST_HMAC_MESSAGE))
+      );
+      if (!digest.ok || digest.digest === undefined || digest.digest.length === 0) {
+        return failed(SpaceKeyCryptoSelfTestError.HMAC_FAILED, digest.field ?? 'hmacSha256Base64Url');
+      }
     }
 
     return {

@@ -50,7 +50,7 @@ export struct SettingsPage {
   @State private connectionTitle: string = '等待桌面端';
   @State private connectionDescription: string = '正在等待 mDNS 候选，也可以使用手动 IP';
   @State private spaceKeyDiagnosticRunning: boolean = false;
-  @State private spaceKeyDiagnosticStatus: string = '配对成功后可运行 HUKS 空间密钥加解密自检';
+  @State private spaceKeyDiagnosticStatus: string = '配对成功后可运行 HUKS 空间密钥与摘要自检';
   @State private spaceKeyDiagnosticDetail: string = '自检只使用固定测试文本，不读取或显示剪贴板内容。';
   @State private spaceKeyDiagnosticTone: number = 0;
   @State private spaceKeyDiagnosticUpdatedAt: string = '尚未运行';
@@ -299,7 +299,7 @@ export struct SettingsPage {
       this.DiagnosticsRow('帧统计', this.transportDiagnostics)
       this.SpaceKeyDiagnosticResult()
 
-      Button(this.spaceKeyDiagnosticRunning ? '自检中' : '自检空间密钥加解密')
+      Button(this.spaceKeyDiagnosticRunning ? '自检中' : '自检空间密钥与摘要')
         .width('100%')
         .height(38)
         .enabled(!this.spaceKeyDiagnosticRunning)
@@ -617,7 +617,7 @@ export struct SettingsPage {
     this.spaceKeyDiagnosticRunning = true;
     this.spaceKeyDiagnosticTone = 1;
     this.spaceKeyDiagnosticStatus = '正在自检';
-    this.spaceKeyDiagnosticDetail = '正在使用已保存的空间密钥引用进行固定文本加解密往返。';
+      this.spaceKeyDiagnosticDetail = '正在使用已保存的空间密钥引用进行固定文本加解密和 HMAC 摘要校验。';
     this.spaceKeyDiagnosticUpdatedAt = this.formatDiagnosticTime(new Date());
     this.settingsStore.runSpaceKeyCryptoSelfTest()
       .then((result: SpaceKeyCryptoSelfTestResult) => {
@@ -652,6 +652,9 @@ export struct SettingsPage {
     if (result.error === SpaceKeyCryptoSelfTestError.PLAINTEXT_MISMATCH) {
       return 'HUKS 空间密钥自检结果不一致';
     }
+    if (result.error === SpaceKeyCryptoSelfTestError.HMAC_FAILED) {
+      return 'HUKS 空间密钥摘要自检失败';
+    }
     if (result.error === SpaceKeyCryptoSelfTestError.STORE_FAILED) {
       return '读取同步空间密钥引用失败';
     }
@@ -673,6 +676,9 @@ export struct SettingsPage {
     }
     if (result.error === SpaceKeyCryptoSelfTestError.PLAINTEXT_MISMATCH) {
       return '加解密往返完成，但解密结果与固定测试文本不一致。';
+    }
+    if (result.error === SpaceKeyCryptoSelfTestError.HMAC_FAILED) {
+      return `摘要失败阶段：${result.field ?? 'hmacSha256Base64Url'}。请重新配对后重试。`;
     }
     if (result.error === SpaceKeyCryptoSelfTestError.STORE_FAILED) {
       return '读取本机同步空间记录失败，请检查数据库状态或重新配对。';
