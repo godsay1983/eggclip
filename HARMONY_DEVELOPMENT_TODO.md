@@ -393,6 +393,8 @@ harmony/entry/src/main/ets/
 - [ ] 本地持久化成功后发送 `ITEM_LIVE`。
   - [x] POC 发送路径已在 PasteButton 读取后读取本机同步策略；自动同步关闭时只更新本机历史，不发送临时文本。
   - [x] POC 发送路径已调整为先确认本机历史/本机记录事务，再检查同步策略和 WebSocket 连接，避免本机保存失败时仍显示发送成功。
+  - [x] `ProtocolTransportSession` 已能构造客户端方向的加密业务帧：固定 `session-v1-client-to-server` keyId、方向独立 nonce、单调发送计数器、canonical AAD 和帧大小校验；`PairingConnectionStore` 仅在 authenticated session 上暴露 `ITEM_LIVE` 发送入口。
+  - [ ] PasteButton 正式出站仍待接入可信同步空间的本地事务和 HUKS 内容摘要能力；现有空间密钥别名只具备 AES-GCM 本地加密用途，不能把裸 `spaceKey` 回写到 RDB 或 UI 以计算 HMAC digest。
 - [ ] 网络失败时保留待同步记录，不能假装发送成功。
 - [ ] 显示已发送、待同步和失败状态。
   - [x] 首页增加发送状态卡，区分本机记录、待连接、发送中、已发送、失败和同步暂停。

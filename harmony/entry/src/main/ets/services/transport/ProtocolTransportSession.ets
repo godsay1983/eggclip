@@ -1,5 +1,6 @@
 import { estimateUtf8Bytes } from '../../utils/TextLimits';
 import {
+  AeadAlgorithm,
   canonicalEncryptedAad,
   JsonObject,
   MessageType,
@@ -11,8 +12,17 @@ import {
   ProtocolSessionState,
   PROTOCOL_MAX_FRAME_BYTES
 } from '../../models/ProtocolModels';
-import { AesGcmCryptoService } from '../crypto/AesGcmCryptoService';
-import { decodeBase64Url, encodeBase64Url } from '../crypto/CryptoVectorService';
+import {
+  AesGcmCryptoService,
+  AesGcmDecryptResult,
+  AesGcmEncryptResult
+} from '../crypto/AesGcmCryptoService';
+import {
+  decodeBase64Url,
+  encodeBase64Url,
+  SessionDirection
+} from '../crypto/CryptoVectorService';
+import { SessionKeyDerivationService } from '../crypto/SessionKeyDerivationService';
 
 const SESSION_KEY_ID_CLIENT_TO_SERVER: string = 'session-v1-client-to-server';
 const SESSION_KEY_ID_SERVER_TO_CLIENT: string = 'session-v1-server-to-client';
@@ -30,6 +40,14 @@ export enum ProtocolTransportFrameError {
   SESSION_CLOSED = 'sessionClosed'
 }
 
+export enum ProtocolOutboundFrameError {
+  SESSION_CLOSED = 'sessionClosed',
+  SESSION_KEY_MISSING = 'sessionKeyMissing',
+  INVALID_MESSAGE = 'invalidMessage',
+  ENCRYPT_FAILED = 'encryptFailed',
+  FRAME_TOO_LARGE = 'frameTooLarge'
+}
+
 export enum ProtocolHandshakeFrameOutcome {
   CONTINUE = 'continue',
   AUTHENTICATED = 'authenticated',
@@ -45,9 +63,49 @@ export interface ProtocolTransportFrameResult {
   outcome?: ProtocolHandshakeFrameOutcome;
 }
 
+export interface ProtocolOutboundFrameResult {
+  ok: boolean;
+  frame?: string;
+  sessionCounter?: number;
+  error?: ProtocolOutboundFrameError;
+}
+
 export interface ProtocolSessionKeys {
   clientToServerKey: string;
   serverToClientKey: string;
+}
+
+interface OutboundCiphertextEnvelope {
+  algorithm: AeadAlgorithm;
+  keyId: string;
+  nonce: string;
+  aad: string;
+  body: string;
+  tag: string;
+}
+
+interface OutboundEncryptedEnvelope {
+  version: number;
+  type: MessageType;
+  messageId: string;
+  sessionCounter: number;
+  ciphertext: OutboundCiphertextEnvelope;
+}
+
+export interface ProtocolAesGcmGateway {
+  encryptBase64Url(
+    keyBase64Url: string,
+    nonceBase64Url: string,
+    aadBase64Url: string,
+    plaintextBase64Url: string
+  ): AesGcmEncryptResult;
+  decryptBase64Url(
+    keyBase64Url: string,
+    nonceBase64Url: string,
+    aadBase64Url: string,
+    bodyBase64Url: string,
+    tagBase64Url: string
+  ): AesGcmDecryptResult;
 }
 
 export class ProtocolHandshakeTransportSession {
@@ -128,16 +186,20 @@ export class ProtocolHandshakeTransportSession {
 export class ProtocolTransportSession {
   private readonly parser: ProtocolParser = new ProtocolParser();
   private readonly inbound: ProtocolInboundSession;
-  private readonly crypto: AesGcmCryptoService = new AesGcmCryptoService();
+  private readonly crypto: ProtocolAesGcmGateway;
+  private readonly nonceDerivation: SessionKeyDerivationService = new SessionKeyDerivationService();
   private readonly keys?: ProtocolSessionKeys;
   private closed: boolean = false;
+  private nextOutboundCounter: number = 0;
 
   constructor(
     initialState: ProtocolSessionState = ProtocolSessionState.AUTHENTICATED,
-    keys?: ProtocolSessionKeys
+    keys?: ProtocolSessionKeys,
+    crypto: ProtocolAesGcmGateway = new AesGcmCryptoService()
   ) {
     this.inbound = new ProtocolInboundSession(initialState);
     this.keys = keys;
+    this.crypto = crypto;
   }
 
   state(): ProtocolSessionState {
@@ -150,6 +212,71 @@ export class ProtocolTransportSession {
 
   close(): void {
     this.fail();
+  }
+
+  /**
+   * Builds a client-to-server encrypted business envelope. The counter only
+   * advances after a complete frame is produced, so a local crypto failure
+   * cannot create a nonce gap or reuse a nonce on retry.
+   */
+  encodeBusinessFrame(
+    messageType: MessageType,
+    messageId: string,
+    payload: JsonObject
+  ): ProtocolOutboundFrameResult {
+    if (this.closed) {
+      return { ok: false, error: ProtocolOutboundFrameError.SESSION_CLOSED };
+    }
+    if (this.keys === undefined) {
+      return { ok: false, error: ProtocolOutboundFrameError.SESSION_KEY_MISSING };
+    }
+    const counter = this.nextOutboundCounter;
+    const keyId = SESSION_KEY_ID_CLIENT_TO_SERVER;
+    const aad = canonicalEncryptedAad(messageType, messageId, counter, keyId);
+    const nonce = this.nonceDerivation.sessionNonceBase64Url(
+      SessionDirection.CLIENT_TO_SERVER,
+      counter
+    );
+    if (aad === null || nonce.nonce === undefined) {
+      return { ok: false, error: ProtocolOutboundFrameError.INVALID_MESSAGE };
+    }
+
+    const plaintext = encodeBase64Url(utf8Encode(JSON.stringify(payload)));
+    const encrypted = this.crypto.encryptBase64Url(
+      this.keys.clientToServerKey,
+      nonce.nonce,
+      encodeBase64Url(utf8Encode(aad)),
+      plaintext
+    );
+    if (!encrypted.ok || encrypted.body === undefined || encrypted.tag === undefined) {
+      return { ok: false, error: ProtocolOutboundFrameError.ENCRYPT_FAILED };
+    }
+
+    const envelope: OutboundEncryptedEnvelope = {
+      version: 1,
+      type: messageType,
+      messageId,
+      sessionCounter: counter,
+      ciphertext: {
+        algorithm: AeadAlgorithm.AES_256_GCM,
+        keyId,
+        nonce: nonce.nonce,
+        aad: encodeBase64Url(utf8Encode(aad)),
+        body: encrypted.body,
+        tag: encrypted.tag
+      }
+    };
+    const frame = JSON.stringify(envelope);
+    if (estimateUtf8Bytes(frame) > PROTOCOL_MAX_FRAME_BYTES) {
+      return { ok: false, error: ProtocolOutboundFrameError.FRAME_TOO_LARGE };
+    }
+    const parsed = this.parser.parseEnvelope(frame);
+    if (!parsed.ok || parsed.envelope === undefined ||
+      parsed.envelope.kind !== ProtocolEnvelopeKind.ENCRYPTED) {
+      return { ok: false, error: ProtocolOutboundFrameError.INVALID_MESSAGE };
+    }
+    this.nextOutboundCounter += 1;
+    return { ok: true, frame, sessionCounter: counter };
   }
 
   acceptTextFrame(frame: string): ProtocolTransportFrameResult {

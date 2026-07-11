@@ -11,6 +11,7 @@ import {
 import {
   ProtocolHandshakeFrameOutcome,
   ProtocolHandshakeTransportSession,
+  ProtocolAesGcmGateway,
   ProtocolTransportFrameError,
   ProtocolTransportFrameResult,
   ProtocolTransportSession
@@ -38,7 +39,9 @@ import {
 } from '../main/ets/services/crypto/CryptoVectorService';
 import {
   AesGcmCryptoError,
-  AesGcmCryptoService
+  AesGcmCryptoService,
+  AesGcmDecryptResult,
+  AesGcmEncryptResult
 } from '../main/ets/services/crypto/AesGcmCryptoService';
 import {
   SessionKeyDerivationError,
@@ -1117,6 +1120,34 @@ export default function localUnitTest() {
       expect(result.envelope?.kind).assertEqual(ProtocolEnvelopeKind.ENCRYPTED);
       expect(result.envelope?.messageType).assertEqual(MessageType.ITEM_LIVE);
       expect(session.state()).assertEqual(ProtocolSessionState.READY);
+    });
+
+    it('buildsClientToServerEncryptedBusinessFramesWithIndependentCounters', 0, () => {
+      const crypto: ProtocolAesGcmGateway = new FakeProtocolAesGcmGateway();
+      const session = new ProtocolTransportSession(ProtocolSessionState.AUTHENTICATED, {
+        clientToServerKey: '_CuE_7SfzdShnxyzHQy4IJ0zQjMAUVq-tynBZ2lBPYQ',
+        serverToClientKey: 'TSo91xPhGNnQb2KPW6xyjJJFeHsimcUss0Rm2Tnbo2M'
+      }, crypto);
+      const first = session.encodeBusinessFrame(
+        MessageType.ITEM_LIVE,
+        '018ff6f3-0d8c-7d1e-a38a-f308c64de79f',
+        outboundPayloadFixture()
+      );
+      const second = session.encodeBusinessFrame(
+        MessageType.PING,
+        '018ff6f4-0d8c-7d1e-a38a-f308c64de79f',
+        emptyOutboundPayloadFixture()
+      );
+
+      expect(first.ok).assertEqual(true);
+      expect(first.sessionCounter).assertEqual(0);
+      expect(second.ok).assertEqual(true);
+      expect(second.sessionCounter).assertEqual(1);
+      const firstEnvelope = new ProtocolParser().parseEnvelope(first.frame ?? '');
+      expect(firstEnvelope.ok).assertEqual(true);
+      expect(firstEnvelope.envelope?.messageType).assertEqual(MessageType.ITEM_LIVE);
+      expect(firstEnvelope.envelope?.ciphertext?.keyId).assertEqual('session-v1-client-to-server');
+      expect(firstEnvelope.envelope?.ciphertext?.nonce).assertEqual('YzJzAQAAAAAAAAAA');
     });
 
     it('rejectsProtocolTransportEncryptedFrameWithAadMismatchWhenKeysArePresent', 0, () => {
@@ -3141,6 +3172,39 @@ class FakePairingWebSocketTransportService extends WebSocketTransportService {
   close(): void {
     this.callbacks = null;
   }
+}
+
+class FakeProtocolAesGcmGateway implements ProtocolAesGcmGateway {
+  encryptBase64Url(
+    _key: string,
+    _nonce: string,
+    _aad: string,
+    _plaintext: string
+  ): AesGcmEncryptResult {
+    return {
+      ok: true,
+      body: encodeBase64Url(new Uint8Array([1, 2, 3])),
+      tag: encodeBase64Url(new Uint8Array(16))
+    };
+  }
+
+  decryptBase64Url(
+    _key: string,
+    _nonce: string,
+    _aad: string,
+    _body: string,
+    _tag: string
+  ): AesGcmDecryptResult {
+    return { ok: false, error: AesGcmCryptoError.PLATFORM_CRYPTO_FAILED, field: 'test' };
+  }
+}
+
+function outboundPayloadFixture(): JsonObject {
+  return JSON.parse('{"itemId":"018ff6f3-3653-7c79-b38b-f4af3575396b"}') as JsonObject;
+}
+
+function emptyOutboundPayloadFixture(): JsonObject {
+  return JSON.parse('{}') as JsonObject;
 }
 
 function encryptedFrameWithCanonicalAad(

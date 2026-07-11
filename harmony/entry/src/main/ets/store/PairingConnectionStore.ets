@@ -348,6 +348,31 @@ class PairingConnectionStore {
     this.emit();
   }
 
+  /**
+   * Sends an already validated ITEM_LIVE payload only through the pairing-owned
+   * authenticated transport. Callers retain local persistence responsibility.
+   */
+  async sendAuthenticatedItemLive(payload: JsonObject): Promise<boolean> {
+    if (this.state !== PairingConnectionState.AUTHENTICATED ||
+      this.authenticatedTransportSession === null ||
+      this.authenticatedTransportSession.isClosed()) {
+      return false;
+    }
+    const encoded = this.authenticatedTransportSession.encodeBusinessFrame(
+      MessageType.ITEM_LIVE,
+      nextMessageId(),
+      payload
+    );
+    if (!encoded.ok || encoded.frame === undefined) {
+      return false;
+    }
+    const sent = await this.transport.sendTextFrame(encoded.frame);
+    if (!sent) {
+      this.authenticatedTransportSession.close();
+    }
+    return sent;
+  }
+
   private sendClientHello(frame: string): void {
     this.transport.sendTextFrame(frame)
       .then((sent: boolean) => {
