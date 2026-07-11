@@ -20,7 +20,7 @@ import {
   JsonObject,
   MessageType
 } from '../models/ProtocolModels';
-import { ProtocolParser, RequestRange, SyncHeadsPayload } from '../models/ProtocolModels';
+import { ProtocolParser, RequestRange, RequestRangePayload, SyncHeadsPayload } from '../models/ProtocolModels';
 import { LocalDeviceIdentityService } from '../services/crypto/LocalDeviceIdentityService';
 import {
   PairingClientNetworkHandshakeError,
@@ -796,7 +796,8 @@ class PairingConnectionStore {
       });
     }
     if (ranges.length === 0) return false;
-    const requestPayload: JsonObject = { ranges: ranges as Object };
+    const request: RequestRangePayload = { ranges };
+    const requestPayload = JSON.parse(JSON.stringify(request)) as JsonObject;
     return await this.sendAuthenticatedBusinessFrame(MessageType.REQUEST_RANGE, requestPayload);
   }
 
