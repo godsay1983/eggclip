@@ -251,6 +251,11 @@ Rules:
 
 If a requested range is below `minimumAvailable`, the sender returns a retention gap response rather than pretending synchronization is complete.
 
+`REQUEST_RANGE` uses `ranges: [{ originDeviceId, fromSeq, toSeq }]`. The sender replies with
+`ITEM_BATCH { items, gaps }`; a gap contains `originDeviceId`, `requestedFromSeq`, and
+`minimumAvailable`. After history-only persistence, the receiver sends
+`ITEM_ACK { itemIds }`. Batch items never trigger a system clipboard write.
+
 ## Space Key Delivery
 
 During invitation-based pairing, the desktop sends the initial space key after

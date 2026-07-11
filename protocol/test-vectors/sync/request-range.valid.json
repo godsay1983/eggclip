@@ -1,0 +1,9 @@
+{
+  "ranges": [
+    {
+      "originDeviceId": "018ff6f0-0a3b-7815-a4db-3eb6e23d9338",
+      "fromSeq": 40,
+      "toSeq": 42
+    }
+  ]
+}

@@ -196,6 +196,35 @@ export interface RequestRangePayloadResult {
   field?: string;
 }
 
+export interface RetentionGap {
+  originDeviceId: string;
+  requestedFromSeq: number;
+  minimumAvailable: number;
+}
+
+export interface ItemBatchPayload {
+  items: ClipboardItem[];
+  gaps: RetentionGap[];
+}
+
+export interface ItemBatchPayloadResult {
+  ok: boolean;
+  payload?: ItemBatchPayload;
+  error?: ProtocolErrorCode;
+  field?: string;
+}
+
+export interface ItemAckPayload {
+  itemIds: string[];
+}
+
+export interface ItemAckPayloadResult {
+  ok: boolean;
+  payload?: ItemAckPayload;
+  error?: ProtocolErrorCode;
+  field?: string;
+}
+
 export type JsonValue = Object | string | number | boolean | null;
 export type JsonObject = Record<string, JsonValue>;
 
@@ -448,6 +477,71 @@ export class ProtocolParser {
       ranges.push({ originDeviceId, fromSeq, toSeq });
     }
     return { ok: true, payload: { ranges } };
+  }
+
+  parseItemBatchPayload(value: JsonValue | undefined): ItemBatchPayloadResult {
+    if (value === undefined || !isJsonObject(value)) {
+      return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'payload' };
+    }
+    const object = value as JsonObject;
+    if (!Array.isArray(object.items) || !Array.isArray(object.gaps)) {
+      return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'itemBatch' };
+    }
+    const itemValues = object.items as JsonValue[];
+    const gapValues = object.gaps as JsonValue[];
+    if (itemValues.length > PROTOCOL_MAX_BATCH_ITEMS || gapValues.length > PROTOCOL_MAX_BATCH_ITEMS ||
+      itemValues.length === 0 && gapValues.length === 0) {
+      return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'itemBatch' };
+    }
+    const items: ClipboardItem[] = [];
+    let totalPlaintextBytes = 0;
+    for (let index = 0; index < itemValues.length; index += 1) {
+      const parsed = this.parseClipboardItem(JSON.stringify(itemValues[index]));
+      if (!parsed.ok || parsed.item === undefined) {
+        return { ok: false, error: parsed.error, field: parsed.field ?? 'items' };
+      }
+      totalPlaintextBytes += estimateUtf8Bytes(parsed.item.content);
+      if (totalPlaintextBytes > PROTOCOL_MAX_BATCH_PLAINTEXT_BYTES) {
+        return { ok: false, error: ProtocolErrorCode.TEXT_TOO_LARGE, field: 'items' };
+      }
+      items.push(parsed.item);
+    }
+    const gaps: RetentionGap[] = [];
+    for (let index = 0; index < gapValues.length; index += 1) {
+      const value = gapValues[index];
+      if (!isJsonObject(value)) return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'gaps' };
+      const gap = value as JsonObject;
+      const originDeviceId = gap.originDeviceId;
+      const requestedFromSeq = gap.requestedFromSeq;
+      const minimumAvailable = gap.minimumAvailable;
+      if (typeof originDeviceId !== 'string' || typeof requestedFromSeq !== 'number' ||
+        typeof minimumAvailable !== 'number' || !isUuid(originDeviceId) ||
+        !Number.isSafeInteger(requestedFromSeq) || !Number.isSafeInteger(minimumAvailable) ||
+        requestedFromSeq < 1 || requestedFromSeq >= minimumAvailable) {
+        return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'gaps' };
+      }
+      gaps.push({ originDeviceId, requestedFromSeq, minimumAvailable });
+    }
+    return { ok: true, payload: { items, gaps } };
+  }
+
+  parseItemAckPayload(value: JsonValue | undefined): ItemAckPayloadResult {
+    if (value === undefined || !isJsonObject(value) || !Array.isArray((value as JsonObject).itemIds)) {
+      return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'itemIds' };
+    }
+    const values = (value as JsonObject).itemIds as JsonValue[];
+    if (values.length === 0 || values.length > PROTOCOL_MAX_BATCH_ITEMS) {
+      return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'itemIds' };
+    }
+    const itemIds: string[] = [];
+    for (let index = 0; index < values.length; index += 1) {
+      const itemId = values[index];
+      if (typeof itemId !== 'string' || !isUuid(itemId) || itemIds.indexOf(itemId) >= 0) {
+        return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'itemIds' };
+      }
+      itemIds.push(itemId);
+    }
+    return { ok: true, payload: { itemIds } };
   }
 
   private rejectMixedAuth(messageType: MessageType): ProtocolParseResult {

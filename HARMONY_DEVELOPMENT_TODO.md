@@ -48,7 +48,7 @@
 - [x] PasteButton 正式出站：本地事务、HUKS HMAC 摘要、本地正文加密和认证发送；未认证时保留 POC 回退。
 - [x] `SYNC_HEADS` 协议载荷校验基础。
 - [x] 已配对设备的正式连接生命周期、前台自动连接、单连接去重、心跳和重连。
-- [ ] `SYNC_HEADS` 实际发送、范围请求、`ITEM_BATCH`、ACK、retention gap 与断线续传。
+- [x] `SYNC_HEADS` 实际发送、范围请求、`ITEM_BATCH`、ACK、retention gap 与断线续传。
 - [ ] 网络失败的待同步记录与可靠发送状态。
 
 ## H6：设备、设置与移动体验

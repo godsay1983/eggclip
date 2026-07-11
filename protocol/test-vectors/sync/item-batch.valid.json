@@ -1,0 +1,23 @@
+{
+  "items": [
+    {
+      "itemId": "018ff6f3-3653-7c79-b38b-f4af3575396b",
+      "spaceId": "018ff6ef-c394-7d08-8b99-4b7d10f2767a",
+      "originDeviceId": "018ff6f0-0a3b-7815-a4db-3eb6e23d9338",
+      "originSeq": 42,
+      "hlc": "1781946000123:0:018ff6f0",
+      "contentType": "text/plain",
+      "contentLength": 17,
+      "contentDigest": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+      "createdAt": 1781946000123,
+      "content": "EggClip test text"
+    }
+  ],
+  "gaps": [
+    {
+      "originDeviceId": "018ff6f0-0a3b-7815-a4db-3eb6e23d9338",
+      "requestedFromSeq": 1,
+      "minimumAvailable": 40
+    }
+  ]
+}

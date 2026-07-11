@@ -20,8 +20,10 @@ use crate::{
         load_space_key, PairingError, PairingServerAuthProofInput, PairingServerHelloDraft,
     },
     protocol::{
-        parse_envelope, ClipboardItem as ProtocolClipboardItem, HelloPayload, MessageType,
-        ProtocolEnvelope, SyncHeadsPayload,
+        parse_envelope, ClipboardItem as ProtocolClipboardItem, ContentType as ProtocolContentType,
+        HelloPayload, ItemAckPayload, ItemBatchPayload, MessageType, ProtocolEnvelope,
+        RequestRange, RequestRangePayload, RetentionGap, SyncHeadsPayload, MAX_BATCH_ITEMS,
+        MAX_BATCH_PLAINTEXT_BYTES,
     },
     settings::{database_path, now_ms},
     storage::{
@@ -30,12 +32,12 @@ use crate::{
             persist_local_clipboard_text, retention_expires_at, ClipboardInsertOutcome,
             ClipboardItemRecord, ClipboardRepository, DeviceRecord, DeviceRepository,
             LocalClipboardPersistInput, PairingInvitationRepository, SettingsRepository,
-            SpaceRepository,
+            SpaceRepository, SyncHeadRecord, SyncHeadRepository,
         },
     },
     sync::{
         AppSettings, ContentType as SyncContentType, Device, DeviceConnectionState,
-        DeviceTrustState, HlcTimestamp, SpaceState,
+        DeviceTrustState, HlcTimestamp, SpaceState, SyncHead,
     },
 };
 use futures_util::{SinkExt, StreamExt};
@@ -245,8 +247,6 @@ enum AuthenticatedLocalBroadcastStatus {
     SkippedByPolicy,
     Failed,
 }
-
-const REMOTE_HISTORY_METADATA_PLACEHOLDER: &[u8] = b"eggclip-remote-history-metadata-only-v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AuthenticatedRemoteHistoryOutcome {
@@ -723,6 +723,16 @@ fn send_authenticated_sync_heads(app: &AppHandle, peer: &str) -> Result<(), ()> 
         .map(|entry| entry.space_id)
         .ok_or(())?;
     let payload = build_sync_heads_payload(app, space_id)?;
+    send_authenticated_business_payload(app, peer, MessageType::SyncHeads, &payload)
+}
+
+fn send_authenticated_business_payload(
+    app: &AppHandle,
+    peer: &str,
+    message_type: MessageType,
+    payload: &serde_json::Value,
+) -> Result<(), ()> {
+    let runtime = app.state::<PocTransportRuntime>();
     let frame = runtime
         .authenticated_sessions
         .lock()
@@ -730,7 +740,7 @@ fn send_authenticated_sync_heads(app: &AppHandle, peer: &str) -> Result<(), ()> 
         .get_mut(peer)
         .ok_or(())?
         .session
-        .encode_business_message(MessageType::SyncHeads, Uuid::now_v7().to_string(), &payload)
+        .encode_business_message(message_type, Uuid::now_v7().to_string(), payload)
         .map_err(|_| ())?;
     let sent = runtime
         .peers
@@ -1438,8 +1448,18 @@ fn dispatch_authenticated_payload(
     message_type: MessageType,
     payload: &serde_json::Value,
 ) -> Result<(), ()> {
-    if message_type != MessageType::ItemLive {
-        return Ok(());
+    match message_type {
+        MessageType::SyncHeads => return handle_remote_sync_heads(app, peer, payload),
+        MessageType::RequestRange => return respond_to_request_range(app, peer, payload),
+        MessageType::ItemBatch => return handle_inbound_item_batch(app, peer, payload),
+        MessageType::ItemAck => {
+            let ack: ItemAckPayload = serde_json::from_value(payload.clone()).map_err(|_| ())?;
+            ack.validate().map_err(|_| ())?;
+            let _ = app.emit("transport://item-ack", ack);
+            return Ok(());
+        }
+        MessageType::ItemLive => {}
+        _ => return Ok(()),
     }
     let (protocol_item, clipboard_item) =
         authenticated_clipboard_text_from_payload(message_type, payload)?;
@@ -1471,6 +1491,224 @@ fn dispatch_authenticated_payload(
         },
     );
     Ok(())
+}
+
+fn authenticated_peer_context(app: &AppHandle, peer: &str) -> Result<(Uuid, Uuid), ()> {
+    let runtime = app.state::<PocTransportRuntime>();
+    let context = runtime
+        .authenticated_sessions
+        .lock()
+        .map_err(|_| ())?
+        .get(peer)
+        .map(|entry| (entry.space_id, entry.device_id))
+        .ok_or(());
+    context
+}
+
+fn handle_remote_sync_heads(
+    app: &AppHandle,
+    peer: &str,
+    payload: &serde_json::Value,
+) -> Result<(), ()> {
+    let remote: SyncHeadsPayload = serde_json::from_value(payload.clone()).map_err(|_| ())?;
+    remote.validate().map_err(|_| ())?;
+    let (space_id, peer_device_id) = authenticated_peer_context(app, peer)?;
+    let path = database_path(app).map_err(|_| ())?;
+    let connection = open_database(path).map_err(|_| ())?;
+    let updated_at = now_ms().map_err(|_| ())?;
+    for (origin, latest) in &remote.heads {
+        let origin_device_id = Uuid::parse_str(origin).map_err(|_| ())?;
+        let minimum_available = *remote.minimum_available.get(origin).ok_or(())?;
+        SyncHeadRepository::new(&connection)
+            .upsert(&SyncHeadRecord {
+                head: SyncHead {
+                    space_id,
+                    origin_device_id,
+                    latest_origin_seq: *latest,
+                    minimum_available,
+                    updated_at,
+                },
+                peer_device_id,
+            })
+            .map_err(|_| ())?;
+    }
+    let local = ClipboardRepository::new(&connection)
+        .summarize_available_sequences(space_id, updated_at)
+        .map_err(|_| ())?;
+    let local_latest: HashMap<String, u64> = local
+        .into_iter()
+        .map(|head| (head.origin_device_id.to_string(), head.latest_origin_seq))
+        .collect();
+    let ranges: Vec<RequestRange> = remote
+        .heads
+        .iter()
+        .filter_map(|(origin, latest)| {
+            let local_seq = local_latest.get(origin).copied().unwrap_or(0);
+            (*latest > local_seq).then(|| RequestRange {
+                origin_device_id: origin.clone(),
+                from_seq: local_seq.saturating_add(1),
+                to_seq: *latest,
+            })
+        })
+        .take(MAX_BATCH_ITEMS)
+        .collect();
+    if ranges.is_empty() {
+        return Ok(());
+    }
+    let request = RequestRangePayload { ranges };
+    request.validate().map_err(|_| ())?;
+    let value = serde_json::to_value(request).map_err(|_| ())?;
+    send_authenticated_business_payload(app, peer, MessageType::RequestRange, &value)
+}
+
+fn handle_inbound_item_batch(
+    app: &AppHandle,
+    peer: &str,
+    payload: &serde_json::Value,
+) -> Result<(), ()> {
+    let batch: ItemBatchPayload = serde_json::from_value(payload.clone()).map_err(|_| ())?;
+    batch.validate().map_err(|_| ())?;
+    let (space_id, _) = authenticated_peer_context(app, peer)?;
+    let settings = load_authenticated_inbound_settings(app)?;
+    let received_at = now_ms().map_err(|_| ())?;
+    let mut acked = Vec::new();
+    for item in &batch.items {
+        if Uuid::parse_str(&item.space_id).map_err(|_| ())? != space_id {
+            return Err(());
+        }
+        match persist_authenticated_remote_history_if_possible(app, item, received_at, &settings)? {
+            AuthenticatedRemoteHistoryOutcome::Inserted
+            | AuthenticatedRemoteHistoryOutcome::Duplicate => {
+                acked.push(item.item_id.clone());
+            }
+            AuthenticatedRemoteHistoryOutcome::Conflict => return Err(()),
+            AuthenticatedRemoteHistoryOutcome::SkippedByPolicy
+            | AuthenticatedRemoteHistoryOutcome::SkippedMissingTrustGraph => return Err(()),
+        }
+    }
+    let _ = app.emit("transport://retention-gaps", batch.gaps.clone());
+    if acked.is_empty() {
+        return Ok(());
+    }
+    let ack = ItemAckPayload { item_ids: acked };
+    ack.validate().map_err(|_| ())?;
+    let value = serde_json::to_value(ack).map_err(|_| ())?;
+    send_authenticated_business_payload(app, peer, MessageType::ItemAck, &value)
+}
+
+fn respond_to_request_range(
+    app: &AppHandle,
+    peer: &str,
+    payload: &serde_json::Value,
+) -> Result<(), ()> {
+    let request: RequestRangePayload = serde_json::from_value(payload.clone()).map_err(|_| ())?;
+    request.validate().map_err(|_| ())?;
+    let runtime = app.state::<PocTransportRuntime>();
+    let space_id = runtime
+        .authenticated_sessions
+        .lock()
+        .map_err(|_| ())?
+        .get(peer)
+        .map(|entry| entry.space_id)
+        .ok_or(())?;
+    let path = database_path(app).map_err(|_| ())?;
+    let connection = open_database(path).map_err(|_| ())?;
+    #[cfg(windows)]
+    let secret_store = crate::secret_store::WindowsCredentialSecretStore;
+    #[cfg(not(windows))]
+    let secret_store = crate::secret_store::UnavailableSecretStore;
+    let mut space_key = load_space_key(&connection, &secret_store, space_id).map_err(|_| ())?;
+    let result = (|| -> Result<ItemBatchPayload, ()> {
+        let repository = ClipboardRepository::new(&connection);
+        let available = repository
+            .summarize_available_sequences(space_id, now_ms().map_err(|_| ())?)
+            .map_err(|_| ())?;
+        let available_by_origin: HashMap<Uuid, (u64, u64)> = available
+            .into_iter()
+            .map(|head| {
+                (
+                    head.origin_device_id,
+                    (head.minimum_available, head.latest_origin_seq),
+                )
+            })
+            .collect();
+        let mut items = Vec::new();
+        let mut gaps = Vec::new();
+        let mut total_plaintext_bytes = 0usize;
+        for range in request.ranges {
+            if items.len() >= MAX_BATCH_ITEMS {
+                break;
+            }
+            let origin_device_id = Uuid::parse_str(&range.origin_device_id).map_err(|_| ())?;
+            let Some((minimum_available, latest_available)) =
+                available_by_origin.get(&origin_device_id).copied()
+            else {
+                gaps.push(RetentionGap {
+                    origin_device_id: range.origin_device_id,
+                    requested_from_seq: range.from_seq,
+                    minimum_available: range.to_seq.saturating_add(1),
+                });
+                continue;
+            };
+            if range.from_seq < minimum_available {
+                gaps.push(RetentionGap {
+                    origin_device_id: range.origin_device_id.clone(),
+                    requested_from_seq: range.from_seq,
+                    minimum_available,
+                });
+            }
+            let from_seq = range.from_seq.max(minimum_available);
+            let to_seq = range.to_seq.min(latest_available);
+            if from_seq > to_seq {
+                continue;
+            }
+            let remaining = (MAX_BATCH_ITEMS - items.len()) as u16;
+            let records = repository
+                .list_by_origin_range(space_id, origin_device_id, from_seq, to_seq, remaining)
+                .map_err(|_| ())?;
+            for record in records {
+                let text = match decrypt_local_clipboard_content(
+                    &space_key,
+                    space_id,
+                    &record.encrypted_content,
+                ) {
+                    Ok(text) => text,
+                    Err(_) => {
+                        gaps.push(RetentionGap {
+                            origin_device_id: origin_device_id.to_string(),
+                            requested_from_seq: record.item.origin_seq,
+                            minimum_available: record.item.origin_seq.saturating_add(1),
+                        });
+                        continue;
+                    }
+                };
+                let next_total = total_plaintext_bytes.saturating_add(text.as_str().len());
+                if next_total > MAX_BATCH_PLAINTEXT_BYTES {
+                    break;
+                }
+                total_plaintext_bytes = next_total;
+                items.push(ProtocolClipboardItem {
+                    item_id: record.item.item_id.to_string(),
+                    space_id: record.item.space_id.to_string(),
+                    origin_device_id: record.item.origin_device_id.to_string(),
+                    origin_seq: record.item.origin_seq,
+                    hlc: record.item.hlc.to_wire(),
+                    content_type: ProtocolContentType::TextPlain,
+                    content_length: record.item.content_length,
+                    content_digest: record.item.content_digest,
+                    created_at: record.item.created_at,
+                    content: text.as_str().to_owned(),
+                });
+            }
+        }
+        let batch = ItemBatchPayload { items, gaps };
+        batch.validate().map_err(|_| ())?;
+        Ok(batch)
+    })();
+    space_key.fill(0);
+    let batch = result?;
+    let value = serde_json::to_value(batch).map_err(|_| ())?;
+    send_authenticated_business_payload(app, peer, MessageType::ItemBatch, &value)
 }
 
 fn load_authenticated_inbound_settings(app: &AppHandle) -> Result<AppSettings, ()> {
@@ -1507,7 +1745,16 @@ fn persist_authenticated_remote_history_if_possible(
         return Ok(AuthenticatedRemoteHistoryOutcome::SkippedMissingTrustGraph);
     }
 
-    let record = authenticated_remote_clipboard_record(item, received_at, settings)?;
+    #[cfg(windows)]
+    let secret_store = crate::secret_store::WindowsCredentialSecretStore;
+    #[cfg(not(windows))]
+    let secret_store = crate::secret_store::UnavailableSecretStore;
+    let mut space_key = load_space_key(&connection, &secret_store, space_id).map_err(|_| ())?;
+    let plaintext = ClipboardText::parse(item.content.clone()).map_err(|_| ())?;
+    let encrypted_content = encrypt_local_clipboard_content(&space_key, space_id, &plaintext);
+    space_key.fill(0);
+    let record =
+        authenticated_remote_clipboard_record(item, received_at, settings, encrypted_content?)?;
     let outcome = ClipboardRepository::new(&connection)
         .insert_deduplicated(&record)
         .map_err(|_| ())?;
@@ -1525,6 +1772,7 @@ fn authenticated_remote_clipboard_record(
     item: &ProtocolClipboardItem,
     received_at: u64,
     settings: &AppSettings,
+    encrypted_content: Vec<u8>,
 ) -> Result<ClipboardItemRecord, ()> {
     item.validate().map_err(|_| ())?;
     let content_type = match item.content_type {
@@ -1544,7 +1792,7 @@ fn authenticated_remote_clipboard_record(
             encrypted_content_ref: None,
             plaintext: None,
         },
-        encrypted_content: REMOTE_HISTORY_METADATA_PLACEHOLDER.to_vec(),
+        encrypted_content,
         received_at,
         expires_at: retention_expires_at(received_at, settings.retention_days).map_err(|_| ())?,
         deleted_at: None,
@@ -1851,17 +2099,19 @@ mod tests {
             ..AppSettings::default()
         };
 
-        let record =
-            authenticated_remote_clipboard_record(&protocol_item, 1_700_000_010_000, &settings)
-                .expect("remote history record should build");
+        let encrypted_content = b"encrypted-local-content".to_vec();
+        let record = authenticated_remote_clipboard_record(
+            &protocol_item,
+            1_700_000_010_000,
+            &settings,
+            encrypted_content.clone(),
+        )
+        .expect("remote history record should build");
 
         assert_eq!(record.item.item_id.to_string(), protocol_item.item_id);
         assert_eq!(record.item.origin_seq, 7);
         assert_eq!(record.item.plaintext, None);
-        assert_eq!(
-            record.encrypted_content,
-            REMOTE_HISTORY_METADATA_PLACEHOLDER
-        );
+        assert_eq!(record.encrypted_content, encrypted_content);
         assert_ne!(record.encrypted_content, protocol_item.content.as_bytes());
         assert_eq!(record.received_at, 1_700_000_010_000);
         assert_eq!(record.expires_at, 1_700_604_810_000);

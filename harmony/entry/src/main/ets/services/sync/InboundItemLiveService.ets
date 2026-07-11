@@ -38,7 +38,8 @@ export enum InboundItemLiveStatus {
 export interface InboundItemLiveInput {
   payload: JsonObject;
   expectedSpaceId: string;
-  expectedOriginDeviceId: string;
+  expectedPeerDeviceId: string;
+  eventKind?: InboundClipboardEventKind;
   nowMs: number;
 }
 
@@ -88,7 +89,9 @@ export class InboundItemLiveService {
     if (item.spaceId !== input.expectedSpaceId) {
       return rejected('spaceId');
     }
-    if (item.originDeviceId !== input.expectedOriginDeviceId) {
+    const eventKind = input.eventKind ?? InboundClipboardEventKind.ITEM_LIVE;
+    if (eventKind === InboundClipboardEventKind.ITEM_LIVE &&
+      item.originDeviceId !== input.expectedPeerDeviceId) {
       return rejected('originDeviceId');
     }
 
@@ -109,7 +112,7 @@ export class InboundItemLiveService {
       return rejected('device');
     }
 
-    const policy = inboundClipboardPolicy(InboundClipboardEventKind.ITEM_LIVE, settings);
+    const policy = inboundClipboardPolicy(eventKind, settings);
     if (!policy.updateHistory) {
       return { status: InboundItemLiveStatus.IGNORED_BY_POLICY };
     }

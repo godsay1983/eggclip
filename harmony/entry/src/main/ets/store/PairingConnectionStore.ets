@@ -12,6 +12,7 @@ import { LocalIdentityRdbRepository } from '../data/repositories/LocalIdentityRd
 import {
   DeviceConnectionState,
   DeviceTrustState,
+  InboundClipboardEventKind,
   SpaceState
 } from '../models/DomainModels';
 import { ManualEndpoint } from '../models/PocModels';
@@ -20,7 +21,14 @@ import {
   JsonObject,
   MessageType
 } from '../models/ProtocolModels';
-import { ProtocolParser, RequestRange, RequestRangePayload, SyncHeadsPayload } from '../models/ProtocolModels';
+import {
+  ItemAckPayload,
+  ItemBatchPayload,
+  ProtocolParser,
+  RequestRange,
+  RequestRangePayload,
+  SyncHeadsPayload
+} from '../models/ProtocolModels';
 import { LocalDeviceIdentityService } from '../services/crypto/LocalDeviceIdentityService';
 import {
   PairingClientNetworkHandshakeError,
@@ -53,6 +61,7 @@ import {
 } from '../services/pairing/PairingHandshakeDraftService';
 import { X25519KeyAgreementService } from '../services/crypto/X25519KeyAgreementService';
 import { TrustedDeviceReconnectTarget, TrustedDeviceStore } from './TrustedDeviceStore';
+import { OutboundItemBatchService } from '../services/sync/OutboundItemBatchService';
 
 enum ConnectionHandshakePurpose {
   PAIRING = 'pairing',
@@ -102,6 +111,13 @@ interface PairingCompletionPersistResult {
   ok: boolean;
   encryptedSpaceKeyRef?: string;
   failureStage?: string;
+}
+
+interface InboundBatchResult {
+  ok: boolean;
+  storedCount: number;
+  duplicateCount: number;
+  gapCount: number;
 }
 
 class PairingConnectionStore {
@@ -427,6 +443,7 @@ class PairingConnectionStore {
       this.emit();
       if (this.connectionPurpose === ConnectionHandshakePurpose.TRUSTED_RECONNECT) {
         this.rememberTrustedEndpoint();
+        await this.sendLocalSyncHeads();
       }
       return this.snapshot();
     }
@@ -449,6 +466,7 @@ class PairingConnectionStore {
           identityPublicKey: this.pendingTrustServerHello.identityPublicKey
         };
         this.rememberTrustedEndpoint();
+        await this.sendLocalSyncHeads();
       }
       return this.snapshot();
     }
@@ -491,6 +509,46 @@ class PairingConnectionStore {
       this.fail('桌面端实时文本被拒绝', '该 ITEM_LIVE 未通过可信设备、空间或本地加密存储校验。');
       this.authenticatedTransportSession?.close();
       this.transport.close();
+      return this.snapshot();
+    }
+
+    if (frameResult.envelope.messageType === MessageType.ITEM_BATCH) {
+      const batch = await this.persistInboundItemBatch(frameResult.decryptedPayload, Date.now());
+      if (!batch.ok) {
+        this.fail('桌面端历史批次被拒绝', 'ITEM_BATCH 未通过协议、可信设备或本地加密存储校验。');
+        return this.snapshot();
+      }
+      this.title = '历史补同步完成';
+      this.description = `新增 ${batch.storedCount} 条 · 重复 ${batch.duplicateCount} 条 · retention gap ${batch.gapCount} 个`;
+      this.emit();
+      return this.snapshot();
+    }
+
+    if (frameResult.envelope.messageType === MessageType.REQUEST_RANGE) {
+      const parsed = new ProtocolParser().parseRequestRangePayload(frameResult.decryptedPayload);
+      if (!parsed.ok || parsed.payload === undefined || this.context === null || this.pendingTrustDraft === null) {
+        this.fail('历史范围请求被拒绝', 'REQUEST_RANGE 格式无效或同步空间上下文已失效。');
+        return this.snapshot();
+      }
+      const built = await new OutboundItemBatchService(this.context)
+        .build(this.pendingTrustDraft.spaceId, parsed.payload, Date.now());
+      if (!built.ok || built.payload === undefined) {
+        this.fail('历史批次构造失败', '无法从本机 retention 窗口恢复请求的历史记录。');
+        return this.snapshot();
+      }
+      const batch: ItemBatchPayload = built.payload;
+      const batchPayload = JSON.parse(JSON.stringify(batch)) as JsonObject;
+      if (!await this.sendAuthenticatedBusinessFrame(MessageType.ITEM_BATCH, batchPayload)) {
+        this.fail('历史批次发送失败', '认证连接已失效，稍后重连会重新比较同步头。');
+      }
+      return this.snapshot();
+    }
+
+    if (frameResult.envelope.messageType === MessageType.ITEM_ACK) {
+      const ack = new ProtocolParser().parseItemAckPayload(frameResult.decryptedPayload);
+      if (!ack.ok) {
+        this.fail('历史确认帧被拒绝', 'ITEM_ACK 格式无效。');
+      }
       return this.snapshot();
     }
 
@@ -732,9 +790,52 @@ class PairingConnectionStore {
     return await service.accept({
       payload,
       expectedSpaceId: this.pendingTrustDraft.spaceId,
-      expectedOriginDeviceId: this.pendingTrustServerHello.deviceId,
+      expectedPeerDeviceId: this.pendingTrustServerHello.deviceId,
       nowMs
     });
+  }
+
+  private async persistInboundItemBatch(payload: JsonObject | undefined, nowMs: number): Promise<InboundBatchResult> {
+    const failed: InboundBatchResult = { ok: false, storedCount: 0, duplicateCount: 0, gapCount: 0 };
+    if (this.context === null || this.pendingTrustDraft === null ||
+      this.pendingTrustServerHello === null || payload === undefined) return failed;
+    const parsed = new ProtocolParser().parseItemBatchPayload(payload);
+    if (!parsed.ok || parsed.payload === undefined) return failed;
+    const service = new InboundItemLiveService(new RdbInboundItemLiveStorageGateway(this.context));
+    const ackedItemIds: string[] = [];
+    let storedCount = 0;
+    let duplicateCount = 0;
+    for (let index = 0; index < parsed.payload.items.length; index += 1) {
+      const item = parsed.payload.items[index];
+      const itemPayload = JSON.parse(JSON.stringify(item)) as JsonObject;
+      const result = await service.accept({
+        payload: itemPayload,
+        expectedSpaceId: this.pendingTrustDraft.spaceId,
+        expectedPeerDeviceId: this.pendingTrustServerHello.deviceId,
+        eventKind: InboundClipboardEventKind.ITEM_BATCH,
+        nowMs
+      });
+      if (result.status === InboundItemLiveStatus.STORED) {
+        storedCount += 1;
+        ackedItemIds.push(item.itemId);
+      } else if (result.status === InboundItemLiveStatus.DUPLICATE) {
+        duplicateCount += 1;
+        ackedItemIds.push(item.itemId);
+      } else {
+        return failed;
+      }
+    }
+    if (ackedItemIds.length > 0) {
+      const ack: ItemAckPayload = { itemIds: ackedItemIds };
+      const ackPayload = JSON.parse(JSON.stringify(ack)) as JsonObject;
+      if (!await this.sendAuthenticatedBusinessFrame(MessageType.ITEM_ACK, ackPayload)) return failed;
+    }
+    return {
+      ok: true,
+      storedCount,
+      duplicateCount,
+      gapCount: parsed.payload.gaps.length
+    };
   }
 
   private async persistRemoteSyncHeads(payload: JsonObject | undefined, nowMs: number): Promise<boolean> {
@@ -791,7 +892,7 @@ class PairingConnectionStore {
       if (remoteLatest === undefined || remoteMinimum === undefined || remoteLatest <= localLatestSeq) continue;
       ranges.push({
         originDeviceId,
-        fromSeq: Math.max(localLatestSeq + 1, remoteMinimum),
+        fromSeq: localLatestSeq + 1,
         toSeq: remoteLatest
       });
     }
@@ -799,6 +900,21 @@ class PairingConnectionStore {
     const request: RequestRangePayload = { ranges };
     const requestPayload = JSON.parse(JSON.stringify(request)) as JsonObject;
     return await this.sendAuthenticatedBusinessFrame(MessageType.REQUEST_RANGE, requestPayload);
+  }
+
+  private async sendLocalSyncHeads(): Promise<boolean> {
+    if (this.context === null || this.pendingTrustDraft === null) return false;
+    const heads = await new ClipboardRdbRepository(this.context)
+      .summarizeAvailableSequences(this.pendingTrustDraft.spaceId, Date.now());
+    const latest: Record<string, number> = {};
+    const minimumAvailable: Record<string, number> = {};
+    for (let index = 0; index < heads.length; index += 1) {
+      latest[heads[index].originDeviceId] = heads[index].latestOriginSeq;
+      minimumAvailable[heads[index].originDeviceId] = heads[index].minimumAvailable;
+    }
+    const syncHeads: SyncHeadsPayload = { heads: latest, minimumAvailable };
+    const payload = JSON.parse(JSON.stringify(syncHeads)) as JsonObject;
+    return await this.sendAuthenticatedBusinessFrame(MessageType.SYNC_HEADS, payload);
   }
 
   private emit(): void {

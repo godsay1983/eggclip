@@ -305,6 +305,31 @@ export class ClipboardRdbRepository {
     }
   }
 
+  async listByOriginRange(spaceId: string, originDeviceId: string, fromSeq: number,
+    toSeq: number, limit: number): Promise<ClipboardItemRecord[]> {
+    if (!Number.isSafeInteger(fromSeq) || !Number.isSafeInteger(toSeq) || fromSeq < 1 ||
+      toSeq < fromSeq || !Number.isInteger(limit) || limit < 1 || limit > 100) return [];
+    const store = await Database.getStore(this.context);
+    const resultSet = await store.querySql(
+      `SELECT item_id, space_id, origin_device_id, origin_seq, hlc, content_type,
+        content_length, content_digest, encrypted_content, created_at, received_at, expires_at, deleted_at
+        FROM clipboard_items WHERE space_id = ? AND origin_device_id = ?
+          AND origin_seq BETWEEN ? AND ? AND deleted_at IS NULL
+        ORDER BY origin_seq ASC LIMIT ?`,
+      [spaceId, originDeviceId, fromSeq, toSeq, limit]
+    );
+    const records: ClipboardItemRecord[] = [];
+    try {
+      if (!resultSet.goToFirstRow()) return records;
+      do {
+        records.push(readClipboardRecord(resultSet));
+      } while (resultSet.goToNextRow());
+      return records;
+    } finally {
+      resultSet.close();
+    }
+  }
+
   async markDeleted(itemId: string, deletedAt: number): Promise<void> {
     const store = await Database.getStore(this.context);
     await this.runner.execute(store, this.commands.markDeleted(itemId, deletedAt));

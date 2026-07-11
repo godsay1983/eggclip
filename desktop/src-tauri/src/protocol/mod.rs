@@ -913,6 +913,75 @@ pub struct RequestRange {
     pub to_seq: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ItemBatchPayload {
+    pub items: Vec<ClipboardItem>,
+    pub gaps: Vec<RetentionGap>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RetentionGap {
+    pub origin_device_id: String,
+    pub requested_from_seq: u64,
+    pub minimum_available: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ItemAckPayload {
+    pub item_ids: Vec<String>,
+}
+
+impl ItemBatchPayload {
+    pub fn validate(&self) -> Result<(), ProtocolError> {
+        if self.items.len() > MAX_BATCH_ITEMS
+            || self.gaps.len() > MAX_BATCH_ITEMS
+            || self.items.is_empty() && self.gaps.is_empty()
+        {
+            return Err(ProtocolError::InvalidField("itemBatch"));
+        }
+        let mut total_plaintext_bytes = 0usize;
+        for item in &self.items {
+            item.validate()?;
+            total_plaintext_bytes = total_plaintext_bytes.saturating_add(item.content.len());
+            if total_plaintext_bytes > MAX_BATCH_PLAINTEXT_BYTES {
+                return Err(ProtocolError::TextTooLarge {
+                    actual_bytes: total_plaintext_bytes,
+                    max_bytes: MAX_BATCH_PLAINTEXT_BYTES,
+                });
+            }
+        }
+        for gap in &self.gaps {
+            validate_uuid(&gap.origin_device_id, "gaps.originDeviceId")?;
+            if gap.requested_from_seq == 0
+                || gap.minimum_available == 0
+                || gap.requested_from_seq >= gap.minimum_available
+            {
+                return Err(ProtocolError::InvalidField("gaps.sequence"));
+            }
+        }
+        Ok(())
+    }
+}
+
+impl ItemAckPayload {
+    pub fn validate(&self) -> Result<(), ProtocolError> {
+        if self.item_ids.is_empty() || self.item_ids.len() > MAX_BATCH_ITEMS {
+            return Err(ProtocolError::InvalidField("itemIds"));
+        }
+        let mut unique = std::collections::HashSet::new();
+        for item_id in &self.item_ids {
+            validate_uuid(item_id, "itemIds")?;
+            if !unique.insert(item_id) {
+                return Err(ProtocolError::InvalidField("itemIds"));
+            }
+        }
+        Ok(())
+    }
+}
+
 impl RequestRangePayload {
     pub fn validate(&self) -> Result<(), ProtocolError> {
         if self.ranges.is_empty() || self.ranges.len() > 100 {
@@ -932,6 +1001,15 @@ impl SyncHeadsPayload {
     pub fn validate(&self) -> Result<(), ProtocolError> {
         validate_device_seq_map(&self.heads, "heads")?;
         validate_device_seq_map(&self.minimum_available, "minimumAvailable")?;
+        for (device_id, head) in &self.heads {
+            let minimum = self
+                .minimum_available
+                .get(device_id)
+                .ok_or(ProtocolError::InvalidField("minimumAvailable"))?;
+            if minimum > head {
+                return Err(ProtocolError::InvalidField("minimumAvailable"));
+            }
+        }
         Ok(())
     }
 }
@@ -1515,6 +1593,44 @@ mod tests {
             parse_envelope(fixture).unwrap_err(),
             ProtocolError::UnknownMessageType("NOPE".to_owned())
         );
+    }
+
+    #[test]
+    fn validates_offline_backfill_payloads() {
+        let batch: ItemBatchPayload =
+            read_json_vector(&["test-vectors", "sync", "item-batch.valid.json"]);
+        let ack: ItemAckPayload =
+            read_json_vector(&["test-vectors", "sync", "item-ack.valid.json"]);
+        let request: RequestRangePayload =
+            read_json_vector(&["test-vectors", "sync", "request-range.valid.json"]);
+        assert_eq!(batch.validate(), Ok(()));
+        assert_eq!(ack.validate(), Ok(()));
+        assert_eq!(request.validate(), Ok(()));
+    }
+
+    #[test]
+    fn rejects_invalid_offline_backfill_payloads() {
+        assert!(ItemBatchPayload {
+            items: Vec::new(),
+            gaps: Vec::new(),
+        }
+        .validate()
+        .is_err());
+        let duplicate_id = "018ff6f3-3653-7c79-b38b-f4af3575396b".to_owned();
+        assert!(ItemAckPayload {
+            item_ids: vec![duplicate_id.clone(), duplicate_id],
+        }
+        .validate()
+        .is_err());
+        assert!(RequestRangePayload {
+            ranges: vec![RequestRange {
+                origin_device_id: "018ff6f0-0a3b-7815-a4db-3eb6e23d9338".to_owned(),
+                from_seq: 43,
+                to_seq: 42,
+            }],
+        }
+        .validate()
+        .is_err());
     }
 
     #[test]

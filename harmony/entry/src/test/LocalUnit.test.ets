@@ -1323,6 +1323,38 @@ export default function localUnitTest() {
       expect(result.item?.content).assertEqual('EggClip test text');
     });
 
+    it('parsesOfflineBackfillPayloads', 0, () => {
+      const parser = new ProtocolParser();
+      const batchPayload = JSON.parse('{"items":[' + CLIPBOARD_ITEM_FIXTURE + '],' +
+        '"gaps":[{"originDeviceId":"018ff6f0-0a3b-7815-a4db-3eb6e23d9338",' +
+        '"requestedFromSeq":1,"minimumAvailable":40}]}') as JsonObject;
+      const ackPayload = JSON.parse('{"itemIds":["018ff6f3-3653-7c79-b38b-f4af3575396b"]}') as JsonObject;
+      const requestPayload = JSON.parse('{"ranges":[{' +
+        '"originDeviceId":"018ff6f0-0a3b-7815-a4db-3eb6e23d9338","fromSeq":40,"toSeq":42}]}') as JsonObject;
+      const batch = parser.parseItemBatchPayload(batchPayload);
+      const ack = parser.parseItemAckPayload(ackPayload);
+      const request = parser.parseRequestRangePayload(requestPayload);
+
+      expect(batch.ok).assertEqual(true);
+      expect(batch.payload?.items.length).assertEqual(1);
+      expect(batch.payload?.gaps.length).assertEqual(1);
+      expect(ack.ok).assertEqual(true);
+      expect(request.ok).assertEqual(true);
+    });
+
+    it('rejectsInvalidOfflineBackfillPayloads', 0, () => {
+      const parser = new ProtocolParser();
+      const emptyBatch = JSON.parse('{"items":[],"gaps":[]}') as JsonObject;
+      const duplicateAck = JSON.parse('{"itemIds":[' +
+        '"018ff6f3-3653-7c79-b38b-f4af3575396b",' +
+        '"018ff6f3-3653-7c79-b38b-f4af3575396b"]}') as JsonObject;
+      const reversedRange = JSON.parse('{"ranges":[{' +
+        '"originDeviceId":"018ff6f0-0a3b-7815-a4db-3eb6e23d9338","fromSeq":43,"toSeq":42}]}') as JsonObject;
+      expect(parser.parseItemBatchPayload(emptyBatch).ok).assertEqual(false);
+      expect(parser.parseItemAckPayload(duplicateAck).ok).assertEqual(false);
+      expect(parser.parseRequestRangePayload(reversedRange).ok).assertEqual(false);
+    });
+
     it('rejectsProtocolUnknownVersionFixture', 0, () => {
       const parser = new ProtocolParser();
       const result = parser.parseEnvelope(UNKNOWN_VERSION_FIXTURE);
@@ -2827,7 +2859,7 @@ export default function localUnitTest() {
       const result = await service.accept({
         payload: item,
         expectedSpaceId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
-        expectedOriginDeviceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
+        expectedPeerDeviceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
         nowMs: 1781946001123
       });
 
@@ -2849,7 +2881,7 @@ export default function localUnitTest() {
       const result = await service.accept({
         payload: item,
         expectedSpaceId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
-        expectedOriginDeviceId: '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        expectedPeerDeviceId: '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
         nowMs: 1781946001123
       });
 
@@ -2869,7 +2901,7 @@ export default function localUnitTest() {
       const result = await service.accept({
         payload: item,
         expectedSpaceId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
-        expectedOriginDeviceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
+        expectedPeerDeviceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
         nowMs: 1781946001123
       });
 

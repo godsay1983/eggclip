@@ -266,17 +266,45 @@
     "itemBatchPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "items"
-      ],
+      "required": ["items", "gaps"],
       "properties": {
         "items": {
           "type": "array",
-          "minItems": 1,
+          "minItems": 0,
           "maxItems": 100,
           "items": {
             "$ref": "#/$defs/clipboardItem"
           }
+        },
+        "gaps": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/retentionGap" }
+        }
+      }
+    },
+    "retentionGap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["originDeviceId", "requestedFromSeq", "minimumAvailable"],
+      "properties": {
+        "originDeviceId": { "$ref": "#/$defs/uuid" },
+        "requestedFromSeq": { "$ref": "#/$defs/uint64" },
+        "minimumAvailable": { "$ref": "#/$defs/uint64" }
+      }
+    },
+    "itemAckPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["itemIds"],
+      "properties": {
+        "itemIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/uuid" },
+          "uniqueItems": true
         }
       }
     },
