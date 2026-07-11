@@ -109,6 +109,12 @@ interface SyncSpaceSummaryDto {
   createdAtMs: number;
 }
 
+export interface SyncSpaceDeletionSummary {
+  deletedSpaceId: string;
+  activeSpaceId: string;
+  credentialDeleted: boolean;
+}
+
 interface PairingInvitationSummaryDto {
   invitationId: string;
   spaceId: string;
@@ -274,6 +280,12 @@ export async function createLocalSyncSpace(displayName: string): Promise<SyncSpa
 export async function listLocalSyncSpaces(): Promise<SyncSpaceSummary[]> {
   const spaces = await invoke<SyncSpaceSummaryDto[]>("list_local_sync_spaces");
   return spaces.map(toSyncSpaceSummary);
+}
+
+export async function deleteLocalSyncSpace(
+  spaceId: string,
+): Promise<SyncSpaceDeletionSummary> {
+  return invoke<SyncSpaceDeletionSummary>("delete_local_sync_space", { spaceId });
 }
 
 export async function loadActiveSyncSpaceId(): Promise<string | null> {

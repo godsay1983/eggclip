@@ -80,6 +80,18 @@ pub(crate) fn authenticated_device_ids(app: &AppHandle) -> HashSet<Uuid> {
         .unwrap_or_default()
 }
 
+pub(crate) fn has_authenticated_space(app: &AppHandle, space_id: Uuid) -> bool {
+    app.state::<PocTransportRuntime>()
+        .authenticated_sessions
+        .lock()
+        .map(|sessions| {
+            sessions
+                .values()
+                .any(|session| session.space_id == space_id)
+        })
+        .unwrap_or(false)
+}
+
 struct AuthenticatedPeerSession {
     session: AuthenticatedTransportSession,
     space_id: Uuid,

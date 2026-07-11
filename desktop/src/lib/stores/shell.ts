@@ -8,6 +8,7 @@ import {
   ensureDefaultSyncSpace,
   captureClipboardHistoryText,
   clearClipboardHistory,
+  deleteLocalSyncSpace,
   deleteClipboardHistoryItem,
   describePocTransport,
   disconnectAllPocPeers,
@@ -45,6 +46,7 @@ let pocTransportStarted = false;
 let pocReceiveEnabled = true;
 const pocPeers = new Set<string>();
 const authenticatedPeers = new Set<string>();
+const authenticatedDeviceIds = new Set<string>();
 let trustedDevices: DeviceSummary[] = [];
 
 async function refreshHistorySummaryState() {
@@ -157,7 +159,16 @@ function updatePocDevices(title: string, description: string) {
 }
 
 async function refreshTrustedDeviceState(): Promise<void> {
-  trustedDevices = await listTrustedDevices();
+  trustedDevices = (await listTrustedDevices()).map((device) =>
+    authenticatedDeviceIds.has(device.id)
+      ? {
+          ...device,
+          state: "online" as const,
+          lastSeen: "当前会话在线",
+          note: "认证会话在线",
+        }
+      : device,
+  );
   updatePocDevices(
     trustedDevices.some((device) => device.state === "online") ? "可信设备已连接" : "等待设备连接",
     trustedDevices.length > 0 ? `已保存 ${trustedDevices.length} 个可信设备` : "尚未完成正式配对",
@@ -247,8 +258,10 @@ export const shellSnapshot = {
         onAuthenticatedConnection((event) => {
           if (event.state === "online") {
             authenticatedPeers.add(event.peer);
+            authenticatedDeviceIds.add(event.deviceId);
           } else {
             authenticatedPeers.delete(event.peer);
+            authenticatedDeviceIds.delete(event.deviceId);
           }
           void refreshTrustedDeviceState();
         }),
@@ -518,6 +531,49 @@ export const shellSnapshot = {
           description: error instanceof Error ? error.message : "无法创建同步空间",
         },
       }));
+    }
+  },
+  async deleteSyncSpace(spaceId: string) {
+    snapshot.update((state) => ({
+      ...state,
+      syncSpace: {
+        ...state.syncSpace,
+        state: "loading",
+        errorMessage: null,
+      },
+    }));
+    try {
+      const result = await deleteLocalSyncSpace(spaceId);
+      const spaces = await listLocalSyncSpaces();
+      snapshot.update((state) => ({
+        ...state,
+        syncSpace: {
+          state: "ready",
+          spaces,
+          activeSpaceId: result.activeSpaceId,
+          hmacDiagnostic: null,
+          invitation: null,
+          invitationCopiedAt: null,
+          errorMessage: result.credentialDeleted
+            ? null
+            : "空间已删除，但系统凭据库中的旧密钥引用未能清理",
+        },
+        connection: {
+          state: "offline",
+          title: "同步空间已删除",
+          description: "已切换到保留的同步空间；删除的空间及其本地记录不会恢复。",
+        },
+      }));
+    } catch (error) {
+      snapshot.update((state) => ({
+        ...state,
+        syncSpace: {
+          ...state.syncSpace,
+          state: "error",
+          errorMessage: error instanceof Error ? error.message : "无法删除同步空间",
+        },
+      }));
+      throw error;
     }
   },
   async selectActiveSyncSpace(spaceId: string) {

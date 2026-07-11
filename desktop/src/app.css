@@ -659,10 +659,15 @@ footer {
 
 .space-card {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
   padding: 11px 12px;
+}
+
+.space-deletion-confirmation {
+  flex: 0 0 100%;
 }
 
 .space-card-actions {

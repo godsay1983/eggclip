@@ -78,6 +78,7 @@ pub fn run() {
             history::list_clipboard_history_preview,
             pairing::copy_pairing_invitation,
             pairing::create_local_sync_space,
+            pairing::delete_local_sync_space,
             pairing::create_pairing_invitation,
             pairing::ensure_default_sync_space,
             pairing::list_local_sync_spaces,

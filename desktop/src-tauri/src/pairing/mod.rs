@@ -57,6 +57,14 @@ pub struct SyncSpaceSummary {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SyncSpaceDeletionSummary {
+    pub deleted_space_id: String,
+    pub active_space_id: String,
+    pub credential_deleted: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SpaceHmacDiagnosticSummary {
     pub space_id: String,
     pub space_display_name: String,
@@ -182,6 +190,8 @@ pub enum PairingError {
     MissingSpace,
     MissingSpaceKeyRef,
     MissingSpaceKey,
+    LastSpaceCannotDelete,
+    SpaceHasTrustedDevices,
     Identity(String),
     InvalidInvitation,
     InvitationMissing,
@@ -207,6 +217,12 @@ impl fmt::Display for PairingError {
             PairingError::MissingSpace => formatter.write_str("sync space missing"),
             PairingError::MissingSpaceKeyRef => formatter.write_str("space key reference missing"),
             PairingError::MissingSpaceKey => formatter.write_str("space key missing"),
+            PairingError::LastSpaceCannotDelete => {
+                formatter.write_str("the last sync space cannot be deleted")
+            }
+            PairingError::SpaceHasTrustedDevices => {
+                formatter.write_str("sync space still has trusted devices")
+            }
             PairingError::Identity(message) => write!(formatter, "identity error: {message}"),
             PairingError::InvalidInvitation => formatter.write_str("invalid pairing invitation"),
             PairingError::InvitationMissing => formatter.write_str("pairing invitation missing"),
@@ -250,6 +266,34 @@ pub fn create_local_sync_space(
 pub fn list_local_sync_spaces(app: tauri::AppHandle) -> Result<Vec<SyncSpaceSummary>, String> {
     let path = database_path(&app)?;
     list_sync_spaces_at_path(&path).map_err(|error| format!("无法读取同步空间：{error}"))
+}
+
+#[tauri::command]
+pub fn delete_local_sync_space(
+    app: tauri::AppHandle,
+    space_id: String,
+) -> Result<SyncSpaceDeletionSummary, String> {
+    let space_id = Uuid::parse_str(&space_id).map_err(|_| "同步空间 ID 无效".to_owned())?;
+    if crate::transport::has_authenticated_space(&app, space_id) {
+        return Err("该同步空间仍有认证设备在线，请先断开或移除设备".to_owned());
+    }
+    let path = database_path(&app)?;
+    let mut connection =
+        open_database(path).map_err(|error| format!("无法打开本地数据库：{error}"))?;
+    #[cfg(windows)]
+    let mut store = crate::secret_store::WindowsCredentialSecretStore;
+    #[cfg(not(windows))]
+    let mut store = crate::secret_store::UnavailableSecretStore;
+
+    delete_sync_space_in_database(&mut connection, &mut store, space_id, now_ms()?).map_err(
+        |error| match error {
+            PairingError::LastSpaceCannotDelete => "至少需要保留一个同步空间".to_owned(),
+            PairingError::SpaceHasTrustedDevices => {
+                "该同步空间仍有关联的可信设备，请先移除设备".to_owned()
+            }
+            _ => format!("无法删除同步空间：{error}"),
+        },
+    )
 }
 
 #[tauri::command]
@@ -478,6 +522,83 @@ pub fn create_sync_space<S: SecretBytesStore>(
         key_version,
         space_key_ref,
         created_at_ms: now_ms,
+    })
+}
+
+pub fn delete_sync_space_in_database<S: SecretBytesStore>(
+    connection: &mut Connection,
+    secret_store: &mut S,
+    space_id: Uuid,
+    updated_at: u64,
+) -> Result<SyncSpaceDeletionSummary, PairingError> {
+    let spaces = SpaceRepository::new(connection)
+        .list()
+        .map_err(|error| PairingError::Database(error.to_string()))?
+        .into_iter()
+        .filter(|record| {
+            record.space.state == SpaceState::Active && record.encrypted_space_key_ref.is_some()
+        })
+        .collect::<Vec<_>>();
+    let target = spaces
+        .iter()
+        .find(|record| record.space.space_id == space_id)
+        .ok_or(PairingError::MissingSpace)?;
+    if spaces.len() <= 1 {
+        return Err(PairingError::LastSpaceCannotDelete);
+    }
+    let has_trusted_device = DeviceRepository::new(connection)
+        .list_by_space(space_id)
+        .map_err(|error| PairingError::Database(error.to_string()))?
+        .into_iter()
+        .any(|record| {
+            record.device.trust_state == DeviceTrustState::Trusted && record.revoked_at.is_none()
+        });
+    if has_trusted_device {
+        return Err(PairingError::SpaceHasTrustedDevices);
+    }
+    let replacement_space_id = spaces
+        .iter()
+        .find(|record| record.space.space_id != space_id)
+        .map(|record| record.space.space_id)
+        .ok_or(PairingError::LastSpaceCannotDelete)?;
+    let active_space_id = SettingsRepository::new(connection)
+        .get(ACTIVE_SYNC_SPACE_ID_KEY)
+        .map_err(|error| PairingError::Database(error.to_string()))?
+        .and_then(|value| Uuid::parse_str(&value).ok());
+    let key_ref = target
+        .encrypted_space_key_ref
+        .clone()
+        .ok_or(PairingError::MissingSpaceKeyRef)?;
+
+    let transaction = connection
+        .transaction()
+        .map_err(|error| PairingError::Database(error.to_string()))?;
+    transaction
+        .execute(
+            "DELETE FROM spaces WHERE space_id = ?1",
+            rusqlite::params![space_id.to_string()],
+        )
+        .map_err(|error| PairingError::Database(error.to_string()))?;
+    let next_active_space_id = if active_space_id == Some(space_id) {
+        SettingsRepository::new(&transaction)
+            .set(
+                ACTIVE_SYNC_SPACE_ID_KEY,
+                &replacement_space_id.to_string(),
+                updated_at,
+            )
+            .map_err(|error| PairingError::Database(error.to_string()))?;
+        replacement_space_id
+    } else {
+        active_space_id.unwrap_or(replacement_space_id)
+    };
+    transaction
+        .commit()
+        .map_err(|error| PairingError::Database(error.to_string()))?;
+
+    Ok(SyncSpaceDeletionSummary {
+        deleted_space_id: space_id.to_string(),
+        active_space_id: next_active_space_id.to_string(),
+        credential_deleted: secret_store.delete_secret(&key_ref).is_ok(),
     })
 }
 
@@ -1653,6 +1774,34 @@ mod tests {
         assert_eq!(spaces.len(), 1);
         assert_eq!(spaces[0].space_id, default.space_id);
         assert_eq!(store.secrets.len(), 1);
+    }
+
+    #[test]
+    fn deletes_unused_sync_space_and_keeps_another_space_active() {
+        let mut connection = open_in_memory_database().expect("database should open");
+        let mut store = MemorySecretStore::default();
+        let first = create_sync_space(&mut connection, &mut store, "空间 A", 1_700_000_000_000)
+            .expect("first space should create");
+        let second = create_sync_space(&mut connection, &mut store, "空间 B", 1_700_000_000_100)
+            .expect("second space should create");
+        SettingsRepository::new(&connection)
+            .set(ACTIVE_SYNC_SPACE_ID_KEY, &first.space_id, 1_700_000_000_200)
+            .expect("active space should save");
+
+        let deleted = delete_sync_space_in_database(
+            &mut connection,
+            &mut store,
+            Uuid::parse_str(&first.space_id).expect("space id should parse"),
+            1_700_000_000_300,
+        )
+        .expect("unused space should delete");
+
+        assert_eq!(deleted.deleted_space_id, first.space_id);
+        assert_eq!(deleted.active_space_id, second.space_id);
+        assert!(deleted.credential_deleted);
+        assert_eq!(list_sync_spaces(&connection).unwrap().len(), 1);
+        assert!(!store.secrets.contains_key(&first.space_key_ref));
+        assert!(store.secrets.contains_key(&second.space_key_ref));
     }
 
     #[test]

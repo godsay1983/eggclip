@@ -13,6 +13,16 @@
   import { onMount } from "svelte";
 
   let settingsVisible = false;
+  let pendingSpaceDeletionId = "";
+
+  async function deleteSyncSpace(spaceId: string): Promise<void> {
+    try {
+      await shellSnapshot.deleteSyncSpace(spaceId);
+      pendingSpaceDeletionId = "";
+    } catch (_) {
+      // The store exposes the actionable backend error inside the space panel.
+    }
+  }
 
   onMount(() => {
     void shellSnapshot
@@ -295,7 +305,34 @@
                   >
                     生成邀请
                   </button>
+                  <button
+                    class="text-button danger-action"
+                    type="button"
+                    disabled={$shellSnapshot.syncSpace.state === "loading" ||
+                      $shellSnapshot.syncSpace.spaces.length <= 1}
+                    on:click={() => (pendingSpaceDeletionId = space.id)}
+                  >删除空间</button>
                 </div>
+                {#if pendingSpaceDeletionId === space.id}
+                  <div class="device-removal-confirmation space-deletion-confirmation" role="alert">
+                    <strong>确认删除“{space.displayName}”？</strong>
+                    <p>该空间、本地同步记录和旧密钥引用将被删除，操作无法撤销。有可信设备在线或尚未移除时会拒绝删除。</p>
+                    <div>
+                      <button
+                        class="compact-danger-action"
+                        type="button"
+                        disabled={$shellSnapshot.syncSpace.state === "loading"}
+                        on:click={() => deleteSyncSpace(space.id)}
+                      >确认删除</button>
+                      <button
+                        class="text-button"
+                        type="button"
+                        disabled={$shellSnapshot.syncSpace.state === "loading"}
+                        on:click={() => (pendingSpaceDeletionId = "")}
+                      >取消</button>
+                    </div>
+                  </div>
+                {/if}
               </article>
             {/each}
           </div>
