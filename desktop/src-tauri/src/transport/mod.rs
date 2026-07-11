@@ -11,7 +11,8 @@ use std::{
 use crate::{
     clipboard::{ClipboardText, ClipboardTextError},
     crypto::{
-        aes256_gcm_encrypt, encode_base64url, SessionDirection, X25519Secret, AES_GCM_NONCE_BYTES,
+        aes256_gcm_decrypt, aes256_gcm_encrypt, decode_base64url, encode_base64url, fixed_bytes,
+        SessionDirection, X25519Secret, AES_GCM_NONCE_BYTES, AES_GCM_TAG_BYTES,
         X25519_PRIVATE_KEY_BYTES,
     },
     pairing::{
@@ -653,6 +654,45 @@ fn encrypt_local_clipboard_content(
         "tag": encode_base64url(&tag),
     }))
     .map_err(|_| ())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LocalEncryptedClipboardContent {
+    version: u8,
+    nonce: String,
+    aad: String,
+    body: String,
+    tag: String,
+}
+
+fn decrypt_local_clipboard_content(
+    space_key: &[u8; 32],
+    space_id: Uuid,
+    encrypted_content: &[u8],
+) -> Result<ClipboardText, ()> {
+    let stored: LocalEncryptedClipboardContent =
+        serde_json::from_slice(encrypted_content).map_err(|_| ())?;
+    if stored.version != 1 {
+        return Err(());
+    }
+    let expected_aad = format!("EggClip v1 local clipboard storage\nspaceId={space_id}\n");
+    let aad = decode_base64url(&stored.aad).map_err(|_| ())?;
+    if aad != expected_aad.as_bytes() {
+        return Err(());
+    }
+    let nonce = fixed_bytes::<AES_GCM_NONCE_BYTES>(
+        &decode_base64url(&stored.nonce).map_err(|_| ())?,
+        "nonce",
+    )
+    .map_err(|_| ())?;
+    let tag =
+        fixed_bytes::<AES_GCM_TAG_BYTES>(&decode_base64url(&stored.tag).map_err(|_| ())?, "tag")
+            .map_err(|_| ())?;
+    let body = decode_base64url(&stored.body).map_err(|_| ())?;
+    let plaintext = aes256_gcm_decrypt(*space_key, nonce, &aad, &body, tag).map_err(|_| ())?;
+    let text = String::from_utf8(plaintext).map_err(|_| ())?;
+    ClipboardText::parse(text).map_err(|_| ())
 }
 
 fn authenticated_local_item_payload(
