@@ -669,16 +669,22 @@ export default function localUnitTest() {
       const service = new SpaceKeyHuksService();
       const keyRef = `huks://eggclip/space-key/${spaceId}/v1`;
       const alias = service.huksAliasFromRef(keyRef);
+      const hmacAlias = service.hmacAliasFromSpaceKeyRef(keyRef);
       const options = service.importOptions(new Uint8Array(SPACE_KEY_BYTES));
+      const hmacOptions = service.hmacImportOptions(new Uint8Array(SPACE_KEY_BYTES));
       const encryptOptions = service.operationOptions(1, new Uint8Array(12), new Uint8Array(4));
       const decryptOptions = service.operationOptions(2, new Uint8Array(12), new Uint8Array(4), new Uint8Array(16));
 
       expect(alias.ok).assertEqual(true);
       expect(alias.huksAlias).assertEqual(`eggclip.space-key.${spaceId}.v1`);
+      expect(hmacAlias.ok).assertEqual(true);
+      expect(hmacAlias.huksAlias).assertEqual(`eggclip.space-key-hmac.${spaceId}.v1`);
       expect(service.huksAliasFromRef('huks://eggclip/space-key/not-a-space/v1').error)
         .assertEqual(SpaceKeyHuksError.INVALID_KEY_REF);
       expect(options.inData?.length).assertEqual(SPACE_KEY_BYTES);
       expect(options.properties?.length).assertEqual(6);
+      expect(hmacOptions.inData?.length).assertEqual(SPACE_KEY_BYTES);
+      expect(hmacOptions.properties?.length).assertEqual(5);
       expect(encryptOptions.properties?.length).assertEqual(9);
       expect(decryptOptions.properties?.length).assertEqual(10);
       expect(encryptOptions.inData === undefined).assertEqual(true);

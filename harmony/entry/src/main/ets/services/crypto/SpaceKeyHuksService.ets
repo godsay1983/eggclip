@@ -7,8 +7,11 @@ import { SPACE_KEY_BYTES } from './SpaceKeyReferenceService';
 
 const SPACE_KEY_REF_PREFIX: string = 'huks://eggclip/space-key/';
 const SPACE_KEY_ALIAS_PREFIX: string = 'eggclip.space-key.';
+const SPACE_KEY_MAC_REF_PREFIX: string = 'huks://eggclip/space-key-hmac/';
+const SPACE_KEY_MAC_ALIAS_PREFIX: string = 'eggclip.space-key-hmac.';
 const AES_GCM_NONCE_BYTES: number = 12;
 const AES_GCM_TAG_BYTES: number = 16;
+const HMAC_SHA256_BYTES: number = 32;
 const AES_GCM_TAG_BITS: number = 128;
 const AES_GCM_TAG_LENGTH_CANDIDATES: number[] = [AES_GCM_TAG_BITS, AES_GCM_TAG_BYTES];
 
@@ -47,6 +50,13 @@ export interface SpaceKeyHuksDecryptResult {
   field?: string;
 }
 
+export interface SpaceKeyHuksMacResult {
+  ok: boolean;
+  digest?: string;
+  error?: SpaceKeyHuksError;
+  field?: string;
+}
+
 export class SpaceKeyHuksService implements SpaceKeySecureImporter {
   huksAliasFromRef(encryptedSpaceKeyRef: string): SpaceKeyHuksImportResult {
     if (!encryptedSpaceKeyRef.startsWith(SPACE_KEY_REF_PREFIX)) {
@@ -65,6 +75,19 @@ export class SpaceKeyHuksService implements SpaceKeySecureImporter {
       ok: true,
       encryptedSpaceKeyRef,
       huksAlias: `${SPACE_KEY_ALIAS_PREFIX}${match[1].toLowerCase()}.v${version}`
+    };
+  }
+
+  hmacAliasFromSpaceKeyRef(encryptedSpaceKeyRef: string): SpaceKeyHuksImportResult {
+    const normalized = this.huksAliasFromRef(encryptedSpaceKeyRef);
+    if (!normalized.ok || normalized.huksAlias === undefined) {
+      return normalized;
+    }
+    const suffix = encryptedSpaceKeyRef.substring(SPACE_KEY_REF_PREFIX.length);
+    return {
+      ok: true,
+      encryptedSpaceKeyRef: `${SPACE_KEY_MAC_REF_PREFIX}${suffix}`,
+      huksAlias: `${SPACE_KEY_MAC_ALIAS_PREFIX}${suffix.replace('/', '.')}`
     };
   }
 
@@ -90,6 +113,34 @@ export class SpaceKeyHuksService implements SpaceKeySecureImporter {
         {
           tag: huks.HuksTag.HUKS_TAG_BLOCK_MODE,
           value: huks.HuksCipherMode.HUKS_MODE_GCM
+        },
+        {
+          tag: huks.HuksTag.HUKS_TAG_KEY_OVERRIDE,
+          value: false
+        }
+      ],
+      inData: key
+    };
+  }
+
+  hmacImportOptions(key: Uint8Array): huks.HuksOptions {
+    return {
+      properties: [
+        {
+          tag: huks.HuksTag.HUKS_TAG_ALGORITHM,
+          value: huks.HuksKeyAlg.HUKS_ALG_HMAC
+        },
+        {
+          tag: huks.HuksTag.HUKS_TAG_PURPOSE,
+          value: huks.HuksKeyPurpose.HUKS_KEY_PURPOSE_MAC
+        },
+        {
+          tag: huks.HuksTag.HUKS_TAG_DIGEST,
+          value: huks.HuksKeyDigest.HUKS_DIGEST_SHA256
+        },
+        {
+          tag: huks.HuksTag.HUKS_TAG_KEY_SIZE,
+          value: huks.HuksKeySize.HUKS_AES_KEY_SIZE_256
         },
         {
           tag: huks.HuksTag.HUKS_TAG_KEY_OVERRIDE,
@@ -165,31 +216,49 @@ export class SpaceKeyHuksService implements SpaceKeySecureImporter {
       return failed(SpaceKeyHuksError.INVALID_KEY, 'spaceKey');
     }
 
-    if (await this.keyExists(alias.huksAlias)) {
-      return {
-        ok: true,
-        encryptedSpaceKeyRef,
-        huksAlias: alias.huksAlias
-      };
+    const macAlias = this.hmacAliasFromSpaceKeyRef(encryptedSpaceKeyRef);
+    if (!macAlias.ok || macAlias.huksAlias === undefined) {
+      return failed(SpaceKeyHuksError.INVALID_KEY_REF, 'hmacKeyRef');
     }
+    if (!await this.importOrConfirm(alias.huksAlias, this.importOptions(key))) {
+      return failed(SpaceKeyHuksError.PLATFORM_CRYPTO_FAILED, 'importAesKeyItem');
+    }
+    if (!await this.importOrConfirm(macAlias.huksAlias, this.hmacImportOptions(key))) {
+      return failed(SpaceKeyHuksError.PLATFORM_CRYPTO_FAILED, 'importHmacKeyItem');
+    }
+    return {
+      ok: true,
+      encryptedSpaceKeyRef,
+      huksAlias: alias.huksAlias
+    };
+  }
 
+  async hmacSha256Base64Url(encryptedSpaceKeyRef: string, messageBase64Url: string): Promise<SpaceKeyHuksMacResult> {
+    const alias = this.hmacAliasFromSpaceKeyRef(encryptedSpaceKeyRef);
+    if (!alias.ok || alias.huksAlias === undefined) {
+      return failedMac(SpaceKeyHuksError.INVALID_KEY_REF, 'hmacKeyRef');
+    }
+    const message = decodeOptional(messageBase64Url, 'message');
+    if (!message.ok || message.value === undefined) {
+      return failedMac(message.error, message.field);
+    }
+    const options: huks.HuksOptions = {
+      properties: [
+        { tag: huks.HuksTag.HUKS_TAG_ALGORITHM, value: huks.HuksKeyAlg.HUKS_ALG_HMAC },
+        { tag: huks.HuksTag.HUKS_TAG_PURPOSE, value: huks.HuksKeyPurpose.HUKS_KEY_PURPOSE_MAC },
+        { tag: huks.HuksTag.HUKS_TAG_DIGEST, value: huks.HuksKeyDigest.HUKS_DIGEST_SHA256 }
+      ]
+    };
+    let session: huks.HuksSessionHandle;
     try {
-      await huks.importKeyItem(alias.huksAlias, this.importOptions(key));
-      return {
-        ok: true,
-        encryptedSpaceKeyRef,
-        huksAlias: alias.huksAlias
-      };
-    } catch (_) {
-      const existing = await this.keyExists(alias.huksAlias);
-      if (existing) {
-        return {
-          ok: true,
-          encryptedSpaceKeyRef,
-          huksAlias: alias.huksAlias
-        };
+      session = await huks.initSession(alias.huksAlias, options);
+      const result = await huks.finishSession(session.handle, withInput(options, message.value));
+      if (result.outData === undefined || result.outData.length !== HMAC_SHA256_BYTES) {
+        return failedMac(SpaceKeyHuksError.PLATFORM_CRYPTO_FAILED, 'finishHmac');
       }
-      return failed(SpaceKeyHuksError.PLATFORM_CRYPTO_FAILED, 'importKeyItem');
+      return { ok: true, digest: encodeBase64Url(result.outData) };
+    } catch (_) {
+      return failedMac(SpaceKeyHuksError.PLATFORM_CRYPTO_FAILED, 'hmacSession');
     }
   }
 
@@ -279,6 +348,18 @@ export class SpaceKeyHuksService implements SpaceKeySecureImporter {
       return await huks.isKeyItemExist(huksAlias, {});
     } catch (_) {
       return false;
+    }
+  }
+
+  private async importOrConfirm(huksAlias: string, options: huks.HuksOptions): Promise<boolean> {
+    if (await this.keyExists(huksAlias)) {
+      return true;
+    }
+    try {
+      await huks.importKeyItem(huksAlias, options);
+      return true;
+    } catch (_) {
+      return await this.keyExists(huksAlias);
     }
   }
 
@@ -420,6 +501,10 @@ function failedDecrypt(error: SpaceKeyHuksError, field: string): SpaceKeyHuksDec
     error,
     field
   };
+}
+
+function failedMac(error: SpaceKeyHuksError, field: string): SpaceKeyHuksMacResult {
+  return { ok: false, error, field };
 }
 
 function failed(error: SpaceKeyHuksError, field: string): SpaceKeyHuksImportResult {

@@ -213,6 +213,8 @@ harmony/entry/src/main/ets/
   - [x] 建立 `spaceKey` HUKS alias/引用生成与校验边界；RDB repository 只接收 `huks://` 引用，不保存裸 key。
   - [x] 新增 `SpaceKeyHuksService`，封装 `huks://eggclip/space-key/...` 到 HUKS alias 的映射、AES-256-GCM import 参数和 `importKeyItem` 调用边界；单测覆盖参数契约和非法引用。
   - [x] HarmonyOS 6.1 真机已确认配对成功保存可信设备和同步空间密钥引用，`importKeyItem` 未返回失败。
+  - [x] 空间密钥交付现会同时导入 AES-GCM 本地存储别名和同密钥上下文的 HMAC-SHA-256 摘要别名；RDB 仍只保存原有 AES key ref，HMAC alias 由其确定性推导，不保存裸 key 或新增敏感字段。
+  - [ ] HUKS HMAC-SHA-256 `initSession`/`finishSession` 输出与桌面端 `HMAC(spaceKey, "text/plain\\n" + UTF-8 内容)` 的真机互通待验收；旧配对记录没有 HMAC alias，需重新配对后验证。
   - [ ] spaceKey 读取/缺失重初始化流程待验证后接入。
 - [ ] RDB 只保存公钥、密钥版本和安全存储 alias。
 - [ ] 实现密钥存在、缺失、损坏和重新初始化路径。
