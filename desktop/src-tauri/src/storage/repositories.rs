@@ -530,6 +530,40 @@ impl<'a> ClipboardRepository<'a> {
         heads
     }
 
+    pub fn list_by_origin_range(
+        &self,
+        space_id: Uuid,
+        origin_device_id: Uuid,
+        from_seq: u64,
+        to_seq: u64,
+        limit: u16,
+    ) -> rusqlite::Result<Vec<ClipboardItemRecord>> {
+        if from_seq == 0 || to_seq < from_seq || limit == 0 || limit > 100 {
+            return Ok(Vec::new());
+        }
+        let mut statement = self.connection.prepare(
+            "SELECT item_id, space_id, origin_device_id, origin_seq, hlc, content_type,
+              content_length, content_digest, encrypted_content, created_at, received_at, expires_at, deleted_at
+             FROM clipboard_items
+             WHERE space_id = ?1 AND origin_device_id = ?2 AND origin_seq BETWEEN ?3 AND ?4
+               AND deleted_at IS NULL
+             ORDER BY origin_seq ASC LIMIT ?5",
+        )?;
+        let records = statement
+            .query_map(
+                params![
+                    space_id.to_string(),
+                    origin_device_id.to_string(),
+                    u64_to_i64(from_seq)?,
+                    u64_to_i64(to_seq)?,
+                    i64::from(limit),
+                ],
+                row_to_clipboard_record,
+            )?
+            .collect();
+        records
+    }
+
     pub fn list_recent(
         &self,
         space_id: Uuid,
