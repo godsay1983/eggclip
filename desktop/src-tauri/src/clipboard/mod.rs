@@ -306,6 +306,11 @@ pub fn start_clipboard_monitor(app: AppHandle) {
                             continue;
                         }
 
+                        crate::transport::schedule_authenticated_local_clipboard(
+                            &monitor_app,
+                            monitored.item.clone(),
+                        );
+
                         let _ = monitor_app.emit(
                             "clipboard://local-text",
                             ClipboardMonitorEvent {

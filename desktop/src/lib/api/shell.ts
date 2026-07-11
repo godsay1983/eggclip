@@ -61,6 +61,16 @@ interface PocPeerEvent {
   peer: string;
 }
 
+interface AuthenticatedLocalBroadcastEvent {
+  status:
+    | "sent"
+    | "skippedNoAuthenticatedPeer"
+    | "skippedAmbiguousSpace"
+    | "skippedByPolicy"
+    | "failed";
+  sentPeers: number;
+}
+
 interface HistoryItemSummaryDto {
   id: string;
   title: string;
@@ -263,6 +273,17 @@ export async function onLocalClipboardText(
   );
 
   return unlisten;
+}
+
+export async function onAuthenticatedLocalBroadcast(
+  handler: (event: AuthenticatedLocalBroadcastEvent) => void,
+): Promise<() => void> {
+  return listen<AuthenticatedLocalBroadcastEvent>(
+    "transport://authenticated-local-broadcast",
+    (event) => {
+      handler(event.payload);
+    },
+  );
 }
 
 export async function onPocClipboardText(

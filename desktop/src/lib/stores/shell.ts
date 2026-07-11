@@ -16,6 +16,7 @@ import {
   listClipboardHistoryPreview,
   listLocalSyncSpaces,
   loadPocRecentEndpoint,
+  onAuthenticatedLocalBroadcast,
   onLocalClipboardText,
   onPocClipboardText,
   onPocDiagnostics,
@@ -182,6 +183,46 @@ export const shellSnapshot = {
     pocEventsStarted = true;
     try {
       await Promise.all([
+        onAuthenticatedLocalBroadcast((event) => {
+          void refreshHistorySummaryState();
+          if (event.status === "sent") {
+            setOutboundStatus({
+              state: "sent",
+              title: "已通过加密会话同步",
+              description: `已发送到 ${event.sentPeers} 个可信设备。`,
+            });
+            return;
+          }
+          if (event.status === "skippedNoAuthenticatedPeer") {
+            setOutboundStatus({
+              state: "waiting",
+              title: "本机记录已保存",
+              description: "当前没有已认证设备在线，等待可信设备连接后再同步。",
+            });
+            return;
+          }
+          if (event.status === "skippedAmbiguousSpace") {
+            setOutboundStatus({
+              state: "waiting",
+              title: "本机记录已保存",
+              description: "当前存在多个认证同步空间，待连接管理器选择目标空间。",
+            });
+            return;
+          }
+          if (event.status === "skippedByPolicy") {
+            setOutboundStatus({
+              state: "paused",
+              title: "同步已暂停",
+              description: "本机记录已保存；重新开启同步后才会发送到可信设备。",
+            });
+            return;
+          }
+          setOutboundStatus({
+            state: "failed",
+            title: "正式同步处理失败",
+            description: "本机复制未受影响；请检查可信设备和本地密钥状态。",
+          });
+        }),
         onPocClipboardText((current, peer) => {
           if (!pocReceiveEnabled) {
             snapshot.update((state) => ({
@@ -525,37 +566,14 @@ export const shellSnapshot = {
         setCurrentClipboard(
           current,
           "已监听到本机剪贴板",
-          "本机文本变化已进入面板，需由用户点击发送到 Harmony",
+          "本机文本变化已进入面板，并将按可信设备状态处理同步",
           {
-            state: "local",
-            title: "本机文本已就绪",
-            description: "未自动发送；点击“发送到 Harmony”后才会通过 POC 连接发送。",
+            state: "pending",
+            title: "正在处理本机记录",
+            description: "正在保存本机事件，并在可信设备在线时通过加密会话同步。",
             updatedAt: current.receivedAt,
           },
         );
-        void captureHistoryText(current.text)
-          .then(() => {
-            setOutboundStatus({
-              state: "local",
-              title: "本机记录已处理",
-              description: "可由用户点击“发送到 Harmony”进行 POC 发送。",
-            });
-          })
-          .catch((error) => {
-            setOutboundStatus({
-              state: "failed",
-              title: "保存本机记录失败",
-              description: "未确认本机记录处理成功，请检查本机数据库状态。",
-            });
-            snapshot.update((state) => ({
-              ...state,
-              connection: {
-                state: "authFailed",
-                title: "保存本机历史失败",
-                description: error instanceof Error ? error.message : "无法保存本机剪贴板历史",
-              },
-            }));
-          });
       });
     } catch (error) {
       monitorStarted = false;

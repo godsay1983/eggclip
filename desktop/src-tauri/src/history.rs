@@ -100,7 +100,7 @@ fn delete_clipboard_history_item_at_path(
         .map_err(|error| format!("无法删除历史记录：{error}"))
 }
 
-fn capture_clipboard_history_text_at_path(
+pub(crate) fn capture_clipboard_history_text_at_path(
     path: &Path,
     text: String,
     captured_at: u64,

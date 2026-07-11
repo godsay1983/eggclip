@@ -1,10 +1,19 @@
 mod session;
 
-use std::{collections::HashMap, net::Ipv4Addr, str::FromStr, sync::Mutex, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    net::Ipv4Addr,
+    str::FromStr,
+    sync::Mutex,
+    time::Duration,
+};
 
 use crate::{
     clipboard::{ClipboardText, ClipboardTextError},
-    crypto::{encode_base64url, SessionDirection, X25519Secret, X25519_PRIVATE_KEY_BYTES},
+    crypto::{
+        aes256_gcm_encrypt, encode_base64url, SessionDirection, X25519Secret, AES_GCM_NONCE_BYTES,
+        X25519_PRIVATE_KEY_BYTES,
+    },
     pairing::{
         accept_pairing_auth_proof, accept_pairing_client_hello, load_space_key, PairingError,
         PairingServerAuthProofInput, PairingServerHelloDraft,
@@ -16,14 +25,15 @@ use crate::{
     storage::{
         open_database,
         repositories::{
-            retention_expires_at, ClipboardInsertOutcome, ClipboardItemRecord, ClipboardRepository,
-            DeviceRecord, DeviceRepository, PairingInvitationRepository, SettingsRepository,
+            persist_local_clipboard_text, retention_expires_at, ClipboardInsertOutcome,
+            ClipboardItemRecord, ClipboardRepository, DeviceRecord, DeviceRepository,
+            LocalClipboardPersistInput, PairingInvitationRepository, SettingsRepository,
             SpaceRepository,
         },
     },
     sync::{
         AppSettings, ContentType as SyncContentType, Device, DeviceConnectionState,
-        DeviceTrustState, HlcTimestamp,
+        DeviceTrustState, HlcTimestamp, SpaceState,
     },
 };
 use futures_util::{SinkExt, StreamExt};
@@ -52,8 +62,13 @@ pub struct PocTransportRuntime {
     server: Mutex<Option<PocServerHandle>>,
     peers: Mutex<HashMap<String, mpsc::UnboundedSender<Message>>>,
     pairing_handshakes: Mutex<HashMap<String, PairingServerHandshakeRuntimeState>>,
-    authenticated_sessions: Mutex<HashMap<String, AuthenticatedTransportSession>>,
+    authenticated_sessions: Mutex<HashMap<String, AuthenticatedPeerSession>>,
     diagnostics: Mutex<PocTransportDiagnostics>,
+}
+
+struct AuthenticatedPeerSession {
+    session: AuthenticatedTransportSession,
+    space_id: Uuid,
 }
 
 #[allow(dead_code)]
@@ -199,6 +214,23 @@ struct AuthenticatedClipboardTextEvent {
     origin_device_id: String,
     origin_seq: u64,
     item: ClipboardText,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AuthenticatedLocalBroadcastEvent {
+    status: AuthenticatedLocalBroadcastStatus,
+    sent_peers: usize,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum AuthenticatedLocalBroadcastStatus {
+    Sent,
+    SkippedNoAuthenticatedPeer,
+    SkippedAmbiguousSpace,
+    SkippedByPolicy,
+    Failed,
 }
 
 const REMOTE_HISTORY_METADATA_PLACEHOLDER: &[u8] = b"eggclip-remote-history-metadata-only-v1";
@@ -405,7 +437,7 @@ fn disconnect_all_poc_peers_with_runtime(runtime: &PocTransportRuntime) -> Resul
     }
     if let Ok(mut sessions) = runtime.authenticated_sessions.lock() {
         for session in sessions.values_mut() {
-            session.close();
+            session.session.close();
         }
         sessions.clear();
     }
@@ -480,6 +512,209 @@ fn broadcast_poc_clipboard_item_with_runtime(
         peers.remove(&peer);
     }
     Ok(sent_count)
+}
+
+/// Schedules post-commit ITEM_LIVE processing outside the Windows clipboard
+/// listener. A local copy must never wait for database or network work.
+pub fn schedule_authenticated_local_clipboard(app: &AppHandle, item: ClipboardText) {
+    let worker_app = app.clone();
+    let _ = std::thread::Builder::new()
+        .name("eggclip-authenticated-item-live".to_owned())
+        .spawn(move || {
+            let (status, sent_peers) =
+                persist_and_broadcast_authenticated_local_clipboard(&worker_app, &item)
+                    .unwrap_or((AuthenticatedLocalBroadcastStatus::Failed, 0));
+            let _ = worker_app.emit(
+                "transport://authenticated-local-broadcast",
+                AuthenticatedLocalBroadcastEvent { status, sent_peers },
+            );
+        });
+}
+
+fn persist_and_broadcast_authenticated_local_clipboard(
+    app: &AppHandle,
+    item: &ClipboardText,
+) -> Result<(AuthenticatedLocalBroadcastStatus, usize), ()> {
+    let runtime = app.state::<PocTransportRuntime>();
+    let (space_id, ambiguous_space) = single_authenticated_space(&runtime)?;
+    let Some(space_id) = space_id else {
+        let status = if ambiguous_space {
+            AuthenticatedLocalBroadcastStatus::SkippedAmbiguousSpace
+        } else {
+            AuthenticatedLocalBroadcastStatus::SkippedNoAuthenticatedPeer
+        };
+        persist_local_history_fallback(app, item)?;
+        return Ok((status, 0));
+    };
+
+    let path = database_path(app).map_err(|_| ())?;
+    let mut connection = open_database(path).map_err(|_| ())?;
+    let settings = SettingsRepository::new(&connection)
+        .load_app_settings()
+        .map_err(|_| ())?
+        .unwrap_or_default();
+    if !settings.sync_enabled {
+        persist_local_history_fallback(app, item)?;
+        return Ok((AuthenticatedLocalBroadcastStatus::SkippedByPolicy, 0));
+    }
+
+    let space = SpaceRepository::new(&connection)
+        .get(space_id)
+        .map_err(|_| ())?
+        .ok_or(())?;
+    if space.space.state != SpaceState::Active || space.encrypted_space_key_ref.is_none() {
+        return Err(());
+    }
+    #[cfg(windows)]
+    let secret_store = crate::secret_store::WindowsCredentialSecretStore;
+    #[cfg(not(windows))]
+    let secret_store = crate::secret_store::UnavailableSecretStore;
+    let mut space_key = load_space_key(&connection, &secret_store, space_id).map_err(|_| ())?;
+    let persisted_payload = (|| -> Result<serde_json::Value, ()> {
+        let encrypted_content = encrypt_local_clipboard_content(&space_key, space_id, item)?;
+        let captured_at = now_ms().map_err(|_| ())?;
+        let result = persist_local_clipboard_text(
+            &mut connection,
+            LocalClipboardPersistInput {
+                space_id,
+                text: item.as_str().to_owned(),
+                encrypted_content,
+                hmac_key: &space_key,
+                settings: settings.clone(),
+                now_ms: captured_at,
+            },
+        )
+        .map_err(|_| ())?;
+        ClipboardRepository::new(&connection)
+            .apply_retention(space_id, &settings, captured_at)
+            .map_err(|_| ())?;
+        authenticated_local_item_payload(&result.record.item).ok_or(())
+    })();
+    space_key.fill(0);
+    let payload = persisted_payload?;
+    let sent_peers = broadcast_authenticated_item_live(&runtime, space_id, &payload);
+    let status = if sent_peers > 0 {
+        AuthenticatedLocalBroadcastStatus::Sent
+    } else {
+        AuthenticatedLocalBroadcastStatus::Failed
+    };
+    Ok((status, sent_peers))
+}
+
+fn persist_local_history_fallback(app: &AppHandle, item: &ClipboardText) -> Result<(), ()> {
+    let path = database_path(app).map_err(|_| ())?;
+    let captured_at = now_ms().map_err(|_| ())?;
+    crate::history::capture_clipboard_history_text_at_path(
+        &path,
+        item.as_str().to_owned(),
+        captured_at,
+    )
+    .map_err(|_| ())?;
+    Ok(())
+}
+
+fn single_authenticated_space(runtime: &PocTransportRuntime) -> Result<(Option<Uuid>, bool), ()> {
+    let sessions = runtime.authenticated_sessions.lock().map_err(|_| ())?;
+    let spaces: HashSet<Uuid> = sessions.values().map(|session| session.space_id).collect();
+    if spaces.len() > 1 {
+        return Ok((None, true));
+    }
+    Ok((spaces.into_iter().next(), false))
+}
+
+fn encrypt_local_clipboard_content(
+    space_key: &[u8; 32],
+    space_id: Uuid,
+    item: &ClipboardText,
+) -> Result<Vec<u8>, ()> {
+    let mut nonce = [0u8; AES_GCM_NONCE_BYTES];
+    getrandom::getrandom(&mut nonce).map_err(|_| ())?;
+    let aad = format!("EggClip v1 local clipboard storage\nspaceId={space_id}\n");
+    let (body, tag) =
+        aes256_gcm_encrypt(*space_key, nonce, aad.as_bytes(), item.as_str().as_bytes())
+            .map_err(|_| ())?;
+    serde_json::to_vec(&serde_json::json!({
+        "version": 1,
+        "nonce": encode_base64url(&nonce),
+        "aad": encode_base64url(aad.as_bytes()),
+        "body": encode_base64url(&body),
+        "tag": encode_base64url(&tag),
+    }))
+    .map_err(|_| ())
+}
+
+fn authenticated_local_item_payload(
+    item: &crate::sync::ClipboardItem,
+) -> Option<serde_json::Value> {
+    let content = item.plaintext.as_ref()?;
+    Some(serde_json::json!({
+        "itemId": item.item_id,
+        "spaceId": item.space_id,
+        "originDeviceId": item.origin_device_id,
+        "originSeq": item.origin_seq,
+        "hlc": item.hlc.to_wire(),
+        "contentType": item.content_type.wire_value(),
+        "contentLength": item.content_length,
+        "contentDigest": item.content_digest,
+        "createdAt": item.created_at,
+        "content": content,
+    }))
+}
+
+fn broadcast_authenticated_item_live(
+    runtime: &PocTransportRuntime,
+    space_id: Uuid,
+    payload: &serde_json::Value,
+) -> usize {
+    let mut frames = Vec::new();
+    let mut stale_sessions = Vec::new();
+    if let Ok(mut sessions) = runtime.authenticated_sessions.lock() {
+        for (peer, entry) in sessions.iter_mut() {
+            if entry.space_id != space_id {
+                continue;
+            }
+            match entry.session.encode_business_message(
+                MessageType::ItemLive,
+                Uuid::now_v7().to_string(),
+                payload,
+            ) {
+                Ok(frame) => frames.push((peer.clone(), frame)),
+                Err(_) => {
+                    entry.session.close();
+                    stale_sessions.push(peer.clone());
+                }
+            }
+        }
+        for peer in &stale_sessions {
+            sessions.remove(peer);
+        }
+    } else {
+        return 0;
+    }
+
+    let mut sent_peers = 0;
+    let mut stale_peers = Vec::new();
+    if let Ok(mut peers) = runtime.peers.lock() {
+        for (peer, frame) in frames {
+            match peers.get(&peer) {
+                Some(sender) if sender.send(frame).is_ok() => sent_peers += 1,
+                _ => stale_peers.push(peer),
+            }
+        }
+        for peer in &stale_peers {
+            peers.remove(peer);
+        }
+    }
+    if !stale_peers.is_empty() {
+        if let Ok(mut sessions) = runtime.authenticated_sessions.lock() {
+            for peer in &stale_peers {
+                if let Some(mut session) = sessions.remove(peer) {
+                    session.session.close();
+                }
+            }
+        }
+    }
+    sent_peers
 }
 
 fn current_running_status(runtime: &State<'_, PocTransportRuntime>) -> Option<PocTransportStatus> {
@@ -710,7 +945,7 @@ where
         .lock()
     {
         if let Some(mut session) = sessions.remove(&peer) {
-            session.close();
+            session.session.close();
         }
     }
     write_task.abort();
@@ -973,10 +1208,10 @@ fn try_accept_authenticated_frame(
         let Some(session) = sessions.get_mut(peer) else {
             return AuthenticatedFrameRoute::Rejected;
         };
-        match session.accept_text_frame(text) {
+        match session.session.accept_text_frame(text) {
             Ok(payload) => payload,
             Err(_) => {
-                session.close();
+                session.session.close();
                 sessions.remove(peer);
                 return AuthenticatedFrameRoute::Rejected;
             }
@@ -1192,13 +1427,16 @@ fn remember_authenticated_session(
     let mut sessions = runtime.authenticated_sessions.lock().map_err(|_| ())?;
     sessions.insert(
         peer.to_owned(),
-        AuthenticatedTransportSession::new(
-            SessionDirection::ClientToServer,
-            accepted.session_keys.client_to_server,
-            SessionDirection::ServerToClient,
-            accepted.session_keys.server_to_client,
-            5,
-        ),
+        AuthenticatedPeerSession {
+            session: AuthenticatedTransportSession::new(
+                SessionDirection::ClientToServer,
+                accepted.session_keys.client_to_server,
+                SessionDirection::ServerToClient,
+                accepted.session_keys.server_to_client,
+                5,
+            ),
+            space_id: Uuid::parse_str(&accepted.space_id).map_err(|_| ())?,
+        },
     );
     Ok(())
 }
@@ -1210,7 +1448,7 @@ fn close_authenticated_session(app: &AppHandle, peer: &str) {
         .lock()
     {
         if let Some(mut session) = sessions.remove(peer) {
-            session.close();
+            session.session.close();
         }
     }
 }
@@ -1550,5 +1788,49 @@ mod tests {
         assert_eq!(diagnostics.accepted_items, 0);
         assert_eq!(diagnostics.rejected_frames, 0);
         assert_eq!(diagnostics.last_rejection, None);
+    }
+
+    #[test]
+    fn skips_authenticated_local_broadcast_without_an_authenticated_space() {
+        let runtime = PocTransportRuntime::default();
+
+        assert_eq!(
+            single_authenticated_space(&runtime).expect("runtime lock should be available"),
+            (None, false)
+        );
+    }
+
+    #[test]
+    fn builds_item_live_payload_and_encrypts_local_content_separately() {
+        let item = crate::sync::ClipboardItem {
+            item_id: Uuid::now_v7(),
+            space_id: Uuid::now_v7(),
+            origin_device_id: Uuid::now_v7(),
+            origin_seq: 1,
+            hlc: HlcTimestamp::new(1_700_000_000_000, 0),
+            content_type: SyncContentType::TextPlain,
+            content_length: "outbound text".len(),
+            content_digest: "test-digest".to_owned(),
+            created_at: 1_700_000_000_000,
+            encrypted_content_ref: None,
+            plaintext: Some("outbound text".to_owned()),
+        };
+
+        let payload = authenticated_local_item_payload(&item).expect("plaintext should be present");
+        assert_eq!(payload["contentType"], "text/plain");
+        assert_eq!(payload["content"], "outbound text");
+
+        let encrypted = encrypt_local_clipboard_content(
+            &[7u8; 32],
+            item.space_id,
+            &ClipboardText::parse("outbound text").expect("valid text"),
+        )
+        .expect("local content should encrypt");
+        let envelope: serde_json::Value =
+            serde_json::from_slice(&encrypted).expect("encrypted envelope should be JSON");
+        assert_ne!(encrypted, b"outbound text");
+        assert_eq!(envelope["version"], 1);
+        assert!(envelope.get("body").is_some());
+        assert!(envelope.get("tag").is_some());
     }
 }

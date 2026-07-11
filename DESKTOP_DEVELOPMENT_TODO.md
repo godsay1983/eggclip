@@ -149,8 +149,9 @@ desktop/
 - [x] 将本地复制转换为不可变 `ClipboardItem`。
   - [x] 桌面端本机读取和剪贴板监听的可见文本已接入本机历史持久化；当前只展示元数据，正文预览等待密钥解密链路接入。
 - [x] 本地事务成功后再异步广播，网络失败不回滚本地记录。
-  - [x] 已完成本地事务持久化边界：生成 `ClipboardItem`、写入 `encrypted_content`、递增 `originSeq` 同事务提交；网络广播接入待后续实现。
+  - [x] 已完成本地事务持久化边界：生成 `ClipboardItem`、写入 `encrypted_content`、递增 `originSeq` 同事务提交。
   - [x] 增加事务后广播器边界和失败回归测试：广播失败只返回状态，不回滚已提交的本地记录。
+  - [x] Windows 剪贴板监听已在本地复制后异步选择唯一认证同步空间，使用 `spaceKey` 生成本地正文密文并向同空间 authenticated peer 发送加密 `ITEM_LIVE`；无认证 peer、同步暂停或多空间歧义只跳过网络发送，不阻塞本地复制。
 - [x] 区分 `ITEM_LIVE` 和 `ITEM_BATCH`。
 - [x] 只有 `ITEM_LIVE` 可以触发桌面自动写入。
 - [x] `ITEM_BATCH` 只更新历史和同步游标。
@@ -253,7 +254,8 @@ desktop/
   - [x] 桌面端 POC WebSocket peer 已在 AUTH_OK 后保存 authenticated session，后续加密帧优先进入正式 frame processor 解密并带 messageType 发出诊断事件。
   - [x] 桌面端 POC WebSocket 认证后 `ITEM_LIVE` 已接入 sync inbound policy，校验协议 `ClipboardItem` 后按设置写入系统剪贴板，并发出正式认证剪贴板事件。
   - [x] 桌面端 POC WebSocket 认证后 `ITEM_LIVE` 已接入历史元数据条件持久化：仅在对应 space/device 已存在时去重保存，不保存明文正文，不为未落库 trusted device 伪造记录。
-  - [ ] authenticated session frame processor 接入正式同步业务分发和连接生命周期。
+  - [x] 本地 Windows 剪贴板监听已接入 authenticated session 的正式 `ITEM_LIVE` 出站分发；按 space 路由、独立计数器加密和失效会话清理均在 Rust 后端完成。
+  - [ ] authenticated session frame processor 的完整 ConnectionManager 生命周期、重连和多空间选择仍待接入。
 - [ ] 使用方向独立的单调计数器构造 nonce。
   - [x] Rust 实现 `directionPrefix || u64be(counter)` 并通过共享向量。
   - [x] Rust 协议层解密时校验 nonce 与方向和 `sessionCounter` 一致。
