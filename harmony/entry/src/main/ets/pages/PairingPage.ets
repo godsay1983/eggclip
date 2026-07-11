@@ -17,6 +17,7 @@ import { ClipboardBridgeService } from '../services/clipboard/ClipboardBridgeSer
 import { EggClipColors } from '../theme/Colors';
 import { EggClipSpacing } from '../theme/Spacing';
 import { EggClipTypography } from '../theme/Typography';
+import { APP_FOREGROUND_STORAGE_KEY } from '../utils/AppLifecycle';
 
 @Component
 export struct PairingPage {
@@ -27,6 +28,8 @@ export struct PairingPage {
   @State private connectionSnapshot: PairingConnectionSnapshot = pairingConnectionStore.snapshot();
   @State private invitationInputText: string = '';
   @State private pasteImportStatus: string = '可以扫码导入，或点击系统 PasteButton 从剪贴板读取邀请。';
+  @StorageLink(APP_FOREGROUND_STORAGE_KEY) @Watch('onAppForegroundChanged')
+  private appInForeground: boolean = false;
   private pendingProgrammaticInvitationInput: string | null = null;
   private readonly connectionListener = (snapshot: PairingConnectionSnapshot): void => {
     this.connectionSnapshot = snapshot;
@@ -42,6 +45,10 @@ export struct PairingPage {
 
   aboutToDisappear(): void {
     pairingConnectionStore.unsubscribe(this.connectionListener);
+  }
+
+  private onAppForegroundChanged(): void {
+    pairingConnectionStore.setForeground(this.appInForeground);
   }
 
   build() {

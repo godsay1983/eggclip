@@ -51,6 +51,9 @@ enum ConnectionHandshakePurpose {
   TRUSTED_RECONNECT = 'trustedReconnect'
 }
 
+const TRUSTED_RECONNECT_BASE_DELAY_MS: number = 1_000;
+const TRUSTED_RECONNECT_MAX_DELAY_MS: number = 15_000;
+
 export enum PairingConnectionState {
   IDLE = 'idle',
   PREPARING = 'preparing',
@@ -104,6 +107,11 @@ class PairingConnectionStore {
   private pendingTrustDraft: PairingHandshakeDraft | null = null;
   private pendingTrustServerHello: HelloPayload | null = null;
   private connectionPurpose: ConnectionHandshakePurpose = ConnectionHandshakePurpose.PAIRING;
+  private reconnectTarget: TrustedDeviceReconnectTarget | null = null;
+  private reconnectTimerId: number = -1;
+  private reconnectAttempt: number = 0;
+  private foreground: boolean = true;
+  private closingByUserOrLifecycle: boolean = false;
   private state: PairingConnectionState = PairingConnectionState.IDLE;
   private manualHost: string = '127.0.0.1';
   private manualPort: string = '0';
@@ -209,6 +217,8 @@ class PairingConnectionStore {
     target: TrustedDeviceReconnectTarget,
     nowMs: number = Date.now()
   ): Promise<PairingConnectionSnapshot> {
+    this.reconnectTarget = target;
+    this.closingByUserOrLifecycle = false;
     if (this.identityService === null) {
       this.fail('本机身份未初始化', '缺少页面上下文，无法访问 HUKS/RDB 本机身份。');
       return this.snapshot();
@@ -250,6 +260,28 @@ class PairingConnectionStore {
       localEphemeralPrivateKey: ephemeral.privateKey,
       localEphemeralPublicKey: ephemeral.publicKey
     }, { host: this.manualHost, port }, ConnectionHandshakePurpose.TRUSTED_RECONNECT);
+  }
+
+  setForeground(foreground: boolean): void {
+    this.foreground = foreground;
+    if (!foreground) {
+      this.closingByUserOrLifecycle = true;
+      this.clearReconnectTimer();
+      this.transport.close();
+      if (this.state === PairingConnectionState.AUTHENTICATED) {
+        this.authenticatedTransportSession?.close();
+        this.authenticatedTransportSession = null;
+        this.state = PairingConnectionState.IDLE;
+        this.title = '已暂停可信连接';
+        this.description = '应用位于后台；返回前台后会恢复已配对设备连接。';
+        this.emit();
+      }
+      return;
+    }
+    this.closingByUserOrLifecycle = false;
+    if (this.reconnectTarget !== null && this.state !== PairingConnectionState.AUTHENTICATED) {
+      this.scheduleTrustedReconnect(0);
+    }
   }
 
   async startWithPreparedMaterial(
@@ -294,10 +326,28 @@ class PairingConnectionStore {
       },
       onClose: (reason: string) => {
         if (this.state !== PairingConnectionState.AUTHENTICATED && this.state !== PairingConnectionState.FAILED) {
-          this.fail(this.describeCloseTitle(), this.describeCloseReason(reason));
+          if (this.connectionPurpose === ConnectionHandshakePurpose.TRUSTED_RECONNECT &&
+            !this.closingByUserOrLifecycle && this.foreground) {
+            this.state = PairingConnectionState.IDLE;
+            this.title = '可信连接已断开';
+            this.description = '正在尝试恢复已配对设备连接。';
+            this.emit();
+            this.scheduleTrustedReconnect();
+          } else {
+            this.fail(this.describeCloseTitle(), this.describeCloseReason(reason));
+          }
         }
       },
       onError: (reason: string) => {
+        if (this.connectionPurpose === ConnectionHandshakePurpose.TRUSTED_RECONNECT &&
+          !this.closingByUserOrLifecycle && this.foreground) {
+          this.state = PairingConnectionState.IDLE;
+          this.title = '可信连接失败';
+          this.description = '正在尝试恢复已配对设备连接。';
+          this.emit();
+          this.scheduleTrustedReconnect();
+          return;
+        }
         this.fail('配对连接失败', this.describeTransportError(reason));
       },
       onFrame: () => {
@@ -418,12 +468,15 @@ class PairingConnectionStore {
   }
 
   close(): void {
+    this.closingByUserOrLifecycle = true;
+    this.clearReconnectTimer();
     this.transport.close();
     this.localIdentityPrivateKeyRef = '';
     this.authenticatedTransportSession = null;
     this.pendingTrustDraft = null;
     this.pendingTrustServerHello = null;
     this.connectionPurpose = ConnectionHandshakePurpose.PAIRING;
+    this.reconnectTarget = null;
     this.networkHandshake.reset();
     this.state = PairingConnectionState.IDLE;
     this.title = '已停止配对';
@@ -494,6 +547,41 @@ class PairingConnectionStore {
       .catch(() => {
         this.fail('CLIENT_HELLO 发送失败', '发送握手帧时出现异常。');
       });
+  }
+
+  private scheduleTrustedReconnect(delayMs?: number): void {
+    if (!this.foreground || this.reconnectTarget === null || this.reconnectTimerId >= 0 ||
+      this.state === PairingConnectionState.AUTHENTICATED || this.isConnectionBusy()) {
+      return;
+    }
+    const delay = delayMs ?? Math.min(
+      TRUSTED_RECONNECT_BASE_DELAY_MS * Math.pow(2, this.reconnectAttempt),
+      TRUSTED_RECONNECT_MAX_DELAY_MS
+    );
+    this.reconnectTimerId = setTimeout(() => {
+      this.reconnectTimerId = -1;
+      const target = this.reconnectTarget;
+      if (target === null || !this.foreground) return;
+      this.reconnectAttempt += 1;
+      this.startTrustedReconnect(target).catch(() => {
+        this.scheduleTrustedReconnect();
+      });
+    }, delay);
+  }
+
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimerId >= 0) {
+      clearTimeout(this.reconnectTimerId);
+      this.reconnectTimerId = -1;
+    }
+    this.reconnectAttempt = 0;
+  }
+
+  private isConnectionBusy(): boolean {
+    return this.state === PairingConnectionState.PREPARING ||
+      this.state === PairingConnectionState.CONNECTING ||
+      this.state === PairingConnectionState.CLIENT_HELLO_SENT ||
+      this.state === PairingConnectionState.WAITING_AUTH_OK;
   }
 
   private fail(title: string, description: string): void {
