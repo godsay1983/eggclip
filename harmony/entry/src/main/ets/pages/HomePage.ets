@@ -12,6 +12,8 @@ import {
 } from '../store/PocConnectionStore';
 import {
   AuthenticatedLocalSendStatus,
+  PairingConnectionSnapshot,
+  PairingConnectionState,
   pairingConnectionStore
 } from '../store/PairingConnectionStore';
 import { EggClipColors } from '../theme/Colors';
@@ -40,13 +42,26 @@ export struct HomePage {
     this.latestReceivedAt = snapshot.latestReceivedAt;
     this.latestReceivedByteLength = snapshot.latestReceivedByteLength;
     this.transportDiagnostics = snapshot.transportDiagnostics;
-    this.connectionTitle = snapshot.connectionTitle;
-    this.connectionDescription = snapshot.connectionDescription;
+    if (pairingConnectionStore.snapshot().state !== PairingConnectionState.AUTHENTICATED) {
+      this.connectionTitle = snapshot.connectionTitle;
+      this.connectionDescription = snapshot.connectionDescription;
+    }
     if (previousReceivedText !== snapshot.latestReceivedText) {
       this.latestReceivedExpanded = false;
     }
     if (snapshot.latestReceivedText.length > 0 && this.copyStatus === '收到桌面文本后可手动复制到本机') {
       this.copyStatus = '已收到桌面端文本，可点击复制到本机';
+    }
+  };
+  private readonly pairingSnapshotListener = (snapshot: PairingConnectionSnapshot): void => {
+    if (snapshot.state === PairingConnectionState.AUTHENTICATED) {
+      this.connectionTitle = snapshot.title;
+      this.connectionDescription = '正式认证会话在线；PasteButton 会优先通过加密 ITEM_LIVE 发送。';
+      return;
+    }
+    if (snapshot.state === PairingConnectionState.FAILED) {
+      this.connectionTitle = snapshot.title;
+      this.connectionDescription = snapshot.description;
     }
   };
   @State private pasteStatus: string = '等待点击 PasteButton 触发一次性授权';
@@ -73,6 +88,7 @@ export struct HomePage {
 
   aboutToAppear(): void {
     pocConnectionStore.subscribe(this.connectionSnapshotListener);
+    pairingConnectionStore.subscribe(this.pairingSnapshotListener);
     if (this.historyStore === null) {
       const hostContext = this.getUIContext().getHostContext();
       if (hostContext !== undefined) {
@@ -84,6 +100,7 @@ export struct HomePage {
 
   aboutToDisappear(): void {
     pocConnectionStore.unsubscribe(this.connectionSnapshotListener);
+    pairingConnectionStore.unsubscribe(this.pairingSnapshotListener);
   }
 
   build() {
