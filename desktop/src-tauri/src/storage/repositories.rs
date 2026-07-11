@@ -499,6 +499,37 @@ impl<'a> ClipboardRepository<'a> {
             .optional()
     }
 
+    pub fn summarize_available_sequences(
+        &self,
+        space_id: Uuid,
+        updated_at: u64,
+    ) -> rusqlite::Result<Vec<SyncHead>> {
+        let mut statement = self.connection.prepare(
+            "SELECT origin_device_id, MAX(origin_seq), MIN(origin_seq)
+             FROM clipboard_items
+             WHERE space_id = ?1 AND deleted_at IS NULL
+             GROUP BY origin_device_id
+             ORDER BY origin_device_id",
+        )?;
+        let heads = statement
+            .query_map(params![space_id.to_string()], |row| {
+                let origin_device_id: String = row.get(0)?;
+                let latest_origin_seq: i64 = row.get(1)?;
+                let minimum_available: i64 = row.get(2)?;
+                Ok(SyncHead {
+                    space_id,
+                    origin_device_id: Uuid::parse_str(&origin_device_id).map_err(|error| {
+                        rusqlite::Error::FromSqlConversionFailure(0, Type::Text, Box::new(error))
+                    })?,
+                    latest_origin_seq: i64_to_u64(latest_origin_seq, 1)?,
+                    minimum_available: i64_to_u64(minimum_available, 2)?,
+                    updated_at,
+                })
+            })?
+            .collect();
+        heads
+    }
+
     pub fn list_recent(
         &self,
         space_id: Uuid,
