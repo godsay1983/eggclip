@@ -28,11 +28,11 @@ use crate::{
     storage::{
         open_database,
         repositories::{
-            PairingInvitationRecord, PairingInvitationRepository, PairingInvitationState,
-            SpaceRecord, SpaceRepository,
+            DeviceRepository, PairingInvitationRecord, PairingInvitationRepository,
+            PairingInvitationState, SpaceRecord, SpaceRepository,
         },
     },
-    sync::{Space, SpaceState},
+    sync::{DeviceTrustState, Space, SpaceState},
 };
 
 pub const SPACE_KEY_BYTES: usize = 32;
@@ -634,6 +634,107 @@ pub fn accept_pairing_client_hello<S: SecretBytesStore>(
     })
 }
 
+/// Accepts an authenticated-session bootstrap from a device that was paired earlier.
+///
+/// This deliberately has a separate context from invitation pairing.  It proves possession
+/// of the saved device identity key, but it must never consume an invitation or deliver a
+/// space key again.
+pub fn accept_trusted_device_client_hello<S: SecretBytesStore>(
+    connection: &mut Connection,
+    secret_store: &mut S,
+    client_hello_frame: &str,
+    server_ephemeral_public_key: &str,
+    server_hello_message_id: &str,
+    now_ms: u64,
+) -> Result<PairingServerHelloDraft, PairingError> {
+    let ProtocolEnvelope::PreAuth(envelope) =
+        parse_envelope(client_hello_frame).map_err(|_| PairingError::InvalidClientHello)?
+    else {
+        return Err(PairingError::InvalidClientHello);
+    };
+    if envelope.message_type != MessageType::ClientHello {
+        return Err(PairingError::InvalidClientHello);
+    }
+    let client_hello: HelloPayload =
+        serde_json::from_value(envelope.payload).map_err(|_| PairingError::InvalidClientHello)?;
+    client_hello
+        .validate()
+        .map_err(|_| PairingError::InvalidClientHello)?;
+    let pairing_context = client_hello
+        .pairing_context
+        .clone()
+        .ok_or(PairingError::InvalidClientHello)?;
+    let context_space_id = parse_trusted_device_context(&pairing_context)?;
+    let client_space_id =
+        Uuid::parse_str(&client_hello.space_id).map_err(|_| PairingError::InvalidClientHello)?;
+    let client_device_id =
+        Uuid::parse_str(&client_hello.device_id).map_err(|_| PairingError::InvalidClientHello)?;
+    if context_space_id != client_space_id {
+        return Err(PairingError::InvalidClientHello);
+    }
+
+    let space = SpaceRepository::new(connection)
+        .get(context_space_id)
+        .map_err(|error| PairingError::Database(error.to_string()))?
+        .ok_or(PairingError::MissingSpace)?;
+    if space.space.state != SpaceState::Active {
+        return Err(PairingError::InvalidClientHello);
+    }
+    let device = DeviceRepository::new(connection)
+        .get(client_device_id)
+        .map_err(|error| PairingError::Database(error.to_string()))?
+        .ok_or(PairingError::InvalidClientHello)?;
+    if device.device.space_id != context_space_id
+        || device.device.trust_state != DeviceTrustState::Trusted
+        || device.revoked_at.is_some()
+        || device.device.identity_public_key_ref != client_hello.identity_public_key
+    {
+        return Err(PairingError::InvalidClientHello);
+    }
+
+    let local_identity = ensure_local_device_identity(connection, secret_store, now_ms)
+        .map_err(pairing_identity_error)?;
+    let server_hello = HelloPayload {
+        space_id: client_hello.space_id.clone(),
+        device_id: local_identity.device_id,
+        identity_public_key: local_identity.identity_public_key,
+        ephemeral_public_key: server_ephemeral_public_key.to_string(),
+        capabilities: vec![
+            Capability::TextPlain,
+            Capability::SyncHeads,
+            Capability::ItemBatch,
+            Capability::ItemLive,
+        ],
+        pairing_context: Some(pairing_context.clone()),
+    };
+    server_hello
+        .validate()
+        .map_err(|_| PairingError::InvalidClientHello)?;
+    let server_hello_frame = serialize_pre_auth_envelope(&PreAuthEnvelope {
+        message_type: MessageType::ServerHello,
+        message_id: server_hello_message_id.to_string(),
+        session_counter: envelope.session_counter.saturating_add(1),
+        payload: serde_json::to_value(&server_hello)
+            .map_err(|error| PairingError::Serialize(error.to_string()))?,
+    })
+    .map_err(|error| PairingError::Serialize(error.to_string()))?;
+
+    Ok(PairingServerHelloDraft {
+        // The generic auth-proof draft predates trusted reconnect.  This field is not used
+        // by trusted reconnect; the transport identifies that path from pairing_context.
+        invitation_id: client_hello.device_id.clone(),
+        space_id: client_hello.space_id,
+        peer_device_id: client_hello.device_id,
+        peer_identity_public_key: client_hello.identity_public_key,
+        peer_ephemeral_public_key: client_hello.ephemeral_public_key,
+        server_device_id: server_hello.device_id,
+        server_identity_public_key: server_hello.identity_public_key,
+        server_ephemeral_public_key: server_ephemeral_public_key.to_string(),
+        pairing_context,
+        server_hello_frame,
+    })
+}
+
 pub fn accept_pairing_auth_proof(
     handshake: PairingServerAuthProofInput,
     auth_proof_frame: &str,
@@ -743,6 +844,13 @@ fn parse_pairing_invitation_context(value: &str) -> Result<Uuid, PairingError> {
         .strip_prefix("pairing-invitation:v1:")
         .ok_or(PairingError::InvalidClientHello)?;
     Uuid::parse_str(invitation_id).map_err(|_| PairingError::InvalidClientHello)
+}
+
+fn parse_trusted_device_context(value: &str) -> Result<Uuid, PairingError> {
+    let space_id = value
+        .strip_prefix("trusted-device:")
+        .ok_or(PairingError::InvalidClientHello)?;
+    Uuid::parse_str(space_id).map_err(|_| PairingError::InvalidClientHello)
 }
 
 fn random_space_key() -> Result<[u8; SPACE_KEY_BYTES], PairingError> {
@@ -1274,6 +1382,140 @@ mod tests {
             .expect("invitation should query")
             .expect("invitation should exist");
         assert_eq!(stored.state, PairingInvitationState::Active);
+    }
+
+    #[test]
+    fn accepts_trusted_device_client_hello_only_when_saved_identity_matches() {
+        let mut connection = open_in_memory_database().expect("database should open");
+        let mut store = MemorySecretStore::default();
+        let space = create_sync_space(&mut connection, &mut store, "默认空间", 1_700_000_000_000)
+            .expect("space should be created");
+        let peer_device_id =
+            Uuid::parse_str("018ff6f0-4adf-7d31-a987-3ef2b25d0212").expect("peer id should parse");
+        let client_identity = crate::crypto::Ed25519Identity::from_seed([9u8; 32]);
+        let client_x25519 = X25519Secret::from_private_key([8u8; 32]);
+        let server_x25519 = X25519Secret::from_private_key([7u8; 32]);
+        let client_identity_public_key = encode_base64url(&client_identity.public_key());
+        DeviceRepository::new(&connection)
+            .upsert(&crate::storage::repositories::DeviceRecord {
+                device: crate::sync::Device {
+                    device_id: peer_device_id,
+                    space_id: Uuid::parse_str(&space.space_id).expect("space id should parse"),
+                    display_name: "HarmonyOS 设备".to_string(),
+                    identity_public_key_ref: client_identity_public_key.clone(),
+                    trust_state: DeviceTrustState::Trusted,
+                    connection_state: crate::sync::DeviceConnectionState::Offline,
+                    last_seen_at: None,
+                },
+                paired_at: Some(1_700_000_000_000),
+                revoked_at: None,
+            })
+            .expect("trusted device should persist");
+        let client_hello = HelloPayload {
+            space_id: space.space_id.clone(),
+            device_id: peer_device_id.to_string(),
+            identity_public_key: client_identity_public_key,
+            ephemeral_public_key: encode_base64url(&client_x25519.public_key()),
+            capabilities: vec![Capability::TextPlain, Capability::SyncHeads],
+            pairing_context: Some(format!("trusted-device:{}", space.space_id)),
+        };
+        let client_hello_frame = serialize_pre_auth_envelope(&PreAuthEnvelope {
+            message_type: MessageType::ClientHello,
+            message_id: "018ff6f1-0000-7000-8000-000000000001".to_string(),
+            session_counter: 0,
+            payload: serde_json::to_value(&client_hello).expect("hello should serialize"),
+        })
+        .expect("client hello should serialize");
+
+        let server_hello = accept_trusted_device_client_hello(
+            &mut connection,
+            &mut store,
+            &client_hello_frame,
+            &encode_base64url(&server_x25519.public_key()),
+            "018ff6f1-0000-7000-8000-000000000002",
+            1_700_000_001_000,
+        )
+        .expect("saved trusted device should be accepted");
+        assert_eq!(
+            server_hello.pairing_context,
+            format!("trusted-device:{}", space.space_id)
+        );
+
+        let transcript_input = AuthTranscriptInput {
+            role: AuthRole::Client,
+            space_id: server_hello.space_id.clone(),
+            local_device_id: server_hello.peer_device_id.clone(),
+            remote_device_id: server_hello.server_device_id.clone(),
+            local_identity_public_key: server_hello.peer_identity_public_key.clone(),
+            remote_identity_public_key: server_hello.server_identity_public_key.clone(),
+            local_ephemeral_public_key: server_hello.peer_ephemeral_public_key.clone(),
+            remote_ephemeral_public_key: server_hello.server_ephemeral_public_key.clone(),
+            pairing_context: server_hello.pairing_context.clone(),
+        };
+        let auth_proof = AuthProofPayload {
+            role: AuthRole::Client,
+            signature_algorithm: SignatureAlgorithm::Ed25519,
+            transcript_hash: auth_transcript_hash_base64url(&transcript_input)
+                .expect("hash should build"),
+            signature: encode_base64url(
+                &client_identity.sign(
+                    canonical_auth_transcript(&transcript_input)
+                        .expect("transcript should build")
+                        .as_bytes(),
+                ),
+            ),
+        };
+        let auth_proof_frame = serialize_pre_auth_envelope(&PreAuthEnvelope {
+            message_type: MessageType::AuthProof,
+            message_id: "018ff6f1-0000-7000-8000-000000000003".to_string(),
+            session_counter: 2,
+            payload: serde_json::to_value(&auth_proof).expect("proof should serialize"),
+        })
+        .expect("proof should serialize");
+        let accepted = accept_pairing_auth_proof(
+            PairingServerAuthProofInput {
+                invitation_id: server_hello.invitation_id,
+                space_id: server_hello.space_id,
+                peer_device_id: server_hello.peer_device_id,
+                peer_identity_public_key: server_hello.peer_identity_public_key,
+                peer_ephemeral_public_key: server_hello.peer_ephemeral_public_key,
+                server_device_id: server_hello.server_device_id,
+                server_identity_public_key: server_hello.server_identity_public_key,
+                server_ephemeral_public_key: server_hello.server_ephemeral_public_key,
+                pairing_context: server_hello.pairing_context,
+                server_ephemeral_secret: server_x25519.clone(),
+            },
+            &auth_proof_frame,
+            "018ff6f1-0000-7000-8000-000000000004",
+        )
+        .expect("trusted proof should be accepted");
+        assert_eq!(
+            accepted.shared_secret,
+            client_x25519.shared_secret(server_x25519.public_key())
+        );
+
+        let wrong_identity_hello = HelloPayload {
+            identity_public_key: encode_base64url(&[7u8; 32]),
+            ..client_hello
+        };
+        let wrong_identity_frame = serialize_pre_auth_envelope(&PreAuthEnvelope {
+            message_type: MessageType::ClientHello,
+            message_id: "018ff6f1-0000-7000-8000-000000000005".to_string(),
+            session_counter: 0,
+            payload: serde_json::to_value(&wrong_identity_hello).expect("hello should serialize"),
+        })
+        .expect("client hello should serialize");
+        assert_eq!(
+            accept_trusted_device_client_hello(
+                &mut connection,
+                &mut store,
+                &wrong_identity_frame,
+                &encode_base64url(&server_x25519.public_key()),
+                "018ff6f1-0000-7000-8000-000000000006",
+                1_700_000_001_000,
+            ),
+            Err(PairingError::InvalidClientHello)
+        );
     }
 
     #[test]

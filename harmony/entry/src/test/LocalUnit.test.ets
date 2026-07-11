@@ -1764,6 +1764,54 @@ export default function localUnitTest() {
       expect(wrongSpace.field).assertEqual('spaceId');
     });
 
+    it('buildsTrustedDeviceHandshakeDraftWithoutInvitationSecret', 0, () => {
+      const service = new PairingHandshakeDraftService();
+      const draft = service.buildTrustedDeviceHandshakeDraft({
+        spaceId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
+        spaceKeyVersion: 1,
+        remoteDeviceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
+        remoteIdentityPublicKey: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        localDeviceId: '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        localIdentityPublicKey: '3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08',
+        localEphemeralPublicKey: 'hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo'
+      });
+      expect(draft.ok).assertEqual(true);
+      if (draft.draft === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      expect(draft.draft.pairingContext)
+        .assertEqual('trusted-device:018ff6ef-c394-7d08-8b99-4b7d10f2767a');
+      expect(draft.draft.clientHelloPayload.pairingContext)
+        .assertEqual('trusted-device:018ff6ef-c394-7d08-8b99-4b7d10f2767a');
+
+      const transcript = service.buildClientAuthTranscriptDraft(draft.draft, {
+        spaceId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
+        deviceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
+        identityPublicKey: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        ephemeralPublicKey: 'Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I',
+        capabilities: [Capability.TEXT_PLAIN, Capability.SYNC_HEADS]
+      });
+      expect(transcript.ok).assertEqual(true);
+      if (transcript.transcript !== undefined) {
+        expect(transcript.transcript.canonicalTranscript.indexOf(
+          'pairingContext=trusted-device:018ff6ef-c394-7d08-8b99-4b7d10f2767a'
+        ) >= 0).assertEqual(true);
+      }
+
+      const invalid = service.buildTrustedDeviceHandshakeDraft({
+        spaceId: 'not-a-uuid',
+        spaceKeyVersion: 1,
+        remoteDeviceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
+        remoteIdentityPublicKey: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        localDeviceId: '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        localIdentityPublicKey: '3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08',
+        localEphemeralPublicKey: 'hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo'
+      });
+      expect(invalid.ok).assertEqual(false);
+      expect(invalid.error).assertEqual(PairingHandshakeDraftError.INVALID_FIELD);
+    });
+
     it('buildsAuthProofFrameFromClientTranscriptDraft', 0, () => {
       const handshake = new PairingHandshakeDraftService();
       const store = new PairingStore();

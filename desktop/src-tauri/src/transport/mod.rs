@@ -15,11 +15,12 @@ use crate::{
         X25519_PRIVATE_KEY_BYTES,
     },
     pairing::{
-        accept_pairing_auth_proof, accept_pairing_client_hello, load_space_key, PairingError,
-        PairingServerAuthProofInput, PairingServerHelloDraft,
+        accept_pairing_auth_proof, accept_pairing_client_hello, accept_trusted_device_client_hello,
+        load_space_key, PairingError, PairingServerAuthProofInput, PairingServerHelloDraft,
     },
     protocol::{
-        parse_envelope, ClipboardItem as ProtocolClipboardItem, MessageType, ProtocolEnvelope,
+        parse_envelope, ClipboardItem as ProtocolClipboardItem, HelloPayload, MessageType,
+        ProtocolEnvelope,
     },
     settings::{database_path, now_ms},
     storage::{
@@ -1011,14 +1012,26 @@ fn try_accept_pairing_client_hello(
         }
     };
 
-    let draft = match accept_pairing_client_hello(
-        &mut connection,
-        &mut store,
-        text,
-        &server_ephemeral_public_key,
-        &message_id,
-        timestamp_ms,
-    ) {
+    let accepted = if is_trusted_device_client_hello_frame(text) {
+        accept_trusted_device_client_hello(
+            &mut connection,
+            &mut store,
+            text,
+            &server_ephemeral_public_key,
+            &message_id,
+            timestamp_ms,
+        )
+    } else {
+        accept_pairing_client_hello(
+            &mut connection,
+            &mut store,
+            text,
+            &server_ephemeral_public_key,
+            &message_id,
+            timestamp_ms,
+        )
+    };
+    let draft = match accepted {
         Ok(draft) => draft,
         Err(error) => {
             return PairingClientHelloRoute::Rejected(pairing_client_hello_rejection(&error))
@@ -1038,6 +1051,7 @@ fn try_accept_pairing_auth_proof(app: &AppHandle, peer: &str, text: &str) -> Pai
     let Some(handshake) = take_pairing_handshake(app, peer) else {
         return PairingAuthProofRoute::Rejected(PocRejectionReason::PairingServerStateMissing);
     };
+    let is_trusted_reconnect = is_trusted_device_pairing_context(&handshake.pairing_context);
     let message_id = Uuid::now_v7().to_string();
     let input = PairingServerAuthProofInput {
         invitation_id: handshake.invitation_id,
@@ -1062,21 +1076,39 @@ fn try_accept_pairing_auth_proof(app: &AppHandle, peer: &str, text: &str) -> Pai
                     )
                 }
             };
-            if persist_trusted_pairing_device(app, &accepted, accepted_at).is_err() {
-                return PairingAuthProofRoute::Rejected(PocRejectionReason::PairingInternalError);
-            }
-            let space_key_frame = match build_space_key_delivery_frame(app, &accepted, 4) {
-                Ok(frame) => frame,
-                Err(_) => {
+            if is_trusted_reconnect {
+                if mark_trusted_device_connected(app, &accepted, accepted_at).is_err() {
                     return PairingAuthProofRoute::Rejected(
                         PocRejectionReason::PairingInternalError,
-                    )
+                    );
                 }
-            };
-            if remember_authenticated_session(app, peer, accepted).is_err() {
-                return PairingAuthProofRoute::Rejected(PocRejectionReason::PairingInternalError);
+                if remember_authenticated_session(app, peer, accepted).is_err() {
+                    return PairingAuthProofRoute::Rejected(
+                        PocRejectionReason::PairingInternalError,
+                    );
+                }
+                PairingAuthProofRoute::Handled(vec![auth_ok_frame])
+            } else {
+                if persist_trusted_pairing_device(app, &accepted, accepted_at).is_err() {
+                    return PairingAuthProofRoute::Rejected(
+                        PocRejectionReason::PairingInternalError,
+                    );
+                }
+                let space_key_frame = match build_space_key_delivery_frame(app, &accepted, 4) {
+                    Ok(frame) => frame,
+                    Err(_) => {
+                        return PairingAuthProofRoute::Rejected(
+                            PocRejectionReason::PairingInternalError,
+                        )
+                    }
+                };
+                if remember_authenticated_session(app, peer, accepted).is_err() {
+                    return PairingAuthProofRoute::Rejected(
+                        PocRejectionReason::PairingInternalError,
+                    );
+                }
+                PairingAuthProofRoute::Handled(vec![auth_ok_frame, space_key_frame])
             }
-            PairingAuthProofRoute::Handled(vec![auth_ok_frame, space_key_frame])
         }
         Err(error) => PairingAuthProofRoute::Rejected(pairing_auth_proof_rejection(&error)),
     }
@@ -1090,6 +1122,29 @@ fn persist_trusted_pairing_device(
     let path = database_path(app).map_err(|_| ())?;
     let mut connection = open_database(path).map_err(|_| ())?;
     persist_trusted_pairing_device_in_connection(&mut connection, accepted, accepted_at)
+}
+
+fn mark_trusted_device_connected(
+    app: &AppHandle,
+    accepted: &crate::pairing::PairingServerAuthProofAccepted,
+    connected_at: u64,
+) -> Result<(), ()> {
+    let space_id = Uuid::parse_str(&accepted.space_id).map_err(|_| ())?;
+    let peer_device_id = Uuid::parse_str(&accepted.peer_device_id).map_err(|_| ())?;
+    let path = database_path(app).map_err(|_| ())?;
+    let connection = open_database(path).map_err(|_| ())?;
+    let repository = DeviceRepository::new(&connection);
+    let mut record = repository.get(peer_device_id).map_err(|_| ())?.ok_or(())?;
+    if record.device.space_id != space_id
+        || record.device.trust_state != DeviceTrustState::Trusted
+        || record.revoked_at.is_some()
+        || record.device.identity_public_key_ref != accepted.peer_identity_public_key
+    {
+        return Err(());
+    }
+    record.device.connection_state = DeviceConnectionState::Online;
+    record.device.last_seen_at = Some(connected_at);
+    repository.upsert(&record).map_err(|_| ())
 }
 
 fn build_space_key_delivery_frame(
@@ -1370,6 +1425,23 @@ fn is_pairing_client_hello_frame(text: &str) -> bool {
         parse_envelope(text),
         Ok(ProtocolEnvelope::PreAuth(envelope)) if envelope.message_type == MessageType::ClientHello
     )
+}
+
+fn is_trusted_device_client_hello_frame(text: &str) -> bool {
+    let Ok(ProtocolEnvelope::PreAuth(envelope)) = parse_envelope(text) else {
+        return false;
+    };
+    if envelope.message_type != MessageType::ClientHello {
+        return false;
+    }
+    let Ok(hello) = serde_json::from_value::<HelloPayload>(envelope.payload) else {
+        return false;
+    };
+    is_trusted_device_pairing_context(hello.pairing_context.as_deref().unwrap_or_default())
+}
+
+fn is_trusted_device_pairing_context(pairing_context: &str) -> bool {
+    pairing_context.starts_with("trusted-device:")
 }
 
 fn is_pairing_auth_proof_frame(text: &str) -> bool {

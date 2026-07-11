@@ -57,7 +57,50 @@ export interface PairingHandshakeDraftInput {
   nowMs: number;
 }
 
+export interface TrustedDeviceHandshakeDraftInput {
+  spaceId: string;
+  spaceKeyVersion: number;
+  remoteDeviceId: string;
+  remoteIdentityPublicKey: string;
+  localDeviceId: string;
+  localIdentityPublicKey: string;
+  localEphemeralPublicKey: string;
+}
+
 export class PairingHandshakeDraftService {
+  buildTrustedDeviceHandshakeDraft(input: TrustedDeviceHandshakeDraftInput): PairingHandshakeDraftResult {
+    if (!isUuid(input.spaceId) || !isUuid(input.remoteDeviceId) || !isUuid(input.localDeviceId)) {
+      return invalidField('deviceOrSpaceId');
+    }
+    if (!Number.isSafeInteger(input.spaceKeyVersion) || input.spaceKeyVersion <= 0 ||
+      !hasBase64UrlLength(input.remoteIdentityPublicKey, IDENTITY_PUBLIC_KEY_BYTES) ||
+      !hasBase64UrlLength(input.localIdentityPublicKey, IDENTITY_PUBLIC_KEY_BYTES) ||
+      !hasBase64UrlLength(input.localEphemeralPublicKey, EPHEMERAL_PUBLIC_KEY_BYTES)) {
+      return invalidField('identityOrKey');
+    }
+    const pairingContext = `trusted-device:${input.spaceId}`;
+    return {
+      ok: true,
+      draft: {
+        invitationId: input.remoteDeviceId,
+        spaceId: input.spaceId,
+        spaceKeyVersion: input.spaceKeyVersion,
+        remoteDeviceId: input.remoteDeviceId,
+        remoteIdentityPublicKey: input.remoteIdentityPublicKey,
+        pairingContext,
+        clientHelloPayload: {
+          spaceId: input.spaceId,
+          deviceId: input.localDeviceId,
+          identityPublicKey: input.localIdentityPublicKey,
+          ephemeralPublicKey: input.localEphemeralPublicKey,
+          capabilities: [Capability.TEXT_PLAIN, Capability.SYNC_HEADS, Capability.ITEM_BATCH, Capability.ITEM_LIVE],
+          pairingContext
+        },
+        expiresAtMs: Number.MAX_SAFE_INTEGER
+      }
+    };
+  }
+
   buildClientHandshakeDraft(input: PairingHandshakeDraftInput): PairingHandshakeDraftResult {
     if (input.invitation === null) {
       return { ok: false, error: PairingHandshakeDraftError.MISSING_PENDING_INVITATION };
