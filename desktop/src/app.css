@@ -965,6 +965,65 @@ footer {
   margin: 0;
 }
 
+.device-management-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.device-management-actions input {
+  min-width: 0;
+  flex: 1;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--text);
+  background: var(--surface);
+}
+
+.danger-action {
+  color: #b04435;
+}
+
+.device-removal-confirmation {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid rgba(176, 68, 53, 0.28);
+  border-radius: 14px;
+  color: var(--text);
+  background: rgba(176, 68, 53, 0.08);
+}
+
+.device-removal-confirmation strong {
+  font-size: 12px;
+}
+
+.device-removal-confirmation p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.device-removal-confirmation > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.compact-danger-action {
+  min-height: 30px;
+  padding: 0 11px;
+  border-radius: 10px;
+  color: #fff8f4;
+  background: #b04435;
+  font-size: 11px;
+}
+
 .device-empty {
   display: flex;
   align-items: center;

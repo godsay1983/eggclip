@@ -157,6 +157,14 @@ An `AUTH_PROOF` payload carries:
 
 `AUTH_OK` confirms both sides derived the same session context. `AUTH_ERROR` terminates the session and must not include secrets.
 
+Pre-authentication pairing rejection codes are intentionally coarse and never include invitation secrets, keys, full frames, or clipboard content:
+
+- `invitationMissing`, `invitationExpired`, `invitationConsumed`
+- `identityOrSpaceMismatch`
+- `authProofFailed`, `handshakeStateMissing`, `internalError`
+
+The client may display an actionable localized explanation, but must treat every code as a failed session. Reusing a consumed invitation, changing its space/issuer identity, or presenting an expired invitation must never create or update a trusted device.
+
 ## Encrypted Payload
 
 After `AUTH_OK`, each business frame uses:

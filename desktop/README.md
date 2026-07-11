@@ -17,6 +17,8 @@ pnpm tauri dev
 
 手动连接卡片显示当前会话接收、接受、拒绝帧数和上次拒绝类型。诊断不包含剪贴板正文、摘要或完整网络帧。
 
+设置中的可信设备卡片显示数据库记录和认证会话状态，可重命名或移除设备。移除会立即撤销该设备、关闭其连接并把空间密钥提升一个版本；仍受信任的在线设备会通过加密会话收到新密钥，离线设备在下次可信重连时补领。v1 的历史正文和摘要绑定空间密钥，因此轮换时会清空该同步空间两端的本地同步历史，确认框会明确提示这一点。
+
 桌面监听会跳过带有 `ExcludeClipboardContentFromMonitorProcessing` 或 `CanUploadToCloudClipboard=0` 的来源内容。EggClip 写入系统剪贴板时设置 `CanUploadToCloudClipboard=0`，阻止 Windows 将内容上传到云剪贴板，同时不主动排除本机剪贴板历史。格式语义以 [Microsoft Clipboard Formats](https://learn.microsoft.com/en-us/windows/win32/dataxchg/clipboard-formats#cloud-clipboard-and-clipboard-history-formats) 为准。
 
 ## 检查

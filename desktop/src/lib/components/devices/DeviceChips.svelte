@@ -3,6 +3,35 @@
   import type { DeviceSummary } from "$lib/types/shell";
 
   export let devices: DeviceSummary[] = [];
+  export let onRename: (deviceId: string, name: string) => Promise<void> | void = () => {};
+  export let onRemove: (deviceId: string) => Promise<unknown> | unknown = () => {};
+
+  let editingDeviceId = "";
+  let editingName = "";
+  let busyDeviceId = "";
+  let pendingRemovalDeviceId = "";
+
+  async function saveName(device: DeviceSummary): Promise<void> {
+    const normalized = editingName.trim();
+    if (normalized.length === 0 || normalized.length > 32) return;
+    busyDeviceId = device.id;
+    try {
+      await onRename(device.id, normalized);
+      editingDeviceId = "";
+    } finally {
+      busyDeviceId = "";
+    }
+  }
+
+  async function removeDevice(device: DeviceSummary): Promise<void> {
+    busyDeviceId = device.id;
+    try {
+      await onRemove(device.id);
+      pendingRemovalDeviceId = "";
+    } finally {
+      busyDeviceId = "";
+    }
+  }
 
   function statusLabel(state: DeviceSummary["state"]) {
     if (state === "online") {
@@ -84,6 +113,61 @@
             {/if}
           </dl>
           <p class="device-note">{device.note}</p>
+          {#if device.trustKind === "trusted"}
+            <div class="device-management-actions">
+              {#if editingDeviceId === device.id}
+                <input
+                  aria-label="可信设备名称"
+                  maxlength="32"
+                  bind:value={editingName}
+                  disabled={busyDeviceId === device.id}
+                />
+                <button
+                  class="text-button"
+                  type="button"
+                  disabled={busyDeviceId === device.id || editingName.trim().length === 0}
+                  on:click={() => saveName(device)}
+                >保存</button>
+                <button class="text-button" type="button" on:click={() => (editingDeviceId = "")}>取消</button>
+              {:else}
+                <button
+                  class="text-button"
+                  type="button"
+                  disabled={busyDeviceId === device.id}
+                  on:click={() => {
+                    editingDeviceId = device.id;
+                    editingName = device.name;
+                  }}
+                >重命名</button>
+                <button
+                  class="text-button danger-action"
+                  type="button"
+                  disabled={busyDeviceId === device.id}
+                  on:click={() => (pendingRemovalDeviceId = device.id)}
+                >{busyDeviceId === device.id ? "处理中…" : "移除并轮换密钥"}</button>
+              {/if}
+            </div>
+            {#if pendingRemovalDeviceId === device.id}
+              <div class="device-removal-confirmation" role="alert" aria-live="polite">
+                <strong>确认移除“{device.name}”？</strong>
+                <p>设备会立即断开并需要重新配对；空间密钥轮换时，本空间历史也会被清空。</p>
+                <div>
+                  <button
+                    class="compact-danger-action"
+                    type="button"
+                    disabled={busyDeviceId === device.id}
+                    on:click={() => removeDevice(device)}
+                  >{busyDeviceId === device.id ? "正在移除…" : "确认移除"}</button>
+                  <button
+                    class="text-button"
+                    type="button"
+                    disabled={busyDeviceId === device.id}
+                    on:click={() => (pendingRemovalDeviceId = "")}
+                  >取消</button>
+                </div>
+              </div>
+            {/if}
+          {/if}
         </article>
       {/each}
     {/if}

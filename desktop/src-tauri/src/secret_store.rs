@@ -4,7 +4,8 @@ use std::fmt;
 use windows_sys::Win32::{
     Foundation::{GetLastError, ERROR_NOT_FOUND},
     Security::Credentials::{
-        CredFree, CredReadW, CredWriteW, CREDENTIALW, CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC,
+        CredDeleteW, CredFree, CredReadW, CredWriteW, CREDENTIALW, CRED_PERSIST_LOCAL_MACHINE,
+        CRED_TYPE_GENERIC,
     },
 };
 
@@ -42,6 +43,8 @@ pub trait SecretBytesStore {
     fn load_secret(&self, secret_ref: &str) -> Result<Option<Vec<u8>>, SecretStoreError>;
 
     fn save_secret(&mut self, secret_ref: &str, secret: &[u8]) -> Result<(), SecretStoreError>;
+
+    fn delete_secret(&mut self, secret_ref: &str) -> Result<(), SecretStoreError>;
 }
 
 #[cfg(windows)]
@@ -101,6 +104,18 @@ impl SecretBytesStore for WindowsCredentialSecretStore {
 
         Ok(())
     }
+
+    fn delete_secret(&mut self, secret_ref: &str) -> Result<(), SecretStoreError> {
+        let target_name = wide_null(secret_ref);
+        let deleted = unsafe { CredDeleteW(target_name.as_ptr(), CRED_TYPE_GENERIC, 0) };
+        if deleted == 0 {
+            let error = unsafe { GetLastError() };
+            if error != ERROR_NOT_FOUND {
+                return Err(SecretStoreError::WriteFailed(error));
+            }
+        }
+        Ok(())
+    }
 }
 
 pub struct UnavailableSecretStore;
@@ -113,6 +128,12 @@ impl SecretBytesStore for UnavailableSecretStore {
     }
 
     fn save_secret(&mut self, _secret_ref: &str, _secret: &[u8]) -> Result<(), SecretStoreError> {
+        Err(SecretStoreError::Unavailable(
+            "system credential store is unavailable on this platform".to_string(),
+        ))
+    }
+
+    fn delete_secret(&mut self, _secret_ref: &str) -> Result<(), SecretStoreError> {
         Err(SecretStoreError::Unavailable(
             "system credential store is unavailable on this platform".to_string(),
         ))

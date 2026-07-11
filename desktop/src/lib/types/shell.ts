@@ -7,6 +7,7 @@ export type ConnectionState =
 
 export interface DeviceSummary {
   id: string;
+  spaceId?: string;
   name: string;
   state: ConnectionState;
   trustKind: "trusted" | "poc" | "placeholder";
@@ -14,6 +15,15 @@ export interface DeviceSummary {
   lastSeen: string;
   endpoint?: string;
   note: string;
+  pairedAtMs?: number | null;
+  lastSeenAtMs?: number | null;
+}
+
+export interface TrustedDeviceRemovalSummary {
+  deviceId: string;
+  spaceId: string;
+  keyVersion: number;
+  deliveredPeers: number;
 }
 
 export interface ClipboardPreview {

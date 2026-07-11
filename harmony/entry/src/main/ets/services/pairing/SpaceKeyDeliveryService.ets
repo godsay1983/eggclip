@@ -7,6 +7,7 @@ import {
 import { SpaceKeyReferenceService } from '../crypto/SpaceKeyReferenceService';
 
 export const INITIAL_SPACE_KEY_DELIVERY: string = 'pairing-v1';
+export const ROTATED_SPACE_KEY_DELIVERY: string = 'rotation-v1';
 
 export enum SpaceKeyDeliveryError {
   MISSING_PAYLOAD = 'missingPayload',
@@ -22,6 +23,12 @@ export interface SpaceKeyDeliveryInput {
   payload?: JsonObject;
   expectedSpaceId: string;
   expectedKeyVersion: number;
+}
+
+export interface SpaceKeyRotationInput {
+  payload?: JsonObject;
+  expectedSpaceId: string;
+  currentKeyVersion: number;
 }
 
 export interface SpaceKeyDeliveryResult {
@@ -44,26 +51,53 @@ export class SpaceKeyDeliveryService {
   }
 
   async acceptInitialDelivery(input: SpaceKeyDeliveryInput): Promise<SpaceKeyDeliveryResult> {
-    if (input.payload === undefined) {
+    return this.acceptDelivery(
+      input.payload,
+      input.expectedSpaceId,
+      input.expectedKeyVersion,
+      INITIAL_SPACE_KEY_DELIVERY,
+      false
+    );
+  }
+
+  async acceptRotation(input: SpaceKeyRotationInput): Promise<SpaceKeyDeliveryResult> {
+    return this.acceptDelivery(
+      input.payload,
+      input.expectedSpaceId,
+      input.currentKeyVersion,
+      ROTATED_SPACE_KEY_DELIVERY,
+      true
+    );
+  }
+
+  private async acceptDelivery(
+    payload: JsonObject | undefined,
+    expectedSpaceId: string,
+    expectedKeyVersion: number,
+    expectedDelivery: string,
+    requireNewerVersion: boolean
+  ): Promise<SpaceKeyDeliveryResult> {
+    if (payload === undefined) {
       return failed(SpaceKeyDeliveryError.MISSING_PAYLOAD, 'payload');
     }
 
-    const spaceId = readString(input.payload, 'spaceId');
-    if (spaceId !== input.expectedSpaceId) {
+    const spaceId = readString(payload, 'spaceId');
+    if (spaceId !== expectedSpaceId) {
       return failed(SpaceKeyDeliveryError.INVALID_SPACE_ID, 'spaceId');
     }
 
-    const keyVersion = readNumber(input.payload, 'keyVersion');
-    if (!Number.isSafeInteger(keyVersion) || keyVersion !== input.expectedKeyVersion) {
+    const keyVersion = readNumber(payload, 'keyVersion');
+    const validVersion = requireNewerVersion ? keyVersion > expectedKeyVersion : keyVersion === expectedKeyVersion;
+    if (!Number.isSafeInteger(keyVersion) || !validVersion) {
       return failed(SpaceKeyDeliveryError.INVALID_KEY_VERSION, 'keyVersion');
     }
 
-    const delivery = readString(input.payload, 'delivery');
-    if (delivery !== INITIAL_SPACE_KEY_DELIVERY) {
+    const delivery = readString(payload, 'delivery');
+    if (delivery !== expectedDelivery) {
       return failed(SpaceKeyDeliveryError.INVALID_DELIVERY, 'delivery');
     }
 
-    const decoded = decodeBase64Url(readString(input.payload, 'spaceKey'));
+    const decoded = decodeBase64Url(readString(payload, 'spaceKey'));
     if (decoded === null) {
       return failed(SpaceKeyDeliveryError.INVALID_SPACE_KEY, 'spaceKey');
     }

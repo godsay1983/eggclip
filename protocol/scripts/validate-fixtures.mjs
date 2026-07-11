@@ -73,6 +73,10 @@ function assertAccepts(file, value) {
     validateClipboardItem(value);
     return;
   }
+  if (file.startsWith(join(vectors, "sync")) && !file.includes("-envelope.")) {
+    validateSyncPayload(file, value);
+    return;
+  }
   validateEnvelope(value);
 }
 
@@ -112,6 +116,17 @@ function validateCryptoVector(value) {
         "sharedSecret",
       ]) {
         requireBase64Url(value[field], field);
+      }
+      return;
+    case "HMAC-SHA-256":
+      for (const field of ["key", "digest"]) {
+        requireBase64Url(value[field], field);
+      }
+      if (typeof value.message !== "string" || value.message.length === 0) {
+        throw new Error("message must be a non-empty string");
+      }
+      if (typeof value.confirmationCode !== "string" || !/^\d{6}$/u.test(value.confirmationCode)) {
+        throw new Error("confirmationCode must be six digits");
       }
       return;
     case "HKDF-SHA-256":
@@ -236,6 +251,43 @@ function validateClipboardItem(value) {
     }
   }
   requireUint(value.createdAt, "createdAt");
+}
+
+function validateSyncPayload(file, value) {
+  requireObject(value, "sync payload");
+  if (file.endsWith("item-ack.valid.json")) {
+    if (!Array.isArray(value.itemIds) || value.itemIds.length === 0) {
+      throw new Error("itemIds must be a non-empty array");
+    }
+    value.itemIds.forEach((itemId, index) => requireUuid(itemId, `itemIds[${index}]`));
+    return;
+  }
+  if (file.endsWith("request-range.valid.json")) {
+    if (!Array.isArray(value.ranges) || value.ranges.length === 0) {
+      throw new Error("ranges must be a non-empty array");
+    }
+    value.ranges.forEach((range, index) => {
+      requireObject(range, `ranges[${index}]`);
+      requireUuid(range.originDeviceId, `ranges[${index}].originDeviceId`);
+      requireUint(range.fromSeq, `ranges[${index}].fromSeq`);
+      requireUint(range.toSeq, `ranges[${index}].toSeq`);
+    });
+    return;
+  }
+  if (file.endsWith("item-batch.valid.json")) {
+    if (!Array.isArray(value.items) || !Array.isArray(value.gaps)) {
+      throw new Error("item batch must include items and gaps arrays");
+    }
+    value.items.forEach(validateClipboardItem);
+    value.gaps.forEach((gap, index) => {
+      requireObject(gap, `gaps[${index}]`);
+      requireUuid(gap.originDeviceId, `gaps[${index}].originDeviceId`);
+      requireUint(gap.requestedFromSeq, `gaps[${index}].requestedFromSeq`);
+      requireUint(gap.minimumAvailable, `gaps[${index}].minimumAvailable`);
+    });
+    return;
+  }
+  throw new Error("unknown sync payload fixture");
 }
 
 function requireObject(value, field) {

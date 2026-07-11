@@ -4,6 +4,7 @@ import {
   PairingRdbRepository,
   ClipboardRdbRepository,
   SettingsRdbRepository,
+  SpaceRdbRepository,
   SyncHeadRdbRepository,
   TrustedConnectionEndpointRecord
 } from '../data/repositories/RdbRepositories';
@@ -490,14 +491,20 @@ class PairingConnectionStore {
     }
 
     if (frameResult.envelope.messageType === MessageType.SPACE_KEY_ROTATED) {
-      const persisted = await this.persistPairingCompletion(frameResult.decryptedPayload, Date.now());
+      const isInitialPairing = this.connectionPurpose === ConnectionHandshakePurpose.PAIRING;
+      const persisted = isInitialPairing
+        ? await this.persistPairingCompletion(frameResult.decryptedPayload, Date.now())
+        : await this.persistSpaceKeyRotation(frameResult.decryptedPayload, Date.now());
       if (!persisted.ok) {
-        this.fail('配对保存失败', this.describePairingPersistFailure(persisted.failureStage));
+        this.fail(isInitialPairing ? '配对保存失败' : '空间密钥轮换失败',
+          this.describePairingPersistFailure(persisted.failureStage));
         return this.snapshot();
       }
       this.state = PairingConnectionState.AUTHENTICATED;
-      this.title = '配对已保存';
-      this.description = '已保存桌面端可信设备和同步空间密钥引用；后续将接入正式剪贴板同步。';
+      this.title = isInitialPairing ? '配对已保存' : '空间密钥已更新';
+      this.description = isInitialPairing
+        ? '已保存桌面端可信设备和同步空间密钥引用。'
+        : '已安全导入桌面端轮换后的空间密钥；旧密钥绑定的本机同步历史已清空，正式同步可以继续。';
       this.emit();
       if (this.pendingTrustDraft !== null && this.pendingTrustServerHello !== null) {
         this.reconnectTarget = {
@@ -509,6 +516,7 @@ class PairingConnectionStore {
         this.rememberTrustedEndpoint();
         await this.sendLocalSyncHeads();
       }
+      this.connectionPurpose = ConnectionHandshakePurpose.TRUSTED_RECONNECT;
       return this.snapshot();
     }
 
@@ -605,7 +613,7 @@ class PairingConnectionStore {
 
     if (frameResult.envelope.messageType === MessageType.AUTH_ERROR ||
       frameResult.envelope.messageType === MessageType.ERROR) {
-      this.fail('桌面端拒绝配对', '桌面端返回认证错误，未创建可信设备。');
+      this.fail('桌面端拒绝配对', describePairingAuthError(frameResult.envelope.payload));
       return this.snapshot();
     }
 
@@ -827,6 +835,52 @@ class PairingConnectionStore {
       };
     } catch (error) {
       return failedPersist(`rdb:${rdbFailureStage(error)}`);
+    }
+  }
+
+  private async persistSpaceKeyRotation(
+    payload: JsonObject | undefined,
+    nowMs: number
+  ): Promise<PairingCompletionPersistResult> {
+    if (this.context === null || this.pendingTrustDraft === null || payload === undefined) {
+      return failedPersist('context');
+    }
+    const spaces = new SpaceRdbRepository(this.context);
+    const current = await spaces.get(this.pendingTrustDraft.spaceId);
+    if (current === null) {
+      return failedPersist('spaceKey:missingSpace');
+    }
+    const delivery = await new SpaceKeyDeliveryService().acceptRotation({
+      payload,
+      expectedSpaceId: this.pendingTrustDraft.spaceId,
+      currentKeyVersion: current.space.keyVersion
+    });
+    if (!delivery.ok) {
+      return failedPersist(`spaceKey:${delivery.error ?? 'unknown'}:${delivery.field ?? 'unknown'}`);
+    }
+    const keyVersionValue = payload.keyVersion;
+    if (typeof keyVersionValue !== 'number' || !Number.isSafeInteger(keyVersionValue)) {
+      return failedPersist('spaceKey:invalidKeyVersion');
+    }
+    try {
+      await spaces.applyKeyRotation({
+        space: {
+          spaceId: current.space.spaceId,
+          displayName: current.space.displayName,
+          keyVersion: keyVersionValue,
+          state: SpaceState.ACTIVE,
+          createdAt: current.space.createdAt
+        },
+        encryptedSpaceKeyRef: delivery.encryptedSpaceKeyRef,
+        updatedAt: nowMs
+      });
+      this.pendingTrustDraft.spaceKeyVersion = keyVersionValue;
+      if (this.reconnectTarget !== null) {
+        this.reconnectTarget.spaceKeyVersion = keyVersionValue;
+      }
+      return { ok: true, encryptedSpaceKeyRef: delivery.encryptedSpaceKeyRef };
+    } catch (_) {
+      return failedPersist('rdb:spaceRotation');
     }
   }
 
@@ -1141,4 +1195,24 @@ export function trustedDiscoveryEndpoint(
     return null;
   }
   return { host: candidate.host, port: candidate.port };
+}
+
+export function describePairingAuthError(payload: JsonObject | undefined): string {
+  const code = payload === undefined || typeof payload.code !== 'string' ? '' : payload.code;
+  if (code === 'invitationExpired') {
+    return '邀请已过期，请在桌面端重新生成。';
+  }
+  if (code === 'invitationConsumed') {
+    return '邀请已经使用过；邀请只能成功消费一次，请重新生成。';
+  }
+  if (code === 'invitationMissing') {
+    return '桌面端找不到该邀请，可能已经清理或来自其他桌面端。';
+  }
+  if (code === 'identityOrSpaceMismatch') {
+    return '邀请中的设备身份或同步空间与桌面端不匹配，已拒绝建立连接。';
+  }
+  if (code === 'authProofFailed') {
+    return '设备身份签名校验失败，未创建可信设备。';
+  }
+  return '桌面端返回认证错误，未创建可信设备。';
 }

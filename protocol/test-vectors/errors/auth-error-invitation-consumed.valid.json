@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "type": "AUTH_ERROR",
+  "messageId": "018ff6f4-1000-7000-8000-000000000001",
+  "sessionCounter": 1,
+  "payload": {
+    "code": "invitationConsumed"
+  }
+}

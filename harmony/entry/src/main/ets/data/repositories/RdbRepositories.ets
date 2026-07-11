@@ -98,6 +98,27 @@ export class SpaceRdbRepository {
     await this.runner.execute(store, this.commands.upsert(record));
   }
 
+  async applyKeyRotation(record: SpaceRecord): Promise<void> {
+    const command = this.commands.upsert(record);
+    if (command === null) {
+      throw new Error('Invalid rotated space record');
+    }
+    const store = await Database.getStore(this.context);
+    store.beginTransaction();
+    try {
+      await store.executeSql('DELETE FROM clipboard_items WHERE space_id = ?', [record.space.spaceId]);
+      await store.executeSql('DELETE FROM sync_heads WHERE space_id = ?', [record.space.spaceId]);
+      await this.runner.execute(store, command);
+      store.commit();
+    } catch (error) {
+      store.rollBack();
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Apply space key rotation failed');
+    }
+  }
+
   async get(spaceId: string): Promise<SpaceRecord | null> {
     const store = await Database.getStore(this.context);
     const resultSet = await store.querySql(

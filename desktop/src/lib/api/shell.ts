@@ -10,6 +10,8 @@ import type {
   ShellSnapshot,
   SpaceHmacDiagnosticSummary,
   SyncSpaceSummary,
+  DeviceSummary,
+  TrustedDeviceRemovalSummary,
 } from "$lib/types/shell";
 
 interface ClipboardTextItem {
@@ -125,6 +127,24 @@ interface SpaceHmacDiagnosticSummaryDto {
   spaceId: string;
   spaceDisplayName: string;
   confirmationCode: string;
+}
+
+interface TrustedDeviceSummaryDto {
+  deviceId: string;
+  spaceId: string;
+  displayName: string;
+  connectionState: DeviceSummary["state"];
+  shortFingerprint: string;
+  pairedAtMs: number | null;
+  lastSeenAtMs: number | null;
+}
+
+interface AuthenticatedConnectionStateEvent {
+  peer: string;
+  deviceId: string;
+  spaceId: string;
+  state: "online" | "offline";
+  reason: string;
 }
 
 export function createInitialShellSnapshot(): ShellSnapshot {
@@ -269,6 +289,23 @@ export async function runSpaceHmacDiagnostic(): Promise<SpaceHmacDiagnosticSumma
   return invoke<SpaceHmacDiagnosticSummaryDto>("run_space_hmac_diagnostic");
 }
 
+export async function listTrustedDevices(): Promise<DeviceSummary[]> {
+  const devices = await invoke<TrustedDeviceSummaryDto[]>("list_trusted_devices");
+  return devices.map(toTrustedDeviceSummary);
+}
+
+export async function renameTrustedDevice(deviceId: string, displayName: string): Promise<DeviceSummary> {
+  const device = await invoke<TrustedDeviceSummaryDto>("rename_trusted_device", {
+    deviceId,
+    displayName,
+  });
+  return toTrustedDeviceSummary(device);
+}
+
+export async function removeTrustedDevice(deviceId: string): Promise<TrustedDeviceRemovalSummary> {
+  return invoke<TrustedDeviceRemovalSummary>("remove_trusted_device", { deviceId });
+}
+
 export async function ensureDefaultSyncSpace(): Promise<SyncSpaceSummary> {
   const space = await invoke<SyncSpaceSummaryDto>("ensure_default_sync_space");
   return toSyncSpaceSummary(space);
@@ -322,6 +359,15 @@ export async function onAuthenticatedLocalBroadcast(
     (event) => {
       handler(event.payload);
     },
+  );
+}
+
+export async function onAuthenticatedConnection(
+  callback: (event: AuthenticatedConnectionStateEvent) => void,
+) {
+  return listen<AuthenticatedConnectionStateEvent>(
+    "transport://authenticated-connection",
+    (event) => callback(event.payload),
   );
 }
 
@@ -422,6 +468,29 @@ function toPocRecentEndpoint(endpoint: PocRecentEndpointDto): PocRecentEndpoint 
       second: "2-digit",
     }),
     connectedAtMs: endpoint.connectedAtMs,
+  };
+}
+
+function toTrustedDeviceSummary(device: TrustedDeviceSummaryDto): DeviceSummary {
+  const lastSeen = device.lastSeenAtMs === null
+    ? "尚未记录"
+    : new Date(device.lastSeenAtMs).toLocaleString("zh-CN", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+  return {
+    id: device.deviceId,
+    spaceId: device.spaceId,
+    name: device.displayName,
+    state: device.connectionState,
+    trustKind: "trusted",
+    shortFingerprint: device.shortFingerprint,
+    lastSeen,
+    note: device.connectionState === "online" ? "认证会话在线" : "已配对，等待可信重连",
+    pairedAtMs: device.pairedAtMs,
+    lastSeenAtMs: device.lastSeenAtMs,
   };
 }
 

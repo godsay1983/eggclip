@@ -14,10 +14,12 @@ import {
   getClipboardHistoryUsed,
   getPocTransportStatus,
   listClipboardHistoryPreview,
+  listTrustedDevices,
   listLocalSyncSpaces,
   loadActiveSyncSpaceId,
   loadPocRecentEndpoint,
   onAuthenticatedLocalBroadcast,
+  onAuthenticatedConnection,
   onLocalClipboardText,
   onPocClipboardText,
   onPocDiagnostics,
@@ -25,13 +27,15 @@ import {
   onPocPeerConnected,
   onPocPeerDisconnected,
   readSystemClipboardText,
+  removeTrustedDevice as removeTrustedDeviceApi,
+  renameTrustedDevice as renameTrustedDeviceApi,
   runSpaceHmacDiagnostic as runSpaceHmacDiagnosticApi,
   sendAuthenticatedClipboardText,
   selectActiveSyncSpace as selectActiveSyncSpaceApi,
   startPocTransport,
   writeSystemClipboardText,
 } from "$lib/api/shell";
-import type { ClipboardPreview, OutboundSyncStatus } from "$lib/types/shell";
+import type { ClipboardPreview, DeviceSummary, OutboundSyncStatus } from "$lib/types/shell";
 import type { PocRecentEndpoint } from "$lib/types/shell";
 
 const snapshot = writable(createInitialShellSnapshot());
@@ -40,6 +44,8 @@ let pocEventsStarted = false;
 let pocTransportStarted = false;
 let pocReceiveEnabled = true;
 const pocPeers = new Set<string>();
+const authenticatedPeers = new Set<string>();
+let trustedDevices: DeviceSummary[] = [];
 
 async function refreshHistorySummaryState() {
   const [used, items] = await Promise.all([
@@ -112,7 +118,20 @@ function rememberPocEndpoint(endpoint: PocRecentEndpoint) {
 }
 
 function updatePocDevices(title: string, description: string) {
-  const peers = Array.from(pocPeers).sort();
+  const peers = Array.from(pocPeers)
+    .filter((peer) => !authenticatedPeers.has(peer))
+    .sort();
+  const pocDevices: DeviceSummary[] = peers.map((peer) => ({
+    id: `poc-${peer}`,
+    name: "远端 POC 连接",
+    state: "online",
+    trustKind: "poc",
+    shortFingerprint: "未配对",
+    lastSeen: "当前会话在线",
+    endpoint: peer,
+    note: "实验连接尚未完成设备身份认证，仅用于手动收发验证。",
+  }));
+  const devices = [...trustedDevices, ...pocDevices];
   snapshot.update((state) => ({
     ...state,
     connection: {
@@ -121,17 +140,8 @@ function updatePocDevices(title: string, description: string) {
       description,
     },
     devices:
-      peers.length > 0
-        ? peers.map((peer) => ({
-            id: `poc-${peer}`,
-            name: "远端 POC 连接",
-            state: "online" as const,
-            trustKind: "poc" as const,
-            shortFingerprint: "未配对",
-            lastSeen: "当前会话在线",
-            endpoint: peer,
-            note: "实验连接尚未完成设备身份认证，仅用于手动收发验证。",
-          }))
+      devices.length > 0
+        ? devices
         : [
             {
               id: "placeholder",
@@ -144,6 +154,14 @@ function updatePocDevices(title: string, description: string) {
             },
           ],
   }));
+}
+
+async function refreshTrustedDeviceState(): Promise<void> {
+  trustedDevices = await listTrustedDevices();
+  updatePocDevices(
+    trustedDevices.some((device) => device.state === "online") ? "可信设备已连接" : "等待设备连接",
+    trustedDevices.length > 0 ? `已保存 ${trustedDevices.length} 个可信设备` : "尚未完成正式配对",
+  );
 }
 
 export const shellSnapshot = {
@@ -226,6 +244,14 @@ export const shellSnapshot = {
             description: "本机复制未受影响；请检查可信设备和本地密钥状态。",
           });
         }),
+        onAuthenticatedConnection((event) => {
+          if (event.state === "online") {
+            authenticatedPeers.add(event.peer);
+          } else {
+            authenticatedPeers.delete(event.peer);
+          }
+          void refreshTrustedDeviceState();
+        }),
         onPocClipboardText((current, peer) => {
           if (!pocReceiveEnabled) {
             snapshot.update((state) => ({
@@ -262,15 +288,18 @@ export const shellSnapshot = {
             "远端设备已连接",
             `当前有 ${pocPeers.size} 个实验连接，仅允许用户触发收发`,
           );
+          void refreshTrustedDeviceState();
         }),
         onPocPeerDisconnected((peer) => {
           pocPeers.delete(peer);
+          authenticatedPeers.delete(peer);
           updatePocDevices(
             pocPeers.size > 0 ? "远端设备已连接" : "等待设备连接",
             pocPeers.size > 0
               ? `当前还有 ${pocPeers.size} 个实验连接`
               : "同步服务继续监听，可通过 mDNS 或手动 IP 连接",
           );
+          void refreshTrustedDeviceState();
         }),
         onPocDiscoveryError((message) => {
           snapshot.update((state) => ({
@@ -305,6 +334,41 @@ export const shellSnapshot = {
         description: describePocTransport(transport),
       },
     }));
+  },
+  async refreshTrustedDevices() {
+    try {
+      await refreshTrustedDeviceState();
+    } catch (error) {
+      snapshot.update((state) => ({
+        ...state,
+        connection: {
+          state: "authFailed",
+          title: "可信设备读取失败",
+          description: error instanceof Error ? error.message : "无法读取可信设备",
+        },
+      }));
+    }
+  },
+  async renameTrustedDevice(deviceId: string, displayName: string) {
+    await renameTrustedDeviceApi(deviceId, displayName);
+    await refreshTrustedDeviceState();
+  },
+  async removeTrustedDevice(deviceId: string) {
+    const result = await removeTrustedDeviceApi(deviceId);
+    await Promise.all([
+      refreshTrustedDeviceState(),
+      this.refreshSyncSpaces(),
+      refreshHistorySummaryState(),
+    ]);
+    snapshot.update((state) => ({
+      ...state,
+      connection: {
+        state: result.deliveredPeers > 0 ? "online" : "offline",
+        title: "可信设备已移除",
+        description: `空间密钥已轮换至 v${result.keyVersion}，已通知 ${result.deliveredPeers} 个在线设备`,
+      },
+    }));
+    return result;
   },
   async loadRecentPocEndpoint() {
     try {
@@ -412,7 +476,15 @@ export const shellSnapshot = {
       },
     }));
     try {
-      const space = await createLocalSyncSpace("默认空间");
+      const existingSpaces = await listLocalSyncSpaces();
+      const usedNames = new Set(existingSpaces.map((space) => space.displayName));
+      let suffix = existingSpaces.length + 1;
+      let displayName = `同步空间 ${suffix}`;
+      while (usedNames.has(displayName)) {
+        suffix += 1;
+        displayName = `同步空间 ${suffix}`;
+      }
+      const space = await createLocalSyncSpace(displayName);
       const activeSpaceId = await loadActiveSyncSpaceId();
       snapshot.update((state) => ({
         ...state,

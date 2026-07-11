@@ -32,7 +32,7 @@ use crate::{
             PairingInvitationState, SettingsRepository, SpaceRecord, SpaceRepository,
         },
     },
-    sync::{content_hmac_digest, DeviceTrustState, Space, SpaceState},
+    sync::{content_hmac_digest, DeviceConnectionState, DeviceTrustState, Space, SpaceState},
 };
 
 pub const SPACE_KEY_BYTES: usize = 32;
@@ -61,6 +61,26 @@ pub struct SpaceHmacDiagnosticSummary {
     pub space_id: String,
     pub space_display_name: String,
     pub confirmation_code: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrustedDeviceSummary {
+    pub device_id: String,
+    pub space_id: String,
+    pub display_name: String,
+    pub connection_state: String,
+    pub short_fingerprint: String,
+    pub paired_at_ms: Option<u64>,
+    pub last_seen_at_ms: Option<u64>,
+}
+
+pub(crate) struct SpaceKeyRotationMaterial {
+    pub device_id: Uuid,
+    pub space_id: Uuid,
+    pub key_version: u32,
+    pub previous_key_ref: String,
+    pub space_key: [u8; SPACE_KEY_BYTES],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -499,6 +519,9 @@ pub fn list_sync_spaces(connection: &Connection) -> Result<Vec<SyncSpaceSummary>
         .map_err(|error| PairingError::Database(error.to_string()))?;
     Ok(records
         .into_iter()
+        .filter(|record| {
+            record.space.state == SpaceState::Active && record.encrypted_space_key_ref.is_some()
+        })
         .map(|record| SyncSpaceSummary {
             space_id: record.space.space_id.to_string(),
             display_name: record.space.display_name,
@@ -507,6 +530,206 @@ pub fn list_sync_spaces(connection: &Connection) -> Result<Vec<SyncSpaceSummary>
             created_at_ms: record.space.created_at,
         })
         .collect())
+}
+
+#[tauri::command]
+pub fn list_trusted_devices(app: tauri::AppHandle) -> Result<Vec<TrustedDeviceSummary>, String> {
+    let path = database_path(&app)?;
+    let connection = open_database(path).map_err(|error| format!("无法打开本地数据库：{error}"))?;
+    let mut devices =
+        list_trusted_devices_in_database(&connection).map_err(|error| error.to_string())?;
+    let online_device_ids = crate::transport::authenticated_device_ids(&app);
+    for device in &mut devices {
+        device.connection_state = Uuid::parse_str(&device.device_id)
+            .ok()
+            .filter(|device_id| online_device_ids.contains(device_id))
+            .map(|_| "online".to_owned())
+            .unwrap_or_else(|| "offline".to_owned());
+    }
+    Ok(devices)
+}
+
+#[tauri::command]
+pub fn rename_trusted_device(
+    app: tauri::AppHandle,
+    device_id: String,
+    display_name: String,
+) -> Result<TrustedDeviceSummary, String> {
+    let path = database_path(&app)?;
+    let connection = open_database(path).map_err(|error| format!("无法打开本地数据库：{error}"))?;
+    rename_trusted_device_in_database(&connection, &device_id, &display_name)
+        .map_err(|error| error.to_string())
+}
+
+pub fn list_trusted_devices_in_database(
+    connection: &Connection,
+) -> Result<Vec<TrustedDeviceSummary>, PairingError> {
+    let local_device_id = SettingsRepository::new(connection)
+        .get(crate::storage::repositories::LOCAL_DEVICE_ID_KEY)
+        .map_err(|error| PairingError::Database(error.to_string()))?
+        .and_then(|value| Uuid::parse_str(&value).ok());
+    let mut summaries = Vec::new();
+    for space in SpaceRepository::new(connection)
+        .list()
+        .map_err(|error| PairingError::Database(error.to_string()))?
+    {
+        for record in DeviceRepository::new(connection)
+            .list_by_space(space.space.space_id)
+            .map_err(|error| PairingError::Database(error.to_string()))?
+        {
+            if Some(record.device.device_id) == local_device_id
+                || record.device.trust_state != DeviceTrustState::Trusted
+                || record.revoked_at.is_some()
+            {
+                continue;
+            }
+            summaries.push(trusted_device_summary(&record));
+        }
+    }
+    summaries.sort_by(|left, right| left.display_name.cmp(&right.display_name));
+    Ok(summaries)
+}
+
+pub fn rename_trusted_device_in_database(
+    connection: &Connection,
+    device_id: &str,
+    display_name: &str,
+) -> Result<TrustedDeviceSummary, PairingError> {
+    let device_id = Uuid::parse_str(device_id).map_err(|_| PairingError::InvalidInvitation)?;
+    let normalized = normalize_device_display_name(display_name)?;
+    let repository = DeviceRepository::new(connection);
+    let mut record = repository
+        .get(device_id)
+        .map_err(|error| PairingError::Database(error.to_string()))?
+        .ok_or(PairingError::InvalidInvitation)?;
+    if record.device.trust_state != DeviceTrustState::Trusted || record.revoked_at.is_some() {
+        return Err(PairingError::InvalidInvitation);
+    }
+    record.device.display_name = normalized;
+    repository
+        .upsert(&record)
+        .map_err(|error| PairingError::Database(error.to_string()))?;
+    Ok(trusted_device_summary(&record))
+}
+
+pub(crate) fn revoke_device_and_rotate_space_key<S: SecretBytesStore>(
+    connection: &mut Connection,
+    secret_store: &mut S,
+    device_id: Uuid,
+    revoked_at: u64,
+) -> Result<SpaceKeyRotationMaterial, PairingError> {
+    let current_device = DeviceRepository::new(connection)
+        .get(device_id)
+        .map_err(|error| PairingError::Database(error.to_string()))?
+        .ok_or(PairingError::InvalidInvitation)?;
+    if current_device.device.trust_state != DeviceTrustState::Trusted
+        || current_device.revoked_at.is_some()
+    {
+        return Err(PairingError::InvalidInvitation);
+    }
+    let space_id = current_device.device.space_id;
+    let current_space = SpaceRepository::new(connection)
+        .get(space_id)
+        .map_err(|error| PairingError::Database(error.to_string()))?
+        .ok_or(PairingError::MissingSpace)?;
+    let previous_key_ref = current_space
+        .encrypted_space_key_ref
+        .clone()
+        .ok_or(PairingError::MissingSpaceKeyRef)?;
+    let key_version = current_space
+        .space
+        .key_version
+        .checked_add(1)
+        .ok_or(PairingError::InvalidSpaceId)?;
+    let mut space_key = random_space_key()?;
+    let next_key_ref = space_key_ref(space_id, key_version);
+    if let Err(error) = secret_store.save_secret(&next_key_ref, &space_key) {
+        space_key.fill(0);
+        return Err(pairing_secret_store_error(error));
+    }
+
+    let rotation_result = (|| -> Result<(), PairingError> {
+        let transaction = connection
+            .transaction()
+            .map_err(|error| PairingError::Database(error.to_string()))?;
+        let mut revoked_device = current_device;
+        revoked_device.device.trust_state = DeviceTrustState::Revoked;
+        revoked_device.device.connection_state = DeviceConnectionState::Offline;
+        revoked_device.revoked_at = Some(revoked_at);
+        DeviceRepository::new(&transaction)
+            .upsert(&revoked_device)
+            .map_err(|error| PairingError::Database(error.to_string()))?;
+        // Clipboard ciphertext and HMAC digests are bound to the previous space key.
+        // v1 deliberately clears this bounded history during rotation instead of
+        // retaining an undecryptable or unverifiable mixed-key history.
+        transaction
+            .execute(
+                "DELETE FROM clipboard_items WHERE space_id = ?1",
+                rusqlite::params![space_id.to_string()],
+            )
+            .map_err(|error| PairingError::Database(error.to_string()))?;
+        transaction
+            .execute(
+                "DELETE FROM sync_heads WHERE space_id = ?1",
+                rusqlite::params![space_id.to_string()],
+            )
+            .map_err(|error| PairingError::Database(error.to_string()))?;
+        let mut rotated_space = current_space;
+        rotated_space.space.key_version = key_version;
+        rotated_space.encrypted_space_key_ref = Some(next_key_ref.clone());
+        rotated_space.updated_at = revoked_at;
+        SpaceRepository::new(&transaction)
+            .upsert(&rotated_space)
+            .map_err(|error| PairingError::Database(error.to_string()))?;
+        transaction
+            .commit()
+            .map_err(|error| PairingError::Database(error.to_string()))
+    })();
+    if let Err(error) = rotation_result {
+        space_key.fill(0);
+        let _ = secret_store.delete_secret(&next_key_ref);
+        return Err(error);
+    }
+
+    Ok(SpaceKeyRotationMaterial {
+        device_id,
+        space_id,
+        key_version,
+        previous_key_ref,
+        space_key,
+    })
+}
+
+fn trusted_device_summary(
+    record: &crate::storage::repositories::DeviceRecord,
+) -> TrustedDeviceSummary {
+    let digest = Sha256::digest(record.device.identity_public_key_ref.as_bytes());
+    TrustedDeviceSummary {
+        device_id: record.device.device_id.to_string(),
+        space_id: record.device.space_id.to_string(),
+        display_name: record.device.display_name.clone(),
+        connection_state: match record.device.connection_state {
+            DeviceConnectionState::Online => "online",
+            DeviceConnectionState::Connecting => "connecting",
+            DeviceConnectionState::AuthFailed => "authFailed",
+            DeviceConnectionState::Offline => "offline",
+        }
+        .to_owned(),
+        short_fingerprint: encode_base64url(&digest[..6]),
+        paired_at_ms: record.paired_at,
+        last_seen_at_ms: record.device.last_seen_at,
+    }
+}
+
+fn normalize_device_display_name(value: &str) -> Result<String, PairingError> {
+    let normalized = value.trim();
+    if normalized.is_empty()
+        || normalized.chars().count() > 32
+        || normalized.chars().any(char::is_control)
+    {
+        return Err(PairingError::InvalidDisplayName);
+    }
+    Ok(normalized.to_owned())
 }
 
 pub fn resolve_active_sync_space(
@@ -1210,6 +1433,11 @@ impl SecretBytesStore for MemorySecretStore {
         self.secrets.insert(secret_ref.to_string(), secret.to_vec());
         Ok(())
     }
+
+    fn delete_secret(&mut self, secret_ref: &str) -> Result<(), SecretStoreError> {
+        self.secrets.remove(secret_ref);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -1396,6 +1624,34 @@ mod tests {
         assert_eq!(second.space_id, first.space_id);
         assert_eq!(second.created_at_ms, first.created_at_ms);
         assert_eq!(spaces.len(), 1);
+        assert_eq!(store.secrets.len(), 1);
+    }
+
+    #[test]
+    fn ignores_internal_history_space_when_ensuring_default_sync_space() {
+        let mut connection = open_in_memory_database().expect("database should open");
+        connection
+            .execute(
+                "INSERT INTO spaces(
+                   space_id, display_name, encrypted_space_key_ref, key_version,
+                   state, created_at, updated_at
+                 ) VALUES (?1, '本机历史', NULL, 1, 'active', ?2, ?2)",
+                rusqlite::params![
+                    "018ff6ef-c394-7d08-8b99-4b7d10f2767a",
+                    1_700_000_000_000_i64
+                ],
+            )
+            .expect("internal history space should insert");
+        let mut store = MemorySecretStore::default();
+
+        let default =
+            ensure_default_sync_space_in_database(&mut connection, &mut store, 1_700_000_000_500)
+                .expect("keyed default space should be created");
+        let spaces = list_sync_spaces(&connection).expect("selectable spaces should list");
+
+        assert_eq!(default.display_name, DEFAULT_SPACE_DISPLAY_NAME);
+        assert_eq!(spaces.len(), 1);
+        assert_eq!(spaces[0].space_id, default.space_id);
         assert_eq!(store.secrets.len(), 1);
     }
 
@@ -1822,6 +2078,70 @@ mod tests {
             ),
             Err(PairingError::InvalidClientHello)
         );
+    }
+
+    #[test]
+    fn renames_revokes_and_rotates_key_for_trusted_device() {
+        let mut connection = open_in_memory_database().expect("database should open");
+        let mut store = MemorySecretStore::default();
+        let space = create_sync_space(&mut connection, &mut store, "默认空间", 1_700_000_000_000)
+            .expect("space should be created");
+        let space_id = Uuid::parse_str(&space.space_id).expect("space id should parse");
+        let device_id = Uuid::parse_str("018ff6f0-4adf-7d31-a987-3ef2b25d0212")
+            .expect("device id should parse");
+        DeviceRepository::new(&connection)
+            .upsert(&crate::storage::repositories::DeviceRecord {
+                device: crate::sync::Device {
+                    device_id,
+                    space_id,
+                    display_name: "HarmonyOS 设备".to_owned(),
+                    identity_public_key_ref: encode_base64url(&[9u8; 32]),
+                    trust_state: DeviceTrustState::Trusted,
+                    connection_state: DeviceConnectionState::Online,
+                    last_seen_at: Some(1_700_000_001_000),
+                },
+                paired_at: Some(1_700_000_000_500),
+                revoked_at: None,
+            })
+            .expect("trusted device should persist");
+
+        let renamed =
+            rename_trusted_device_in_database(&connection, &device_id.to_string(), "  我的 Mate  ")
+                .expect("trusted device should rename");
+        assert_eq!(renamed.display_name, "我的 Mate");
+        assert_eq!(renamed.connection_state, "online");
+        assert_eq!(
+            list_trusted_devices_in_database(&connection).unwrap().len(),
+            1
+        );
+
+        let rotation = revoke_device_and_rotate_space_key(
+            &mut connection,
+            &mut store,
+            device_id,
+            1_700_000_002_000,
+        )
+        .expect("device removal should rotate key");
+        assert_eq!(rotation.key_version, 2);
+        assert_ne!(rotation.space_key, [0u8; SPACE_KEY_BYTES]);
+        assert_eq!(
+            SpaceRepository::new(&connection)
+                .get(space_id)
+                .unwrap()
+                .unwrap()
+                .space
+                .key_version,
+            2
+        );
+        let revoked = DeviceRepository::new(&connection)
+            .get(device_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(revoked.device.trust_state, DeviceTrustState::Revoked);
+        assert_eq!(revoked.revoked_at, Some(1_700_000_002_000));
+        assert!(list_trusted_devices_in_database(&connection)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

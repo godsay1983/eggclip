@@ -17,7 +17,8 @@
   onMount(() => {
     void shellSnapshot
       .startPocEventListeners()
-      .then(() => shellSnapshot.startPocTransport());
+      .then(() => shellSnapshot.startPocTransport())
+      .then(() => shellSnapshot.refreshTrustedDevices());
     void shellSnapshot.startClipboardMonitor();
     void shellSnapshot.refreshHistorySummary();
     void shellSnapshot.loadRecentPocEndpoint();
@@ -382,7 +383,11 @@
 
       <NetworkTroubleshootingCard transport={$shellSnapshot.pocTransport} />
 
-      <DeviceChips devices={$shellSnapshot.devices} />
+      <DeviceChips
+        devices={$shellSnapshot.devices}
+        onRename={(deviceId, name) => shellSnapshot.renameTrustedDevice(deviceId, name)}
+        onRemove={(deviceId) => shellSnapshot.removeTrustedDevice(deviceId)}
+      />
     </section>
   {/if}
 

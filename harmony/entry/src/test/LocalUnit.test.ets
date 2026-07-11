@@ -2,6 +2,7 @@ import { describe, expect, it } from '@ohos/hypium';
 import { ClipboardBridgeService } from '../main/ets/services/clipboard/ClipboardBridgeService';
 import {
   AES_256_GCM_VECTOR,
+  AUTH_ERROR_INVITATION_CONSUMED_VECTOR,
   ED25519_SIGNATURE_VECTOR,
   HMAC_SHA256_VECTOR,
   HKDF_SHA256_VECTOR,
@@ -137,6 +138,7 @@ import {
 import {
   PairingConnectionState,
   PairingConnectionStore,
+  describePairingAuthError,
   trustedDiscoveryEndpoint
 } from '../main/ets/store/PairingConnectionStore';
 import {
@@ -783,6 +785,27 @@ export default function localUnitTest() {
       expect(importer.importedRef).assertEqual(`huks://eggclip/space-key/${spaceId}/v1`);
       expect(importer.importedKeyLength).assertEqual(SPACE_KEY_BYTES);
       expect(JSON.stringify(result).indexOf('spaceKey')).assertEqual(-1);
+    });
+
+    it('acceptsOnlyNewerRotationSpaceKeyDelivery', 0, async () => {
+      const spaceId = '018ff6ef-c394-7d08-8b99-4b7d10f2767a';
+      const importer = new FakeSpaceKeyImporter();
+      const service = new SpaceKeyDeliveryService(new SpaceKeyReferenceService(), importer);
+      const payload = spaceKeyDeliveryPayload(spaceId, 3, SPACE_KEY_BYTES, 'rotation-v1');
+      const accepted = await service.acceptRotation({
+        payload,
+        expectedSpaceId: spaceId,
+        currentKeyVersion: 1
+      });
+      const stale = await service.acceptRotation({
+        payload: spaceKeyDeliveryPayload(spaceId, 1, SPACE_KEY_BYTES, 'rotation-v1'),
+        expectedSpaceId: spaceId,
+        currentKeyVersion: 1
+      });
+
+      expect(accepted.ok).assertEqual(true);
+      expect(accepted.encryptedSpaceKeyRef.endsWith('/v3')).assertEqual(true);
+      expect(stale.error).assertEqual(SpaceKeyDeliveryError.INVALID_KEY_VERSION);
     });
 
     it('rejectsInvalidEncryptedSpaceKeyDeliveryPayloads', 0, async () => {
@@ -3003,6 +3026,19 @@ export default function localUnitTest() {
       expect(endpoint?.host).assertEqual('192.168.1.20');
       expect(endpoint?.port).assertEqual(4567);
       expect(rejected === null).assertEqual(true);
+    });
+
+    it('describesExpiredConsumedAndIdentitySpaceMismatchAuthErrors', 0, () => {
+      expect(describePairingAuthError(JSON.parse('{"code":"invitationExpired"}') as JsonObject))
+        .assertEqual('邀请已过期，请在桌面端重新生成。');
+      expect(describePairingAuthError(JSON.parse('{"code":"invitationConsumed"}') as JsonObject).indexOf('只能成功消费一次') >= 0)
+        .assertEqual(true);
+      expect(describePairingAuthError(JSON.parse('{"code":"identityOrSpaceMismatch"}') as JsonObject).indexOf('身份或同步空间') >= 0)
+        .assertEqual(true);
+      const sharedError = new ProtocolParser().parseEnvelope(AUTH_ERROR_INVITATION_CONSUMED_VECTOR);
+      expect(sharedError.ok).assertEqual(true);
+      expect(describePairingAuthError(sharedError.envelope?.payload).indexOf('只能成功消费一次') >= 0)
+        .assertEqual(true);
     });
   });
 }

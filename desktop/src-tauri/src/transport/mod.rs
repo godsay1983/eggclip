@@ -1,6 +1,12 @@
 mod session;
 
-use std::{collections::HashMap, net::Ipv4Addr, str::FromStr, sync::Mutex, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    net::Ipv4Addr,
+    str::FromStr,
+    sync::Mutex,
+    time::Duration,
+};
 
 use crate::{
     clipboard::{ClipboardText, ClipboardTextError},
@@ -15,10 +21,10 @@ use crate::{
         PairingServerAuthProofInput, PairingServerHelloDraft,
     },
     protocol::{
-        parse_envelope, ClipboardItem as ProtocolClipboardItem, ContentType as ProtocolContentType,
-        HelloPayload, ItemAckPayload, ItemBatchPayload, MessageType, ProtocolEnvelope,
-        RequestRange, RequestRangePayload, RetentionGap, SyncHeadsPayload, MAX_BATCH_ITEMS,
-        MAX_BATCH_PLAINTEXT_BYTES,
+        parse_envelope, serialize_pre_auth_envelope, ClipboardItem as ProtocolClipboardItem,
+        ContentType as ProtocolContentType, HelloPayload, ItemAckPayload, ItemBatchPayload,
+        MessageType, ProtocolEnvelope, RequestRange, RequestRangePayload, RetentionGap,
+        SyncHeadsPayload, MAX_BATCH_ITEMS, MAX_BATCH_PLAINTEXT_BYTES,
     },
     settings::{database_path, now_ms},
     storage::{
@@ -64,6 +70,14 @@ pub struct PocTransportRuntime {
     pairing_handshakes: Mutex<HashMap<String, PairingServerHandshakeRuntimeState>>,
     authenticated_sessions: Mutex<HashMap<String, AuthenticatedPeerSession>>,
     diagnostics: Mutex<PocTransportDiagnostics>,
+}
+
+pub(crate) fn authenticated_device_ids(app: &AppHandle) -> HashSet<Uuid> {
+    app.state::<PocTransportRuntime>()
+        .authenticated_sessions
+        .lock()
+        .map(|sessions| sessions.values().map(|session| session.device_id).collect())
+        .unwrap_or_default()
 }
 
 struct AuthenticatedPeerSession {
@@ -252,6 +266,56 @@ enum AuthenticatedRemoteHistoryOutcome {
     Conflict,
     SkippedByPolicy,
     SkippedMissingTrustGraph,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrustedDeviceRemovalSummary {
+    device_id: String,
+    space_id: String,
+    key_version: u32,
+    delivered_peers: usize,
+}
+
+#[tauri::command]
+pub fn remove_trusted_device(
+    app: AppHandle,
+    device_id: String,
+) -> Result<TrustedDeviceRemovalSummary, String> {
+    let device_id = Uuid::parse_str(&device_id).map_err(|_| "可信设备 ID 无效".to_owned())?;
+    let path = database_path(&app)?;
+    let mut connection =
+        open_database(path).map_err(|error| format!("无法打开本地数据库：{error}"))?;
+    #[cfg(windows)]
+    let mut store = crate::secret_store::WindowsCredentialSecretStore;
+    #[cfg(not(windows))]
+    let mut store = crate::secret_store::UnavailableSecretStore;
+    let mut rotation = crate::pairing::revoke_device_and_rotate_space_key(
+        &mut connection,
+        &mut store,
+        device_id,
+        now_ms()?,
+    )
+    .map_err(|error| format!("无法移除可信设备：{error}"))?;
+
+    disconnect_authenticated_device(&app, device_id, "deviceRevoked");
+    let delivered_peers = broadcast_space_key_rotation(
+        &app,
+        rotation.space_id,
+        rotation.key_version,
+        &rotation.space_key,
+    );
+    rotation.space_key.fill(0);
+    let _ = crate::secret_store::SecretBytesStore::delete_secret(
+        &mut store,
+        &rotation.previous_key_ref,
+    );
+    Ok(TrustedDeviceRemovalSummary {
+        device_id: rotation.device_id.to_string(),
+        space_id: rotation.space_id.to_string(),
+        key_version: rotation.key_version,
+        delivered_peers,
+    })
 }
 
 #[tauri::command]
@@ -1069,6 +1133,9 @@ where
                     }
                     PairingClientHelloRoute::Rejected(reason) => {
                         record_poc_frame_result(&app, Err(reason));
+                        if let Some(frame) = pairing_auth_error_frame(reason, 1) {
+                            let _ = outgoing_tx.send(Message::Text(frame.into()));
+                        }
                         break;
                     }
                     PairingClientHelloRoute::NotPairing => {}
@@ -1090,6 +1157,9 @@ where
                     }
                     PairingAuthProofRoute::Rejected(reason) => {
                         record_poc_frame_result(&app, Err(reason));
+                        if let Some(frame) = pairing_auth_error_frame(reason, 3) {
+                            let _ = outgoing_tx.send(Message::Text(frame.into()));
+                        }
                         break;
                     }
                     PairingAuthProofRoute::NotPairing => {}
@@ -1153,6 +1223,27 @@ enum AuthenticatedFrameRoute {
     Handled,
     Rejected,
     NotAuthenticated,
+}
+
+fn pairing_auth_error_frame(reason: PocRejectionReason, session_counter: u64) -> Option<String> {
+    let code = match reason {
+        PocRejectionReason::PairingInvitationMissing => "invitationMissing",
+        PocRejectionReason::PairingInvitationExpired => "invitationExpired",
+        PocRejectionReason::PairingInvitationConsumed => "invitationConsumed",
+        PocRejectionReason::PairingClientHelloRejected => "identityOrSpaceMismatch",
+        PocRejectionReason::PairingAuthProofRejected
+        | PocRejectionReason::PairingAuthSignatureRejected => "authProofFailed",
+        PocRejectionReason::PairingServerStateMissing => "handshakeStateMissing",
+        PocRejectionReason::PairingInternalError => "internalError",
+        _ => return None,
+    };
+    serialize_pre_auth_envelope(&crate::protocol::PreAuthEnvelope {
+        message_type: MessageType::AuthError,
+        message_id: Uuid::now_v7().to_string(),
+        session_counter,
+        payload: serde_json::json!({ "code": code }),
+    })
+    .ok()
 }
 
 fn try_accept_pairing_client_hello(
@@ -1266,26 +1357,36 @@ fn try_accept_pairing_auth_proof(app: &AppHandle, peer: &str, text: &str) -> Pai
                         PocRejectionReason::PairingInternalError,
                     );
                 }
+                let space_key_frame =
+                    match build_space_key_delivery_frame(app, &accepted, 4, "rotation-v1") {
+                        Ok(frame) => frame,
+                        Err(_) => {
+                            return PairingAuthProofRoute::Rejected(
+                                PocRejectionReason::PairingInternalError,
+                            )
+                        }
+                    };
                 if remember_authenticated_session(app, peer, accepted).is_err() {
                     return PairingAuthProofRoute::Rejected(
                         PocRejectionReason::PairingInternalError,
                     );
                 }
-                PairingAuthProofRoute::Handled(vec![auth_ok_frame])
+                PairingAuthProofRoute::Handled(vec![auth_ok_frame, space_key_frame])
             } else {
                 if persist_trusted_pairing_device(app, &accepted, accepted_at).is_err() {
                     return PairingAuthProofRoute::Rejected(
                         PocRejectionReason::PairingInternalError,
                     );
                 }
-                let space_key_frame = match build_space_key_delivery_frame(app, &accepted, 4) {
-                    Ok(frame) => frame,
-                    Err(_) => {
-                        return PairingAuthProofRoute::Rejected(
-                            PocRejectionReason::PairingInternalError,
-                        )
-                    }
-                };
+                let space_key_frame =
+                    match build_space_key_delivery_frame(app, &accepted, 4, "pairing-v1") {
+                        Ok(frame) => frame,
+                        Err(_) => {
+                            return PairingAuthProofRoute::Rejected(
+                                PocRejectionReason::PairingInternalError,
+                            )
+                        }
+                    };
                 if remember_authenticated_session(app, peer, accepted).is_err() {
                     return PairingAuthProofRoute::Rejected(
                         PocRejectionReason::PairingInternalError,
@@ -1347,6 +1448,7 @@ fn build_space_key_delivery_frame(
     app: &AppHandle,
     accepted: &crate::pairing::PairingServerAuthProofAccepted,
     session_counter: u64,
+    delivery: &'static str,
 ) -> Result<String, ()> {
     let space_id = Uuid::parse_str(&accepted.space_id).map_err(|_| ())?;
     let path = database_path(app).map_err(|_| ())?;
@@ -1364,7 +1466,7 @@ fn build_space_key_delivery_frame(
         "spaceId": accepted.space_id,
         "keyVersion": space.space.key_version,
         "spaceKey": encode_base64url(&space_key),
-        "delivery": "pairing-v1"
+        "delivery": delivery
     });
     space_key.fill(0);
 
@@ -1987,6 +2089,75 @@ fn remember_authenticated_session(
     Ok(())
 }
 
+fn disconnect_authenticated_device(app: &AppHandle, device_id: Uuid, reason: &'static str) {
+    let runtime = app.state::<PocTransportRuntime>();
+    let peers = runtime
+        .authenticated_sessions
+        .lock()
+        .map(|sessions| {
+            sessions
+                .iter()
+                .filter_map(|(peer, session)| {
+                    (session.device_id == device_id).then(|| peer.clone())
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    for peer in peers {
+        close_authenticated_session_with_reason(app, &peer, reason, true);
+    }
+}
+
+fn broadcast_space_key_rotation(
+    app: &AppHandle,
+    space_id: Uuid,
+    key_version: u32,
+    space_key: &[u8; crate::pairing::SPACE_KEY_BYTES],
+) -> usize {
+    let runtime = app.state::<PocTransportRuntime>();
+    let payload = serde_json::json!({
+        "spaceId": space_id.to_string(),
+        "keyVersion": key_version,
+        "spaceKey": encode_base64url(space_key),
+        "delivery": "rotation-v1"
+    });
+    let frames = runtime
+        .authenticated_sessions
+        .lock()
+        .map(|mut sessions| {
+            sessions
+                .iter_mut()
+                .filter(|(_, entry)| entry.space_id == space_id)
+                .filter_map(|(peer, entry)| {
+                    entry
+                        .session
+                        .encode_business_frame(
+                            MessageType::SpaceKeyRotated,
+                            Uuid::now_v7().to_string(),
+                            &payload,
+                        )
+                        .ok()
+                        .map(|frame| (peer.clone(), frame))
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    runtime
+        .peers
+        .lock()
+        .map(|peers| {
+            frames
+                .into_iter()
+                .filter(|(peer, frame)| {
+                    peers.get(peer).is_some_and(|sender| {
+                        sender.send(Message::Text(frame.clone().into())).is_ok()
+                    })
+                })
+                .count()
+        })
+        .unwrap_or(0)
+}
+
 fn close_authenticated_session_with_reason(
     app: &AppHandle,
     peer: &str,
@@ -2354,6 +2525,28 @@ mod tests {
             diagnostics.last_rejection,
             Some(PocRejectionReason::InvalidMessage)
         );
+    }
+
+    #[test]
+    fn builds_specific_pre_auth_error_for_invitation_regression_cases() {
+        let shared = include_str!(
+            "../../../../protocol/test-vectors/errors/auth-error-invitation-consumed.valid.json"
+        );
+        let ProtocolEnvelope::PreAuth(shared_envelope) =
+            parse_envelope(shared).expect("shared pairing error should parse")
+        else {
+            panic!("shared pairing error must be pre-authentication");
+        };
+        let frame = pairing_auth_error_frame(PocRejectionReason::PairingInvitationConsumed, 1)
+            .expect("pairing error should serialize");
+        let ProtocolEnvelope::PreAuth(envelope) =
+            parse_envelope(&frame).expect("pairing error should parse")
+        else {
+            panic!("pairing error must remain plaintext before authentication");
+        };
+        assert_eq!(envelope.message_type, MessageType::AuthError);
+        assert_eq!(envelope.payload["code"], "invitationConsumed");
+        assert_eq!(envelope.payload["code"], shared_envelope.payload["code"]);
     }
 
     #[test]
