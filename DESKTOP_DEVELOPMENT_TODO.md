@@ -40,7 +40,7 @@
 ## D4：自动发现、可靠连接与补同步
 
 - [ ] 正式 mDNS 发布/浏览、最近可信地址回退和手动诊断入口。
-- [ ] ConnectionManager：单连接去重、心跳、前后台/网络切换处理、指数退避重连和状态事件。
+- [x] ConnectionManager：单连接去重、心跳、前后台/网络切换处理、指数退避重连和状态事件。
 - [ ] `SYNC_HEADS`、范围请求、`ITEM_BATCH`、ACK、retention gap 与断线续传。
 
 ## D5：桌面产品体验
