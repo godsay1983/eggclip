@@ -91,6 +91,11 @@ export interface PairingConnectionSnapshot {
   lastError: string;
   clientHelloSent: boolean;
   authProofSent: boolean;
+  latestReceivedText: string;
+  latestReceivedSource: string;
+  latestReceivedAt: string;
+  latestReceivedByteLength: number;
+  historyRevision: number;
 }
 
 export enum AuthenticatedLocalSendStatus {
@@ -145,6 +150,11 @@ class PairingConnectionStore {
   private lastError: string = '';
   private clientHelloSent: boolean = false;
   private authProofSent: boolean = false;
+  private latestReceivedText: string = '';
+  private latestReceivedSource: string = '';
+  private latestReceivedAt: string = '';
+  private latestReceivedByteLength: number = 0;
+  private historyRevision: number = 0;
 
   constructor(
     transport: WebSocketTransportService = new WebSocketTransportService(),
@@ -192,7 +202,12 @@ class PairingConnectionStore {
       description: this.description,
       lastError: this.lastError,
       clientHelloSent: this.clientHelloSent,
-      authProofSent: this.authProofSent
+      authProofSent: this.authProofSent,
+      latestReceivedText: this.latestReceivedText,
+      latestReceivedSource: this.latestReceivedSource,
+      latestReceivedAt: this.latestReceivedAt,
+      latestReceivedByteLength: this.latestReceivedByteLength,
+      historyRevision: this.historyRevision
     };
   }
 
@@ -489,6 +504,15 @@ class PairingConnectionStore {
     if (frameResult.envelope.messageType === MessageType.ITEM_LIVE) {
       const received = await this.persistInboundItemLive(frameResult.decryptedPayload, Date.now());
       if (received.status === InboundItemLiveStatus.STORED) {
+        const parsedItem = frameResult.decryptedPayload === undefined ? undefined :
+          new ProtocolParser().parseClipboardItem(JSON.stringify(frameResult.decryptedPayload)).item;
+        if (parsedItem !== undefined) {
+          this.latestReceivedText = parsedItem.content;
+          this.latestReceivedSource = `桌面端 #${shortId(parsedItem.originDeviceId)}`;
+          this.latestReceivedAt = formatClockTime(Date.now());
+          this.latestReceivedByteLength = parsedItem.contentLength;
+        }
+        this.historyRevision += 1;
         this.title = '已安全保存桌面端文本';
         this.description = '内容已使用同步空间密钥加密写入最近记录；请到首页查看并按需复制到本机。';
         this.emit();
@@ -519,6 +543,7 @@ class PairingConnectionStore {
         return this.snapshot();
       }
       this.title = '历史补同步完成';
+      this.historyRevision += 1;
       this.description = `新增 ${batch.storedCount} 条 · 重复 ${batch.duplicateCount} 条 · retention gap ${batch.gapCount} 个`;
       this.emit();
       return this.snapshot();
@@ -1030,6 +1055,14 @@ function nextMessageId(): string {
 
 function shortId(value: string): string {
   return value.length >= 8 ? value.slice(0, 8) : value;
+}
+
+function formatClockTime(milliseconds: number): string {
+  const date = new Date(milliseconds);
+  const hours = date.getHours().toString().padStart(2, '0');
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  const seconds = date.getSeconds().toString().padStart(2, '0');
+  return `${hours}:${minutes}:${seconds}`;
 }
 
 function failedPersist(failureStage: string): PairingCompletionPersistResult {

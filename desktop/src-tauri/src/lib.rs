@@ -89,6 +89,7 @@ pub fn run() {
             transport::get_poc_transport_status,
             transport::load_poc_recent_endpoint,
             transport::send_poc_clipboard_text,
+            transport::send_authenticated_clipboard_text,
             transport::start_poc_transport,
             transport::stop_poc_transport,
         ])

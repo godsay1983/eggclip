@@ -10,7 +10,7 @@
   };
   export let onRead: () => void = () => {};
   export let onCopy: () => void = () => {};
-  export let onSendPoc: () => void = () => {};
+  export let onSend: () => void = () => {};
   export let sendDisabled = false;
   export let sendLabel = "发送到 Harmony";
 
@@ -92,7 +92,7 @@
       class="secondary-action"
       type="button"
       disabled={!current || sendDisabled}
-      on:click={onSendPoc}
+      on:click={onSend}
     >
       {sendLabel}
     </button>

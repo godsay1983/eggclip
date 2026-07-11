@@ -89,6 +89,14 @@ export class OutboundItemBatchService {
     return { ok: true, payload: { items, gaps } };
   }
 
+  async restoreHistoryRecord(record: ClipboardItemRecord): Promise<ClipboardItem | null> {
+    const space = await this.spaces.get(record.item.spaceId);
+    if (space === null || space.encryptedSpaceKeyRef === undefined || space.encryptedSpaceKeyRef.length === 0) {
+      return null;
+    }
+    return await this.restoreRecord(space.encryptedSpaceKeyRef, record);
+  }
+
   private async restoreRecord(ref: string, record: ClipboardItemRecord): Promise<ClipboardItem | null> {
     let envelope: StoredContentEnvelope;
     try {

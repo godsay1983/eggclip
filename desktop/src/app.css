@@ -1020,6 +1020,13 @@ footer {
   align-items: start;
 }
 
+.history-item-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
 .history-item strong {
   font-size: 13px;
 }

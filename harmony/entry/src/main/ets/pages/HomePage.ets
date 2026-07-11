@@ -34,6 +34,7 @@ enum OutboundSendState {
 export struct HomePage {
   private readonly clipboardBridge: ClipboardBridgeService = new ClipboardBridgeService();
   private historyStore: HistoryStore | null = null;
+  private lastPairingHistoryRevision: number = 0;
   private readonly connectionSnapshotListener = (snapshot: PocConnectionSnapshot): void => {
     const previousReceivedText = this.latestReceivedText;
     this.latestReceivedText = snapshot.latestReceivedText;
@@ -54,6 +55,20 @@ export struct HomePage {
     }
   };
   private readonly pairingSnapshotListener = (snapshot: PairingConnectionSnapshot): void => {
+    if (snapshot.latestReceivedText.length > 0) {
+      this.latestReceivedText = snapshot.latestReceivedText;
+      this.latestReceivedPreview = snapshot.latestReceivedText.length > 180 ?
+        `${snapshot.latestReceivedText.slice(0, 180)}…` : snapshot.latestReceivedText;
+      this.latestReceivedSource = snapshot.latestReceivedSource;
+      this.latestReceivedAt = snapshot.latestReceivedAt;
+      this.latestReceivedByteLength = snapshot.latestReceivedByteLength;
+      this.latestReceivedExpanded = false;
+      this.copyStatus = '已收到桌面端文本，可点击复制到本机';
+    }
+    if (snapshot.historyRevision !== this.lastPairingHistoryRevision) {
+      this.lastPairingHistoryRevision = snapshot.historyRevision;
+      this.loadHistorySummary();
+    }
     if (snapshot.state === PairingConnectionState.AUTHENTICATED) {
       this.connectionTitle = snapshot.title;
       this.connectionDescription = '正式认证会话在线；PasteButton 会优先通过加密 ITEM_LIVE 发送。';
@@ -85,16 +100,18 @@ export struct HomePage {
   @State private historyStatus: string = '正在读取本机历史摘要';
   @State private deletingHistoryItemId: string = '';
   @State private clearingHistory: boolean = false;
+  @State private expandedHistoryItemId: string = '';
+  @State private copiedHistoryItemId: string = '';
 
   aboutToAppear(): void {
-    pocConnectionStore.subscribe(this.connectionSnapshotListener);
-    pairingConnectionStore.subscribe(this.pairingSnapshotListener);
     if (this.historyStore === null) {
       const hostContext = this.getUIContext().getHostContext();
       if (hostContext !== undefined) {
         this.historyStore = new HistoryStore(hostContext as common.UIAbilityContext);
       }
     }
+    pocConnectionStore.subscribe(this.connectionSnapshotListener);
+    pairingConnectionStore.subscribe(this.pairingSnapshotListener);
     this.loadHistorySummary();
   }
 
@@ -107,8 +124,15 @@ export struct HomePage {
     Scroll() {
       Column({ space: EggClipSpacing.sectionGap }) {
         this.Header()
-        this.LatestClipboardCard()
-        this.HistoryPlaceholder()
+        GridRow({ columns: { sm: 1, md: 2, lg: 2 }, gutter: { x: EggClipSpacing.sectionGap, y: EggClipSpacing.sectionGap } }) {
+          GridCol({ span: { sm: 1, md: 1, lg: 1 } }) {
+            this.LatestClipboardCard()
+          }
+          GridCol({ span: { sm: 1, md: 1, lg: 1 } }) {
+            this.HistoryPlaceholder()
+          }
+        }
+        .width('100%')
       }
       .width('100%')
       .padding({
@@ -406,7 +430,7 @@ export struct HomePage {
             .fontWeight(FontWeight.Medium)
             .fontColor(EggClipColors.textPrimary)
 
-          Text(item.preview)
+          Text(this.expandedHistoryItemId === item.id && item.text.length > 0 ? item.text : item.preview)
             .width('100%')
             .fontSize(11)
             .fontColor(EggClipColors.textSecondary)
@@ -427,6 +451,29 @@ export struct HomePage {
           .fontColor(EggClipColors.textSecondary)
           .layoutWeight(1)
 
+        if (item.text.length > 180) {
+          Button(this.expandedHistoryItemId === item.id ? '收起' : '详情')
+            .height(28)
+            .fontSize(11)
+            .fontColor(EggClipColors.textSecondary)
+            .backgroundColor(EggClipColors.cardBackground)
+            .borderRadius(14)
+            .onClick(() => {
+              this.expandedHistoryItemId = this.expandedHistoryItemId === item.id ? '' : item.id;
+            })
+        }
+
+        Button(this.copiedHistoryItemId === item.id ? '已复制' : '复制')
+          .height(28)
+          .enabled(item.canCopy)
+          .fontSize(11)
+          .fontColor(EggClipColors.textSecondary)
+          .backgroundColor(EggClipColors.cardBackground)
+          .borderRadius(14)
+          .onClick(() => {
+            this.copyHistoryItem(item.id);
+          })
+
         Button(this.deletingHistoryItemId === item.id ? '删除中' : '删除')
           .height(28)
           .enabled(this.deletingHistoryItemId.length === 0 && !this.clearingHistory)
@@ -445,6 +492,19 @@ export struct HomePage {
     .padding({ left: 12, right: 12, top: 10, bottom: 10 })
     .backgroundColor(EggClipColors.controlBackground)
     .borderRadius(14)
+  }
+
+  private copyHistoryItem(itemId: string): void {
+    if (this.historyStore === null) return;
+    this.historyStore.copyItem(itemId)
+      .then((copied: boolean) => {
+        this.copiedHistoryItemId = copied ? itemId : '';
+        this.historyStatus = copied ? '已复制历史正文到本机剪贴板' : '历史正文不可用，无法复制';
+      })
+      .catch(() => {
+        this.copiedHistoryItemId = '';
+        this.historyStatus = '复制历史正文失败';
+      });
   }
 
   private sendPocClipboardText(text: string): void {

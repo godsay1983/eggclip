@@ -24,7 +24,7 @@ import {
   onPocPeerConnected,
   onPocPeerDisconnected,
   readSystemClipboardText,
-  sendPocClipboardText,
+  sendAuthenticatedClipboardText,
   startPocTransport,
   writeSystemClipboardText,
 } from "$lib/api/shell";
@@ -642,6 +642,18 @@ export const shellSnapshot = {
     }
     await writeSystemClipboardText(text);
   },
+  async copyHistoryItem(itemId: string) {
+    let text: string | null = null;
+    const unsubscribe = snapshot.subscribe((state) => {
+      text = state.history.items.find((item) => item.id === itemId)?.text ?? null;
+    });
+    unsubscribe();
+    if (!text) {
+      return false;
+    }
+    await writeSystemClipboardText(text);
+    return true;
+  },
   async refreshHistorySummary() {
     try {
       await refreshHistorySummaryState();
@@ -713,7 +725,7 @@ export const shellSnapshot = {
       throw error;
     }
   },
-  async sendCurrentToPocPeer(syncEnabled = true) {
+  async sendCurrentToHarmony(syncEnabled = true) {
     if (!syncEnabled) {
       setOutboundStatus({
         state: "paused",
@@ -743,17 +755,17 @@ export const shellSnapshot = {
     try {
       setOutboundStatus({
         state: "pending",
-        title: "正在发送",
-        description: "正在通过当前 POC WebSocket 连接发送文本。",
+        title: "正在安全发送",
+        description: "正在通过正式认证会话发送 ITEM_LIVE。",
       });
-      const sentCount = await sendPocClipboardText(text);
+      const sentCount = await sendAuthenticatedClipboardText(text);
       setOutboundStatus({
         state: sentCount > 0 ? "sent" : "waiting",
         title: sentCount > 0 ? "已发送到远端" : "等待连接",
         description:
           sentCount > 0
-            ? `已向 ${sentCount} 个 POC 连接发送；正式协议接入后会使用 ITEM_LIVE。`
-            : "当前没有已连接设备；可连接后重新发送当前面板文本。",
+            ? `已向 ${sentCount} 个认证设备发送 ITEM_LIVE。`
+            : "当前没有已认证设备；完成正式连接后可重新发送。",
       });
       snapshot.update((state) => ({
         ...state,
@@ -763,7 +775,7 @@ export const shellSnapshot = {
           description:
             sentCount > 0
               ? `已向 ${sentCount} 个连接发送当前文本`
-              : "请先在 Harmony 端或另一桌面实例建立连接",
+              : "请先与 Harmony 建立正式认证连接",
         },
       }));
     } catch (error) {

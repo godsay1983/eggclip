@@ -5,6 +5,7 @@ use tauri::AppHandle;
 use uuid::Uuid;
 
 use crate::{
+    pairing::load_space_key,
     settings::{database_path, now_ms},
     storage::{
         open_database,
@@ -13,6 +14,7 @@ use crate::{
             LocalClipboardPersistInput, LocalIdentityRepository, SettingsRepository,
         },
     },
+    transport::decrypt_local_clipboard_content,
 };
 
 const HISTORY_PREVIEW_LIMIT: u16 = 5;
@@ -28,6 +30,8 @@ pub struct HistoryItemSummary {
     pub source: String,
     pub received_at_ms: u64,
     pub content_length: usize,
+    pub text: Option<String>,
+    pub can_copy: bool,
 }
 
 #[tauri::command]
@@ -45,7 +49,34 @@ pub fn get_clipboard_history_used(app: AppHandle) -> Result<usize, String> {
 #[tauri::command]
 pub fn list_clipboard_history_preview(app: AppHandle) -> Result<Vec<HistoryItemSummary>, String> {
     let path = database_path(&app)?;
-    list_clipboard_history_preview_at_path(&path, HISTORY_PREVIEW_LIMIT)
+    let connection =
+        open_database(&path).map_err(|error| format!("无法打开本地数据库：{error}"))?;
+    let records = ClipboardRepository::new(&connection)
+        .list_recent_all(HISTORY_PREVIEW_LIMIT)
+        .map_err(|error| format!("无法读取历史记录：{error}"))?;
+    #[cfg(windows)]
+    let secret_store = crate::secret_store::WindowsCredentialSecretStore;
+    #[cfg(not(windows))]
+    let secret_store = crate::secret_store::UnavailableSecretStore;
+    Ok(records
+        .iter()
+        .map(|record| {
+            let text = load_space_key(&connection, &secret_store, record.item.space_id)
+                .ok()
+                .and_then(|mut key| {
+                    let result = decrypt_local_clipboard_content(
+                        &key,
+                        record.item.space_id,
+                        &record.encrypted_content,
+                    )
+                    .ok()
+                    .map(|value| value.as_str().to_owned());
+                    key.fill(0);
+                    result
+                });
+            to_history_item_summary_with_text(record, text)
+        })
+        .collect())
 }
 
 #[tauri::command]
@@ -77,6 +108,7 @@ fn get_clipboard_history_used_at_path(path: &Path) -> Result<usize, String> {
         .map_err(|error| format!("无法读取历史数量：{error}"))
 }
 
+#[cfg(test)]
 fn list_clipboard_history_preview_at_path(
     path: &Path,
     limit: u16,
@@ -168,15 +200,38 @@ fn ensure_local_history_space_and_device(
 }
 
 fn to_history_item_summary(record: &ClipboardItemRecord) -> HistoryItemSummary {
+    to_history_item_summary_with_text(record, None)
+}
+
+fn to_history_item_summary_with_text(
+    record: &ClipboardItemRecord,
+    text: Option<String>,
+) -> HistoryItemSummary {
     let device = record.item.origin_device_id.to_string();
     let short_device = device.get(0..8).unwrap_or("unknown");
     HistoryItemSummary {
         id: record.item.item_id.to_string(),
         title: format!("{} 字节文本", record.item.content_length),
-        preview: "内容已保存；正文预览将在密钥解密链路接入后显示".to_string(),
+        preview: text
+            .as_deref()
+            .map(history_preview)
+            .unwrap_or_else(|| "正文暂不可解密；请检查同步空间密钥".to_string()),
         source: format!("来源设备 {short_device}"),
         received_at_ms: record.received_at,
         content_length: record.item.content_length,
+        can_copy: text.is_some(),
+        text,
+    }
+}
+
+fn history_preview(text: &str) -> String {
+    const MAX_CHARS: usize = 180;
+    let mut chars = text.chars();
+    let preview: String = chars.by_ref().take(MAX_CHARS).collect();
+    if chars.next().is_some() {
+        format!("{preview}…")
+    } else {
+        preview
     }
 }
 
@@ -260,7 +315,7 @@ mod tests {
         assert_eq!(items.len(), 2);
         assert_eq!(items[0].id, second_item_id);
         assert_eq!(items[0].content_length, 8);
-        assert!(items[0].preview.contains("密钥解密链路"));
+        assert!(items[0].preview.contains("暂不可解密"));
         assert!(
             delete_clipboard_history_item_at_path(&path, &second_item_id, 1_700_000_001_500)
                 .expect("item should delete")
@@ -313,7 +368,7 @@ mod tests {
 
         assert_eq!(captured.content_length, text.len());
         assert!(captured.title.contains(&text.len().to_string()));
-        assert!(captured.preview.contains("密钥解密链路"));
+        assert!(captured.preview.contains("暂不可解密"));
         assert_eq!(
             get_clipboard_history_used_at_path(&path).expect("history count should reload"),
             1

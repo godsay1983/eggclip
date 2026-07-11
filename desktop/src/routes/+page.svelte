@@ -102,7 +102,7 @@
       outbound={$shellSnapshot.outbound}
       onRead={() => shellSnapshot.readLocalClipboard()}
       onCopy={() => shellSnapshot.copyCurrentToClipboard()}
-      onSendPoc={() => shellSnapshot.sendCurrentToPocPeer($settingsSnapshot.settings.syncEnabled)}
+      onSend={() => shellSnapshot.sendCurrentToHarmony($settingsSnapshot.settings.syncEnabled)}
       sendDisabled={!$settingsSnapshot.settings.syncEnabled}
       sendLabel={$settingsSnapshot.settings.syncEnabled ? "发送到 Harmony" : "同步已暂停"}
     />
@@ -115,6 +115,7 @@
       historyEnabled={$settingsSnapshot.settings.historyEnabled && $settingsSnapshot.settings.historyLimit > 0}
       onClear={() => shellSnapshot.clearHistory()}
       onDelete={(itemId) => shellSnapshot.deleteHistoryItem(itemId)}
+      onCopy={(itemId) => shellSnapshot.copyHistoryItem(itemId)}
     />
   </div>
 

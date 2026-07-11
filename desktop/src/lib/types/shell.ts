@@ -55,6 +55,8 @@ export interface HistoryItemSummary {
   source: string;
   receivedAt: string;
   contentLength: number;
+  text: string | null;
+  canCopy: boolean;
 }
 
 export type PocRejectionReason =

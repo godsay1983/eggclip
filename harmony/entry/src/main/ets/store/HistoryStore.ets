@@ -11,6 +11,8 @@ import {
 } from '../data/repositories/RdbRepositories';
 import { ClipboardItemRecord } from '../data/repositories/RepositoryCommands';
 import { LocalClipboardPersistenceService } from '../services/sync/LocalClipboardPersistenceService';
+import { OutboundItemBatchService } from '../services/sync/OutboundItemBatchService';
+import { ClipboardBridgeService } from '../services/clipboard/ClipboardBridgeService';
 
 const HISTORY_PREVIEW_LIMIT: number = 5;
 const LOCAL_HISTORY_SPACE_ID: string = '018ff6ef-c394-7d08-8b99-4b7d10f2767a';
@@ -37,6 +39,9 @@ export interface HistoryPreviewItem {
   preview: string;
   source: string;
   receivedAt: string;
+  text: string;
+  canCopy: boolean;
+  contentLength: number;
 }
 
 export interface LocalBroadcastPolicySnapshot {
@@ -48,6 +53,8 @@ export class HistoryStore {
   private readonly clipboardRepository: ClipboardRdbRepository;
   private readonly settingsRepository: SettingsRdbRepository;
   private readonly persistenceService: LocalClipboardPersistenceService;
+  private readonly historyContentService: OutboundItemBatchService;
+  private readonly clipboardBridge: ClipboardBridgeService = new ClipboardBridgeService();
   private currentState: HistoryStoreState = HistoryStoreState.IDLE;
   private currentUsed: number = 0;
   private currentLimit: number = defaultAppSettings().historyLimit;
@@ -58,6 +65,7 @@ export class HistoryStore {
     this.clipboardRepository = new ClipboardRdbRepository(context);
     this.settingsRepository = new SettingsRdbRepository(context);
     this.persistenceService = new LocalClipboardPersistenceService(context);
+    this.historyContentService = new OutboundItemBatchService(context);
   }
 
   snapshot(): HistoryStoreSnapshot {
@@ -78,9 +86,12 @@ export class HistoryStore {
       this.currentLimit = (settings ?? defaultAppSettings()).historyLimit;
       this.currentUsed = await this.clipboardRepository.countAllActive();
       const records = await this.clipboardRepository.listRecentAll(HISTORY_PREVIEW_LIMIT);
-      this.currentItems = records.map((record: ClipboardItemRecord): HistoryPreviewItem => {
-        return toHistoryPreviewItem(record);
-      });
+      const items: HistoryPreviewItem[] = [];
+      for (let index = 0; index < records.length; index += 1) {
+        const restored = await this.historyContentService.restoreHistoryRecord(records[index]);
+        items.push(toHistoryPreviewItem(records[index], restored?.content ?? ''));
+      }
+      this.currentItems = items;
       this.currentState = HistoryStoreState.READY;
     } catch (_) {
       this.currentState = HistoryStoreState.ERROR;
@@ -150,6 +161,13 @@ export class HistoryStore {
         '已读取纯文本并更新本机历史；自动同步已关闭，未发送到桌面端'
     };
   }
+
+  async copyItem(itemId: string): Promise<boolean> {
+    const item = this.currentItems.find((candidate: HistoryPreviewItem): boolean => candidate.id === itemId);
+    if (item === undefined || !item.canCopy) return false;
+    const result = await this.clipboardBridge.writePlainTextByUserAction(item.text);
+    return result.ok;
+  }
 }
 
 export function createInitialHistorySnapshot(): HistoryStoreSnapshot {
@@ -162,14 +180,21 @@ export function createInitialHistorySnapshot(): HistoryStoreSnapshot {
   };
 }
 
-function toHistoryPreviewItem(record: ClipboardItemRecord): HistoryPreviewItem {
+function toHistoryPreviewItem(record: ClipboardItemRecord, text: string): HistoryPreviewItem {
   return {
     id: record.item.itemId,
     title: `${record.item.contentLength} 字节文本`,
-    preview: '内容已保存；正文预览将在密钥解密链路接入后显示',
+    preview: text.length > 0 ? trimPreview(text) : '正文暂不可解密；请检查同步空间密钥',
     source: `来源设备 ${record.item.originDeviceId.slice(0, 8)}`,
-    receivedAt: formatTime(record.receivedAt)
+    receivedAt: formatTime(record.receivedAt),
+    text,
+    canCopy: text.length > 0,
+    contentLength: record.item.contentLength
   };
+}
+
+function trimPreview(text: string): string {
+  return text.length > 180 ? `${text.slice(0, 180)}…` : text;
 }
 
 function formatTime(milliseconds: number): string {

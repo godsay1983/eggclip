@@ -78,6 +78,8 @@ interface HistoryItemSummaryDto {
   source: string;
   receivedAtMs: number;
   contentLength: number;
+  text: string | null;
+  canCopy: boolean;
 }
 
 interface PocRecentEndpointDto {
@@ -204,6 +206,10 @@ export async function listClipboardHistoryPreview(): Promise<HistoryItemSummary[
 
 export async function sendPocClipboardText(text: string): Promise<number> {
   return invoke<number>("send_poc_clipboard_text", { text });
+}
+
+export async function sendAuthenticatedClipboardText(text: string): Promise<number> {
+  return invoke<number>("send_authenticated_clipboard_text", { text });
 }
 
 export async function connectPocPeer(host: string, port: number): Promise<PocRecentEndpoint> {
@@ -458,6 +464,8 @@ function toHistoryItemSummary(item: HistoryItemSummaryDto): HistoryItemSummary {
       second: "2-digit",
     }),
     contentLength: item.contentLength,
+    text: item.text,
+    canCopy: item.canCopy,
   };
 }
 

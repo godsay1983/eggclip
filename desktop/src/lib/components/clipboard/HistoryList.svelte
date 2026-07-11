@@ -5,8 +5,11 @@
   export let historyEnabled = true;
   export let onClear: () => Promise<void> | void = () => {};
   export let onDelete: (itemId: string) => Promise<void> | void = () => {};
+  export let onCopy: (itemId: string) => Promise<boolean> | boolean = () => false;
   let clearing = false;
   let deletingItemId: string | null = null;
+  let expandedItemId: string | null = null;
+  let copiedItemId: string | null = null;
 
   async function clearHistory() {
     clearing = true;
@@ -14,6 +17,15 @@
       await onClear();
     } finally {
       clearing = false;
+    }
+  }
+
+  async function copyItem(itemId: string) {
+    if (await onCopy(itemId)) {
+      copiedItemId = itemId;
+      window.setTimeout(() => {
+        if (copiedItemId === itemId) copiedItemId = null;
+      }, 1600);
     }
   }
 
@@ -49,16 +61,25 @@
           <div class="history-item-copy">
             <div>
               <strong>{item.title}</strong>
-              <p>{item.preview}</p>
+              <p>{expandedItemId === item.id && item.text ? item.text : item.preview}</p>
             </div>
-            <button
-              class="text-button danger"
-              type="button"
-              disabled={deletingItemId === item.id}
-              on:click={() => deleteItem(item.id)}
-            >
-              {deletingItemId === item.id ? "删除中" : "删除"}
-            </button>
+            <div class="history-item-actions">
+              {#if item.text && item.text !== item.preview}
+                <button class="text-button" type="button" on:click={() => {
+                  expandedItemId = expandedItemId === item.id ? null : item.id;
+                }}>{expandedItemId === item.id ? "收起" : "详情"}</button>
+              {/if}
+              <button class="text-button" type="button" disabled={!item.canCopy}
+                on:click={() => copyItem(item.id)}>{copiedItemId === item.id ? "已复制" : "复制"}</button>
+              <button
+                class="text-button danger"
+                type="button"
+                disabled={deletingItemId === item.id}
+                on:click={() => deleteItem(item.id)}
+              >
+                {deletingItemId === item.id ? "删除中" : "删除"}
+              </button>
+            </div>
           </div>
           <span class="metadata">{item.source} · {item.receivedAt}</span>
         </article>
@@ -70,7 +91,7 @@
       <strong>{historyEnabled ? "还没有本机历史" : "历史保存已关闭"}</strong>
       <p>
         {historyEnabled
-          ? "点击“读取本机剪贴板”或接收桌面实时文本后，会在这里显示最近记录的元数据；正文预览等待加密/解密链路接入。"
+          ? "读取或接收纯文本后会在这里显示正文预览；可展开详情并复制回系统剪贴板。"
           : "当前只同步实时剪贴板，不写入本机历史。可以在设置中重新开启保存历史。"}
       </p>
       <p class="empty-state-note">

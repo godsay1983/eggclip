@@ -238,7 +238,7 @@ struct AuthenticatedLocalBroadcastEvent {
     sent_peers: usize,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 enum AuthenticatedLocalBroadcastStatus {
     Sent,
@@ -614,6 +614,26 @@ fn persist_and_broadcast_authenticated_local_clipboard(
     Ok((status, sent_peers))
 }
 
+#[tauri::command]
+pub fn send_authenticated_clipboard_text(app: AppHandle, text: String) -> Result<usize, String> {
+    let item = ClipboardText::parse(text).map_err(|error| error.to_string())?;
+    let (status, sent_peers) = persist_and_broadcast_authenticated_local_clipboard(&app, &item)
+        .map_err(|_| "无法通过正式认证会话发送文本".to_string())?;
+    if status != AuthenticatedLocalBroadcastStatus::Sent || sent_peers == 0 {
+        return Err(match status {
+            AuthenticatedLocalBroadcastStatus::SkippedNoAuthenticatedPeer => {
+                "当前没有已认证的 Harmony 设备".to_string()
+            }
+            AuthenticatedLocalBroadcastStatus::SkippedAmbiguousSpace => {
+                "存在多个认证同步空间，无法确定发送目标".to_string()
+            }
+            AuthenticatedLocalBroadcastStatus::SkippedByPolicy => "同步策略已暂停发送".to_string(),
+            _ => "正式认证会话发送失败".to_string(),
+        });
+    }
+    Ok(sent_peers)
+}
+
 fn persist_local_history_fallback(app: &AppHandle, item: &ClipboardText) -> Result<(), ()> {
     let path = database_path(app).map_err(|_| ())?;
     let captured_at = now_ms().map_err(|_| ())?;
@@ -666,7 +686,7 @@ struct LocalEncryptedClipboardContent {
     tag: String,
 }
 
-fn decrypt_local_clipboard_content(
+pub(crate) fn decrypt_local_clipboard_content(
     space_key: &[u8; 32],
     space_id: Uuid,
     encrypted_content: &[u8],
