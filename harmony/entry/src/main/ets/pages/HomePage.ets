@@ -10,6 +10,10 @@ import {
   PocConnectionSnapshot,
   pocConnectionStore
 } from '../store/PocConnectionStore';
+import {
+  AuthenticatedLocalSendStatus,
+  pairingConnectionStore
+} from '../store/PairingConnectionStore';
 import { EggClipColors } from '../theme/Colors';
 import { EggClipSpacing } from '../theme/Spacing';
 import { EggClipTypography } from '../theme/Typography';
@@ -494,6 +498,46 @@ export struct HomePage {
   }
 
   private persistLocalHistoryThenSend(text: string): void {
+    pairingConnectionStore.persistAndSendAuthenticatedLocalText(text)
+      .then((result) => {
+        if (result.status === AuthenticatedLocalSendStatus.SENT) {
+          this.pasteStatus = '已通过认证加密会话发送到桌面端';
+          this.setOutboundStatus(
+            OutboundSendState.SENT,
+            '已发送到桌面端',
+            '本机事务已确认，并已通过正式加密 ITEM_LIVE 会话发送。'
+          );
+          this.loadHistorySummary();
+          return;
+        }
+        if (result.status === AuthenticatedLocalSendStatus.NOT_READY) {
+          this.persistLocalHistoryThenSendPocFallback(text);
+          return;
+        }
+        if (result.status === AuthenticatedLocalSendStatus.PAUSED) {
+          this.captureLocalHistoryText(text)
+            .then(() => {
+              this.pasteStatus = '文本已保存到本机历史；同步当前已暂停';
+              this.setOutboundStatus(OutboundSendState.PAUSED, '同步已暂停', '本机记录已保存，当前策略禁止发送到桌面端。');
+            });
+          return;
+        }
+        this.captureLocalHistoryText(text)
+          .then(() => {
+            this.pasteStatus = '正式同步处理失败，文本已保存到本机历史';
+            this.setOutboundStatus(OutboundSendState.FAILED, '正式同步处理失败', '本机记录已保留；请检查可信设备和 HUKS 空间密钥状态。');
+          });
+      })
+      .catch(() => {
+        this.captureLocalHistoryText(text)
+          .then(() => {
+            this.pasteStatus = '正式同步处理失败，文本已保存到本机历史';
+            this.setOutboundStatus(OutboundSendState.FAILED, '正式同步处理失败', '本机记录已保留；请检查可信设备和 HUKS 空间密钥状态。');
+          });
+      });
+  }
+
+  private persistLocalHistoryThenSendPocFallback(text: string): void {
     this.captureLocalHistoryText(text)
       .then((saved: boolean) => {
         if (saved) {
