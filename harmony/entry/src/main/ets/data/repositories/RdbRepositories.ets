@@ -30,8 +30,15 @@ import {
 } from './RepositoryCommands';
 
 const RECENT_POC_ENDPOINT_KEY: string = 'pocRecentEndpoint';
+const TRUSTED_CONNECTION_ENDPOINT_KEY: string = 'trustedConnectionEndpoint';
 
 export interface RecentPocEndpointRecord {
+  host: string;
+  port: number;
+  connectedAt: number;
+}
+
+export interface TrustedConnectionEndpointRecord {
   host: string;
   port: number;
   connectedAt: number;
@@ -447,6 +454,33 @@ export class SettingsRdbRepository {
       resultSet.close();
     }
   }
+
+  async saveTrustedConnectionEndpoint(record: TrustedConnectionEndpointRecord): Promise<void> {
+    if (!isValidTrustedConnectionEndpoint(record)) {
+      throw new Error('Invalid trusted connection endpoint');
+    }
+    const store = await Database.getStore(this.context);
+    await store.executeSql(
+      `INSERT INTO app_metadata(key, value, updated_at) VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      this.runner.bindArgs([TRUSTED_CONNECTION_ENDPOINT_KEY, JSON.stringify(record), record.connectedAt])
+    );
+  }
+
+  async loadTrustedConnectionEndpoint(): Promise<TrustedConnectionEndpointRecord | null> {
+    const store = await Database.getStore(this.context);
+    const resultSet = await store.querySql(
+      'SELECT value FROM app_metadata WHERE key = ? LIMIT 1',
+      this.runner.bindArgs([TRUSTED_CONNECTION_ENDPOINT_KEY])
+    );
+    try {
+      if (!resultSet.goToFirstRow()) return null;
+      const parsed = JSON.parse(getString(resultSet, 'value')) as TrustedConnectionEndpointRecord;
+      return isValidTrustedConnectionEndpoint(parsed) ? parsed : null;
+    } finally {
+      resultSet.close();
+    }
+  }
 }
 
 function readSpaceRecord(resultSet: relationalStore.ResultSet): SpaceRecord {
@@ -551,6 +585,16 @@ function getBlob(resultSet: relationalStore.ResultSet, columnName: string): Uint
 }
 
 function isValidRecentPocEndpoint(record: RecentPocEndpointRecord): boolean {
+  if (!isValidIpv4Host(record.host)) {
+    return false;
+  }
+  if (!Number.isInteger(record.port) || record.port < 1 || record.port > 65535) {
+    return false;
+  }
+  return Number.isSafeInteger(record.connectedAt) && record.connectedAt >= 0;
+}
+
+function isValidTrustedConnectionEndpoint(record: TrustedConnectionEndpointRecord): boolean {
   if (!isValidIpv4Host(record.host)) {
     return false;
   }

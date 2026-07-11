@@ -1,6 +1,10 @@
 import { common } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
-import { PairingRdbRepository } from '../data/repositories/RdbRepositories';
+import {
+  PairingRdbRepository,
+  SettingsRdbRepository,
+  TrustedConnectionEndpointRecord
+} from '../data/repositories/RdbRepositories';
 import { LocalIdentityRdbRepository } from '../data/repositories/LocalIdentityRdbRepository';
 import {
   DeviceConnectionState,
@@ -44,7 +48,7 @@ import {
   PairingHandshakeDraftService
 } from '../services/pairing/PairingHandshakeDraftService';
 import { X25519KeyAgreementService } from '../services/crypto/X25519KeyAgreementService';
-import { TrustedDeviceReconnectTarget } from './TrustedDeviceStore';
+import { TrustedDeviceReconnectTarget, TrustedDeviceStore } from './TrustedDeviceStore';
 
 enum ConnectionHandshakePurpose {
   PAIRING = 'pairing',
@@ -141,6 +145,7 @@ class PairingConnectionStore {
     if (this.identityService === null) {
       this.identityService = new LocalDeviceIdentityService(new LocalIdentityRdbRepository(context));
     }
+    this.restoreTrustedReconnect(context);
   }
 
   subscribe(listener: PairingConnectionSnapshotListener): void {
@@ -416,6 +421,9 @@ class PairingConnectionStore {
         ? '已恢复正式协议会话，无需重新配对或下发空间密钥。'
         : '已创建正式协议会话，正在等待桌面端下发加密空间密钥。';
       this.emit();
+      if (this.connectionPurpose === ConnectionHandshakePurpose.TRUSTED_RECONNECT) {
+        this.rememberTrustedEndpoint();
+      }
       return this.snapshot();
     }
 
@@ -429,6 +437,15 @@ class PairingConnectionStore {
       this.title = '配对已保存';
       this.description = '已保存桌面端可信设备和同步空间密钥引用；后续将接入正式剪贴板同步。';
       this.emit();
+      if (this.pendingTrustDraft !== null && this.pendingTrustServerHello !== null) {
+        this.reconnectTarget = {
+          spaceId: this.pendingTrustDraft.spaceId,
+          spaceKeyVersion: this.pendingTrustDraft.spaceKeyVersion,
+          deviceId: this.pendingTrustServerHello.deviceId,
+          identityPublicKey: this.pendingTrustServerHello.identityPublicKey
+        };
+        this.rememberTrustedEndpoint();
+      }
       return this.snapshot();
     }
 
@@ -567,6 +584,41 @@ class PairingConnectionStore {
         this.scheduleTrustedReconnect();
       });
     }, delay);
+  }
+
+  private restoreTrustedReconnect(context: common.Context): void {
+    if (this.reconnectTarget !== null || this.manualPort !== '0') return;
+    const devices = new TrustedDeviceStore(context);
+    const settings = new SettingsRdbRepository(context);
+    devices.loadFirstReconnectTarget()
+      .then((target: TrustedDeviceReconnectTarget | null) => {
+        if (target === null) return;
+        settings.loadTrustedConnectionEndpoint().then((endpoint: TrustedConnectionEndpointRecord | null) => {
+          if (endpoint === null) return;
+          this.reconnectTarget = target;
+          this.manualHost = endpoint.host;
+          this.manualPort = `${endpoint.port}`;
+          this.endpointLabel = `${endpoint.host}:${endpoint.port}`;
+          this.emit();
+          if (this.foreground) this.scheduleTrustedReconnect(0);
+        }).catch(() => {
+        });
+      })
+      .catch(() => {
+      });
+  }
+
+  private rememberTrustedEndpoint(): void {
+    if (this.context === null) return;
+    const port = Number(this.manualPort);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return;
+    const record: TrustedConnectionEndpointRecord = {
+      host: this.manualHost,
+      port,
+      connectedAt: Date.now()
+    };
+    new SettingsRdbRepository(this.context).saveTrustedConnectionEndpoint(record).catch(() => {
+    });
   }
 
   private clearReconnectTimer(): void {
