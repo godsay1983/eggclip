@@ -382,6 +382,7 @@ harmony/entry/src/main/ets/
 ### 补同步
 
 - [ ] 发送本地 `SYNC_HEADS`。
+  - [x] ArkTS `ProtocolParser` 已新增 `SYNC_HEADS` payload 校验：限制 origin 数量、校验 UUID 与非负安全序号，并要求每个 `minimumAvailable` 存在且不大于对应 head；网络发送与 RDB head 汇总待接入。
 - [ ] 按来源设备和 `originSeq` 请求缺失范围。
 - [ ] 处理 `ITEM_BATCH`、ACK 和 retention gap。
 - [ ] batch 持久化成功后更新 sync head。

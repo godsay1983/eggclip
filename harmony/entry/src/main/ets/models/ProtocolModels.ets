@@ -172,6 +172,13 @@ export interface SyncHeadsPayload {
   minimumAvailable: Record<string, number>;
 }
 
+export interface SyncHeadsPayloadResult {
+  ok: boolean;
+  payload?: SyncHeadsPayload;
+  error?: ProtocolErrorCode;
+  field?: string;
+}
+
 export type JsonValue = Object | string | number | boolean | null;
 export type JsonObject = Record<string, JsonValue>;
 
@@ -376,6 +383,24 @@ export class ProtocolParser {
     };
 
     return validateClipboardItem(item);
+  }
+
+  parseSyncHeadsPayload(value: JsonValue | undefined): SyncHeadsPayloadResult {
+    if (value === undefined || !isJsonObject(value)) {
+      return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'payload' };
+    }
+    const object = value as JsonObject;
+    const heads = parseSequenceMap(object.heads);
+    if (heads === null) return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'heads' };
+    const minimumAvailable = parseSequenceMap(object.minimumAvailable);
+    if (minimumAvailable === null) return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'minimumAvailable' };
+    for (const deviceId of Object.keys(heads)) {
+      const minimum = minimumAvailable[deviceId];
+      if (minimum === undefined || minimum > heads[deviceId]) {
+        return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'minimumAvailable' };
+      }
+    }
+    return { ok: true, payload: { heads, minimumAvailable } };
   }
 
   private rejectMixedAuth(messageType: MessageType): ProtocolParseResult {
@@ -633,6 +658,20 @@ function parseCiphertext(value: JsonValue | undefined): CiphertextFrame | null {
     return null;
   }
   return ciphertext;
+}
+
+function parseSequenceMap(value: JsonValue | undefined): Record<string, number> | null {
+  if (!isJsonObject(value)) return null;
+  const object = value as JsonObject;
+  const result: Record<string, number> = {};
+  const keys = Object.keys(object);
+  if (keys.length > PROTOCOL_MAX_BATCH_ITEMS) return null;
+  for (const key of keys) {
+    const sequence = object[key];
+    if (!isUuid(key) || typeof sequence !== 'number' || !isNonNegativeSafeInteger(sequence)) return null;
+    result[key] = sequence;
+  }
+  return result;
 }
 
 function validateClipboardItem(item: ClipboardItem): ClipboardItemResult {
