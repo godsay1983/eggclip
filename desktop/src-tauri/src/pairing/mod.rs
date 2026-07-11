@@ -32,7 +32,7 @@ use crate::{
             PairingInvitationState, SettingsRepository, SpaceRecord, SpaceRepository,
         },
     },
-    sync::{DeviceTrustState, Space, SpaceState},
+    sync::{content_hmac_digest, DeviceTrustState, Space, SpaceState},
 };
 
 pub const SPACE_KEY_BYTES: usize = 32;
@@ -43,6 +43,7 @@ pub const DEFAULT_SPACE_DISPLAY_NAME: &str = "默认空间";
 const PAIRING_INVITATION_EXPIRY_SWEEP_SECONDS: u64 = 60;
 const PAIRING_INVITATION_QR_MIN_DIMENSIONS: u32 = 224;
 pub const ACTIVE_SYNC_SPACE_ID_KEY: &str = "activeSyncSpaceId";
+pub const SPACE_HMAC_DIAGNOSTIC_TEXT: &str = "EggClip HUKS space key hmac self-test v1";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -52,6 +53,14 @@ pub struct SyncSpaceSummary {
     pub key_version: u32,
     pub space_key_ref: String,
     pub created_at_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpaceHmacDiagnosticSummary {
+    pub space_id: String,
+    pub space_display_name: String,
+    pub confirmation_code: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -253,6 +262,20 @@ pub fn select_active_sync_space(
     let connection = open_database(path).map_err(|error| format!("无法打开本地数据库：{error}"))?;
     select_active_sync_space_in_database(&connection, &space_id, now_ms()?)
         .map_err(|error| format!("无法选择活动同步空间：{error}"))
+}
+
+#[tauri::command]
+pub fn run_space_hmac_diagnostic(
+    app: tauri::AppHandle,
+) -> Result<SpaceHmacDiagnosticSummary, String> {
+    let path = database_path(&app)?;
+    let connection = open_database(path).map_err(|error| format!("无法打开本地数据库：{error}"))?;
+    #[cfg(windows)]
+    let store = crate::secret_store::WindowsCredentialSecretStore;
+    #[cfg(not(windows))]
+    let store = crate::secret_store::UnavailableSecretStore;
+    run_space_hmac_diagnostic_in_database(&connection, &store, now_ms()?)
+        .map_err(|error| format!("无法运行空间密钥 HMAC 诊断：{error}"))
 }
 
 #[tauri::command]
@@ -529,6 +552,42 @@ pub fn select_active_sync_space_in_database(
         .into_iter()
         .find(|space| space.space_id == space_id.to_string())
         .ok_or(PairingError::MissingSpace)
+}
+
+pub fn run_space_hmac_diagnostic_in_database<S: SecretBytesStore>(
+    connection: &Connection,
+    secret_store: &S,
+    updated_at: u64,
+) -> Result<SpaceHmacDiagnosticSummary, PairingError> {
+    let space_id =
+        resolve_active_sync_space(connection, updated_at)?.ok_or(PairingError::MissingSpace)?;
+    let space = SpaceRepository::new(connection)
+        .get(space_id)
+        .map_err(|error| PairingError::Database(error.to_string()))?
+        .ok_or(PairingError::MissingSpace)?;
+    let mut space_key = load_space_key(connection, secret_store, space_id)?;
+    let digest = content_hmac_digest(&space_key, SPACE_HMAC_DIAGNOSTIC_TEXT)
+        .map_err(|error| PairingError::Serialize(error.to_string()));
+    space_key.fill(0);
+    let digest = digest?;
+    let confirmation_code = hmac_confirmation_code(&digest)?;
+    Ok(SpaceHmacDiagnosticSummary {
+        space_id: space_id.to_string(),
+        space_display_name: space.space.display_name,
+        confirmation_code,
+    })
+}
+
+pub fn hmac_confirmation_code(digest_base64url: &str) -> Result<String, PairingError> {
+    let digest = decode_base64url(digest_base64url)
+        .map_err(|error| PairingError::Serialize(error.to_string()))?;
+    if digest.len() != 32 {
+        return Err(PairingError::Serialize(
+            "invalid HMAC-SHA-256 digest length".to_string(),
+        ));
+    }
+    let prefix = u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]]);
+    Ok(format!("{:06}", prefix % 1_000_000))
 }
 
 fn selectable_space_ids(connection: &Connection) -> Result<Vec<Uuid>, PairingError> {
@@ -1276,6 +1335,48 @@ mod tests {
                 .map(|value| value.to_string()),
             Some(selected.space_id)
         );
+    }
+
+    #[test]
+    fn space_hmac_diagnostic_matches_shared_confirmation_vector() {
+        let vector: serde_json::Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../protocol/test-vectors/crypto/hmac-sha256.valid.json"
+        )))
+        .expect("HMAC vector should parse");
+        let key = decode_base64url(vector["key"].as_str().expect("vector key should exist"))
+            .expect("vector key should decode");
+        let expected_code = vector["confirmationCode"]
+            .as_str()
+            .expect("confirmation code should exist");
+        assert_eq!(
+            hmac_confirmation_code(
+                vector["digest"]
+                    .as_str()
+                    .expect("vector digest should exist")
+            )
+            .expect("digest code should derive"),
+            expected_code
+        );
+
+        let mut connection = open_in_memory_database().expect("database should open");
+        let mut store = MemorySecretStore::default();
+        let space = create_sync_space(
+            &mut connection,
+            &mut store,
+            "跨端诊断空间",
+            1_700_000_000_000,
+        )
+        .expect("space should be created");
+        store
+            .save_secret(&space.space_key_ref, &key)
+            .expect("vector key should replace random test key");
+
+        let diagnostic =
+            run_space_hmac_diagnostic_in_database(&connection, &store, 1_700_000_000_100)
+                .expect("diagnostic should run");
+        assert_eq!(diagnostic.space_id, space.space_id);
+        assert_eq!(diagnostic.confirmation_code, expected_code);
     }
 
     #[test]

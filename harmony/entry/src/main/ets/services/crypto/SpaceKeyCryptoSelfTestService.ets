@@ -1,4 +1,5 @@
 import {
+  decodeBase64Url,
   encodeBase64Url
 } from './CryptoVectorService';
 import {
@@ -23,6 +24,7 @@ export enum SpaceKeyCryptoSelfTestError {
 
 export interface SpaceKeyCryptoSelfTestResult {
   ok: boolean;
+  hmacConfirmationCode?: string;
   error?: SpaceKeyCryptoSelfTestError;
   field?: string;
 }
@@ -105,12 +107,29 @@ export class SpaceKeyCryptoSelfTestService {
       if (!digest.ok || digest.digest === undefined || digest.digest.length === 0) {
         return failed(SpaceKeyCryptoSelfTestError.HMAC_FAILED, digest.field ?? 'hmacSha256Base64Url');
       }
+      const confirmationCode = hmacConfirmationCode(digest.digest);
+      if (confirmationCode === null) {
+        return failed(SpaceKeyCryptoSelfTestError.HMAC_FAILED, 'hmacConfirmationCode');
+      }
+      return {
+        ok: true,
+        hmacConfirmationCode: confirmationCode
+      };
     }
 
     return {
       ok: true
     };
   }
+}
+
+export function hmacConfirmationCode(digestBase64Url: string): string | null {
+  const digest = decodeBase64Url(digestBase64Url);
+  if (digest === null || digest.length !== 32) {
+    return null;
+  }
+  const prefix = (((digest[0] << 24) >>> 0) + (digest[1] << 16) + (digest[2] << 8) + digest[3]) >>> 0;
+  return `${prefix % 1000000}`.padStart(6, '0');
 }
 
 function failed(error: SpaceKeyCryptoSelfTestError, field: string): SpaceKeyCryptoSelfTestResult {

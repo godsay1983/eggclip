@@ -82,6 +82,7 @@ pub fn run() {
             pairing::ensure_default_sync_space,
             pairing::list_local_sync_spaces,
             pairing::load_active_sync_space_id,
+            pairing::run_space_hmac_diagnostic,
             pairing::select_active_sync_space,
             identity::load_local_device_identity,
             settings::load_app_settings,

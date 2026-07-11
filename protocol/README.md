@@ -298,7 +298,7 @@ test-vectors/
 ```
 
 Current fixtures include schema/parsing JSON and deterministic byte-for-byte
-crypto vectors for Ed25519, X25519, HKDF-SHA-256, AES-256-GCM, directional
+crypto vectors for Ed25519, X25519, HMAC-SHA-256, HKDF-SHA-256, AES-256-GCM, directional
 session keys, nonce construction and replay counter rejection. These are public
 or synthetic test-only vectors; they are not production keys, invitations or
 clipboard content.

@@ -10,6 +10,7 @@ const output = join(root, "..", "harmony", "entry", "src", "test", "ProtocolCryp
 const fixtures = [
   ["ED25519_SIGNATURE_VECTOR", "ed25519-signature.valid.json"],
   ["X25519_SHARED_SECRET_VECTOR", "x25519-shared-secret.valid.json"],
+  ["HMAC_SHA256_VECTOR", "hmac-sha256.valid.json"],
   ["HKDF_SHA256_VECTOR", "hkdf-sha256.valid.json"],
   ["AES_256_GCM_VECTOR", "aes-256-gcm.valid.json"],
   ["SESSION_KEYS_VECTOR", "session-keys.valid.json"],
@@ -30,5 +31,5 @@ for (const [name, fileName] of fixtures) {
   lines.push("");
 }
 
-writeFileSync(output, `${lines.join("\n")}\n`, "utf8");
+writeFileSync(output, `${lines.join("\n").trimEnd()}\n`, "utf8");
 console.log(`Wrote ${output}`);

@@ -3,6 +3,7 @@ import { ClipboardBridgeService } from '../main/ets/services/clipboard/Clipboard
 import {
   AES_256_GCM_VECTOR,
   ED25519_SIGNATURE_VECTOR,
+  HMAC_SHA256_VECTOR,
   HKDF_SHA256_VECTOR,
   REPLAY_COUNTER_VECTOR,
   SESSION_KEYS_VECTOR,
@@ -90,7 +91,8 @@ import {
   SpaceKeyAesGcmGateway,
   SpaceKeyCryptoSelfTestError,
   SpaceKeyCryptoSelfTestService,
-  SpaceKeyRefProvider
+  SpaceKeyRefProvider,
+  hmacConfirmationCode
 } from '../main/ets/services/crypto/SpaceKeyCryptoSelfTestService';
 import {
   PairingInvitationError,
@@ -732,6 +734,13 @@ export default function localUnitTest() {
       expect(crypto.decryptCalls).assertEqual(1);
       expect(JSON.stringify(result).indexOf('EggClip')).assertEqual(-1);
       expect(JSON.stringify(result).indexOf('cipher-body')).assertEqual(-1);
+    });
+
+    it('derivesCrossPlatformHmacConfirmationCodeFromSharedVector', 0, () => {
+      const vector = JSON.parse(HMAC_SHA256_VECTOR) as Record<string, string>;
+
+      expect(hmacConfirmationCode(vector.digest)).assertEqual(vector.confirmationCode);
+      expect(hmacConfirmationCode('AA')).assertEqual(null);
     });
 
     it('rejectsSpaceKeyHuksAesGcmSelfTestWhenKeyIsMissingOrPlaintextDiffers', 0, async () => {

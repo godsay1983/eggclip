@@ -298,6 +298,26 @@
               </article>
             {/each}
           </div>
+          <div class="invitation-card">
+            <strong>跨端 HMAC 确认</strong>
+            <p>使用当前同步空间密钥计算固定诊断文本；只显示六位确认码，不显示密钥或完整摘要。</p>
+            {#if $shellSnapshot.syncSpace.hmacDiagnostic}
+              <div class="confirmation-code">
+                <span>HMAC 确认码（不是配对码）</span>
+                <strong>{$shellSnapshot.syncSpace.hmacDiagnostic.confirmationCode}</strong>
+              </div>
+              <p>同步空间：{$shellSnapshot.syncSpace.hmacDiagnostic.spaceDisplayName}</p>
+              <p>在鸿蒙端运行“自检空间密钥与摘要”，两端确认码一致即表示 HUKS HMAC 互通。</p>
+            {/if}
+            <button
+              class="secondary-action"
+              type="button"
+              disabled={$shellSnapshot.syncSpace.state === "loading"}
+              on:click={() => shellSnapshot.runSpaceHmacDiagnostic()}
+            >
+              {$shellSnapshot.syncSpace.state === "loading" ? "诊断中…" : "生成桌面端确认码"}
+            </button>
+          </div>
           {#if $shellSnapshot.syncSpace.invitation}
             <div class="invitation-card">
               <strong>配对邀请已生成</strong>
@@ -307,7 +327,7 @@
                 到期 {$shellSnapshot.syncSpace.invitation.expiresAt}
               </p>
               <div class="confirmation-code">
-                <span>人工确认码</span>
+                <span>配对人工确认码（不是 HMAC 码）</span>
                 <strong>{$shellSnapshot.syncSpace.invitation.confirmationCode}</strong>
               </div>
               <div class="invitation-qr" aria-label="配对二维码">

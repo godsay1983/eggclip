@@ -25,6 +25,7 @@ import {
   onPocPeerConnected,
   onPocPeerDisconnected,
   readSystemClipboardText,
+  runSpaceHmacDiagnostic as runSpaceHmacDiagnosticApi,
   sendAuthenticatedClipboardText,
   selectActiveSyncSpace as selectActiveSyncSpaceApi,
   startPocTransport,
@@ -339,6 +340,9 @@ export const shellSnapshot = {
           state: spaces.length > 0 ? "ready" : "idle",
           spaces,
           activeSpaceId,
+          hmacDiagnostic: activeSpaceId === state.syncSpace.activeSpaceId
+            ? state.syncSpace.hmacDiagnostic
+            : null,
           invitation: state.syncSpace.invitation,
           invitationCopiedAt: state.syncSpace.invitationCopiedAt,
           errorMessage: null,
@@ -379,6 +383,7 @@ export const shellSnapshot = {
             state: "ready",
             spaces,
             activeSpaceId,
+            hmacDiagnostic: state.syncSpace.hmacDiagnostic,
             invitation: state.syncSpace.invitation,
             invitationCopiedAt: state.syncSpace.invitationCopiedAt,
             errorMessage: null,
@@ -415,6 +420,7 @@ export const shellSnapshot = {
           state: "ready",
           spaces: [space, ...state.syncSpace.spaces],
           activeSpaceId,
+          hmacDiagnostic: null,
           invitation: null,
           invitationCopiedAt: null,
           errorMessage: null,
@@ -459,6 +465,7 @@ export const shellSnapshot = {
           ...state.syncSpace,
           state: "ready",
           activeSpaceId: selected.id,
+          hmacDiagnostic: null,
           errorMessage: null,
         },
         connection: {
@@ -474,6 +481,40 @@ export const shellSnapshot = {
           ...state.syncSpace,
           state: "error",
           errorMessage: error instanceof Error ? error.message : "无法切换活动同步空间",
+        },
+      }));
+    }
+  },
+  async runSpaceHmacDiagnostic() {
+    snapshot.update((state) => ({
+      ...state,
+      syncSpace: {
+        ...state.syncSpace,
+        state: "loading",
+        hmacDiagnostic: null,
+        errorMessage: null,
+      },
+    }));
+    try {
+      const diagnostic = await runSpaceHmacDiagnosticApi();
+      snapshot.update((state) => ({
+        ...state,
+        syncSpace: {
+          ...state.syncSpace,
+          state: "ready",
+          activeSpaceId: diagnostic.spaceId,
+          hmacDiagnostic: diagnostic,
+          errorMessage: null,
+        },
+      }));
+    } catch (error) {
+      snapshot.update((state) => ({
+        ...state,
+        syncSpace: {
+          ...state.syncSpace,
+          state: "error",
+          hmacDiagnostic: null,
+          errorMessage: error instanceof Error ? error.message : "无法运行空间 HMAC 诊断",
         },
       }));
     }

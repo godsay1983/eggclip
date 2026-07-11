@@ -8,6 +8,7 @@ import type {
   PocRecentEndpoint,
   PocTransportSummary,
   ShellSnapshot,
+  SpaceHmacDiagnosticSummary,
   SyncSpaceSummary,
 } from "$lib/types/shell";
 
@@ -110,6 +111,12 @@ interface PairingInvitationSummaryDto {
   confirmationCode: string;
 }
 
+interface SpaceHmacDiagnosticSummaryDto {
+  spaceId: string;
+  spaceDisplayName: string;
+  confirmationCode: string;
+}
+
 export function createInitialShellSnapshot(): ShellSnapshot {
   return {
     connection: {
@@ -159,6 +166,7 @@ export function createInitialShellSnapshot(): ShellSnapshot {
       state: "idle",
       spaces: [],
       activeSpaceId: null,
+      hmacDiagnostic: null,
       invitation: null,
       errorMessage: null,
       invitationCopiedAt: null,
@@ -244,6 +252,10 @@ export async function loadActiveSyncSpaceId(): Promise<string | null> {
 export async function selectActiveSyncSpace(spaceId: string): Promise<SyncSpaceSummary> {
   const space = await invoke<SyncSpaceSummaryDto>("select_active_sync_space", { spaceId });
   return toSyncSpaceSummary(space);
+}
+
+export async function runSpaceHmacDiagnostic(): Promise<SpaceHmacDiagnosticSummary> {
+  return invoke<SpaceHmacDiagnosticSummaryDto>("run_space_hmac_diagnostic");
 }
 
 export async function ensureDefaultSyncSpace(): Promise<SyncSpaceSummary> {

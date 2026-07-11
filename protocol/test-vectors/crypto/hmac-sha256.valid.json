@@ -1,0 +1,8 @@
+{
+  "algorithm": "HMAC-SHA-256",
+  "source": "Synthetic EggClip cross-device diagnostic vector",
+  "key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+  "message": "text/plain\nEggClip HUKS space key hmac self-test v1",
+  "digest": "AFf5YHU_YoemIT2QQGFUvNLXQ-BlcjPIMzPK5_MU4nA",
+  "confirmationCode": "765472"
+}

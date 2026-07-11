@@ -310,7 +310,7 @@ export struct SettingsPage {
           this.runSpaceKeySelfTest();
         })
 
-      Text('诊断只显示连接状态、候选数量和错误类型，不显示剪贴板正文、摘要、邀请或密钥。')
+      Text('诊断不显示剪贴板正文、完整摘要、邀请或密钥；六位跨端确认码仅用于核对两端 HMAC 结果。')
         .width('100%')
         .fontSize(11)
         .fontColor(EggClipColors.textSecondary)
@@ -663,7 +663,10 @@ export struct SettingsPage {
 
   private describeSpaceKeySelfTestDetail(result: SpaceKeyCryptoSelfTestResult): string {
     if (result.ok) {
-      return '已完成固定文本加密、解密、一致性和 HMAC 摘要校验；未展示明文、密文、tag、摘要或密钥引用。';
+      if (result.hmacConfirmationCode !== undefined) {
+        return `已完成加解密与 HMAC 校验。跨端确认码：${result.hmacConfirmationCode}；与桌面端一致即表示空间密钥 HMAC 互通。`;
+      }
+      return '已完成固定文本加密、解密和一致性校验；未展示密钥或完整摘要。';
     }
     if (result.error === SpaceKeyCryptoSelfTestError.NO_SPACE_KEY) {
       return '请先完成一次桌面端配对，让本机保存同步空间密钥引用。';

@@ -128,10 +128,17 @@ export interface PairingInvitationSummary {
   confirmationCode: string;
 }
 
+export interface SpaceHmacDiagnosticSummary {
+  spaceId: string;
+  spaceDisplayName: string;
+  confirmationCode: string;
+}
+
 export interface SyncSpaceState {
   state: "idle" | "loading" | "creating" | "inviting" | "copyingInvitation" | "ready" | "error";
   spaces: SyncSpaceSummary[];
   activeSpaceId: string | null;
+  hmacDiagnostic: SpaceHmacDiagnosticSummary | null;
   invitation: PairingInvitationSummary | null;
   errorMessage: string | null;
   invitationCopiedAt: string | null;

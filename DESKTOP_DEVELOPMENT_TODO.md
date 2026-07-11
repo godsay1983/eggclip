@@ -35,7 +35,7 @@
 - [x] 邀请二维码/字符串、一次性消费、AUTH_PROOF、AUTH_OK 和初始空间密钥交付。
 - [x] 认证会话中正式 `ITEM_LIVE` 入站与出站。
 - [x] 完整认证会话生命周期、错误关闭和多空间目标选择。
-- [ ] 与 HarmonyOS 的 HUKS HMAC 真机互通验收。
+- [x] 与 HarmonyOS 的 HUKS HMAC 真机互通验收。
 
 ## D4：自动发现、可靠连接与补同步
 
