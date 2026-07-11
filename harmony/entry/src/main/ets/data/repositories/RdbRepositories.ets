@@ -337,6 +337,32 @@ export class ClipboardRdbRepository {
     const store = await Database.getStore(this.context);
     await this.runner.executeTransaction(store, commands);
   }
+
+  async summarizeAvailableSequences(spaceId: string, updatedAt: number): Promise<SyncHead[]> {
+    const store = await Database.getStore(this.context);
+    const resultSet = await store.querySql(
+      `SELECT origin_device_id, MAX(origin_seq) AS latest_origin_seq, MIN(origin_seq) AS minimum_available
+        FROM clipboard_items WHERE space_id = ? AND deleted_at IS NULL
+        GROUP BY origin_device_id ORDER BY origin_device_id`,
+      [spaceId]
+    );
+    const heads: SyncHead[] = [];
+    try {
+      if (!resultSet.goToFirstRow()) return heads;
+      do {
+        heads.push({
+          spaceId,
+          originDeviceId: getString(resultSet, 'origin_device_id'),
+          latestOriginSeq: getNumber(resultSet, 'latest_origin_seq'),
+          minimumAvailable: getNumber(resultSet, 'minimum_available'),
+          updatedAt
+        });
+      } while (resultSet.goToNextRow());
+      return heads;
+    } finally {
+      resultSet.close();
+    }
+  }
 }
 
 export class SyncHeadRdbRepository {
