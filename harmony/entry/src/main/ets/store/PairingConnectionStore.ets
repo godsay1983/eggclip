@@ -221,6 +221,14 @@ class PairingConnectionStore {
   }
 
   async startPairing(pairingStore: PairingStore, nowMs: number = Date.now()): Promise<PairingConnectionSnapshot> {
+    if (this.state === PairingConnectionState.AUTHENTICATED &&
+      this.authenticatedTransportSession !== null && !this.authenticatedTransportSession.isClosed()) {
+      this.title = '已认证连接';
+      this.description = '当前正式会话仍在线，无需重复配对；邀请已消费一次。';
+      this.lastError = '';
+      this.emit();
+      return this.snapshot();
+    }
     if (this.identityService === null) {
       this.fail('本机身份未初始化', '缺少页面上下文，无法访问 HUKS/RDB 本机身份。');
       return this.snapshot();

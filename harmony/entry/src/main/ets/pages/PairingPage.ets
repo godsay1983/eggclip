@@ -31,11 +31,21 @@ export struct PairingPage {
   @State private connectionSnapshot: PairingConnectionSnapshot = pairingConnectionStore.snapshot();
   @State private invitationInputText: string = '';
   @State private pasteImportStatus: string = '可以扫码导入，或点击系统 PasteButton 从剪贴板读取邀请。';
+  @State private pairingCompleted: boolean = false;
   @StorageLink(APP_FOREGROUND_STORAGE_KEY) @Watch('onAppForegroundChanged')
   private appInForeground: boolean = false;
   private pendingProgrammaticInvitationInput: string | null = null;
   private readonly connectionListener = (snapshot: PairingConnectionSnapshot): void => {
     this.connectionSnapshot = snapshot;
+    if (snapshot.state === PairingConnectionState.AUTHENTICATED &&
+      this.snapshot.state === PairingStoreState.PENDING) {
+      this.pairingCompleted = true;
+      // The invitation is single-use. Drop its secret and pending handshake
+      // material only when this page's pending pairing becomes authenticated.
+      // Normal traffic on an existing session must not clear a newly imported
+      // invitation that the user is still reviewing.
+      this.snapshot = this.pairingStore.clear();
+    }
   };
 
   aboutToAppear(): void {
@@ -322,6 +332,7 @@ export struct PairingPage {
           text: this.connectionSnapshot.manualHost,
           placeholder: '桌面端 IP'
         })
+          .enabled(this.connectionSnapshot.state !== PairingConnectionState.AUTHENTICATED)
           .layoutWeight(1)
           .height(40)
           .backgroundColor(EggClipColors.cardBackground)
@@ -334,6 +345,7 @@ export struct PairingPage {
           text: this.connectionSnapshot.manualPort,
           placeholder: '端口'
         })
+          .enabled(this.connectionSnapshot.state !== PairingConnectionState.AUTHENTICATED)
           .width(92)
           .height(40)
           .backgroundColor(EggClipColors.cardBackground)
@@ -371,7 +383,8 @@ export struct PairingPage {
       Button('连接已配对设备')
         .width('100%')
         .height(42)
-        .enabled(!this.isPairingConnectionBusy())
+        .enabled(!this.isPairingConnectionBusy() &&
+          this.connectionSnapshot.state !== PairingConnectionState.AUTHENTICATED)
         .fontColor(EggClipColors.primary)
         .backgroundColor(EggClipColors.cardBackground)
         .borderRadius(21)
@@ -480,7 +493,10 @@ export struct PairingPage {
       return '重试配对握手';
     }
     if (this.connectionSnapshot.state === PairingConnectionState.AUTHENTICATED) {
-      return '重新配对握手';
+      return '已认证连接';
+    }
+    if (this.pairingCompleted) {
+      return '邀请已完成配对';
     }
     return '连接并发送握手';
   }
@@ -517,7 +533,8 @@ export struct PairingPage {
   }
 
   private canStartPairingConnection(): boolean {
-    return this.snapshot.state === PairingStoreState.PENDING && !this.isPairingConnectionBusy();
+    return this.snapshot.state === PairingStoreState.PENDING && !this.isPairingConnectionBusy() &&
+      this.connectionSnapshot.state !== PairingConnectionState.AUTHENTICATED && !this.pairingCompleted;
   }
 
   private startPairingConnection(): void {
@@ -568,6 +585,7 @@ export struct PairingPage {
   }
 
   private handleInvitationInputChange(value: string): void {
+    this.pairingCompleted = false;
     this.invitationInputText = value;
     if (this.pendingProgrammaticInvitationInput !== null && value === this.pendingProgrammaticInvitationInput) {
       this.pendingProgrammaticInvitationInput = null;
@@ -583,6 +601,7 @@ export struct PairingPage {
   }
 
   private importInvitationText(value: string, successStatus: string): void {
+    this.pairingCompleted = false;
     this.updateVisibleInvitationInput(value);
     this.snapshot = this.pairingStore.importInvitationText(value);
     if (this.snapshot.state === PairingStoreState.READY && this.snapshot.summary !== null &&
