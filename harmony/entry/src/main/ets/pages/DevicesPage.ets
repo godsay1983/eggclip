@@ -10,6 +10,7 @@ import {
   PocConnectionSnapshot,
   pocConnectionStore
 } from '../store/PocConnectionStore';
+import { TrustedDeviceStore, TrustedDeviceSummary } from '../store/TrustedDeviceStore';
 import { EggClipColors } from '../theme/Colors';
 import { EggClipSpacing } from '../theme/Spacing';
 import { EggClipTypography } from '../theme/Typography';
@@ -18,6 +19,7 @@ import { PairingPage } from './PairingPage';
 
 @Component
 export struct DevicesPage {
+  private trustedDeviceStore: TrustedDeviceStore | null = null;
   private readonly connectionSnapshotListener = (snapshot: PocConnectionSnapshot): void => {
     this.manualHost = snapshot.manualHost;
     this.manualPort = snapshot.manualPort;
@@ -53,13 +55,18 @@ export struct DevicesPage {
   @State private connectionTitle: string = '等待桌面端';
   @State private connectionDescription: string = '正在等待 mDNS 候选，也可以使用手动 IP';
   @State private diagnosticsExpanded: boolean = false;
+  @State private trustedDevices: TrustedDeviceSummary[] = [];
 
   aboutToAppear(): void {
     const hostContext = this.getUIContext().getHostContext();
     if (hostContext !== undefined) {
       pocConnectionStore.initialize(hostContext as common.UIAbilityContext);
+      if (this.trustedDeviceStore === null) {
+        this.trustedDeviceStore = new TrustedDeviceStore(hostContext as common.UIAbilityContext);
+      }
     }
     pocConnectionStore.subscribe(this.connectionSnapshotListener);
+    this.loadTrustedDevices();
   }
 
   aboutToDisappear(): void {
@@ -71,7 +78,7 @@ export struct DevicesPage {
       Column({ space: EggClipSpacing.sectionGap }) {
         this.Header()
         PairingPage()
-        this.EmptyDeviceCard()
+        this.TrustedDevicesCard()
         this.DevicePolicyCard()
         this.ConnectionDiagnosticsSection()
       }
@@ -580,7 +587,37 @@ export struct DevicesPage {
   }
 
   @Builder
-  private EmptyDeviceCard() {
+  private TrustedDevicesCard() {
+    if (this.trustedDevices.length > 0) {
+      Column({ space: 12 }) {
+        Text('可信设备')
+          .fontSize(20)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(EggClipColors.textPrimary)
+          .width('100%')
+        ForEach(this.trustedDevices, (device: TrustedDeviceSummary) => {
+          Column({ space: 5 }) {
+            Text(device.displayName)
+              .fontSize(EggClipTypography.bodySize)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(EggClipColors.textPrimary)
+            Text(`指纹 ${device.shortFingerprint} · 最后在线 ${device.lastSeen}`)
+              .fontSize(EggClipTypography.captionSize)
+              .fontColor(EggClipColors.textSecondary)
+          }
+          .width('100%')
+          .padding(12)
+          .backgroundColor(EggClipColors.controlBackground)
+          .borderRadius(EggClipSpacing.radiusMedium)
+        }, (device: TrustedDeviceSummary) => device.deviceId)
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding(EggClipSpacing.cardPadding)
+      .backgroundColor(EggClipColors.cardBackground)
+      .borderRadius(EggClipSpacing.radiusLarge)
+      return;
+    }
     Column({ space: 14 }) {
       Text('◌')
         .fontSize(42)
@@ -611,6 +648,13 @@ export struct DevicesPage {
     .padding(EggClipSpacing.cardPadding)
     .backgroundColor(EggClipColors.cardBackground)
     .borderRadius(EggClipSpacing.radiusLarge)
+  }
+
+  private loadTrustedDevices(): void {
+    if (this.trustedDeviceStore === null) return;
+    this.trustedDeviceStore.load()
+      .then((devices) => { this.trustedDevices = devices; })
+      .catch(() => { this.trustedDevices = []; });
   }
 
   @Builder
