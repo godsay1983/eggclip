@@ -972,6 +972,7 @@ where
         .lock()
     {
         if let Some(mut session) = sessions.remove(&peer) {
+            let _ = mark_trusted_device_offline(&app, session.device_id);
             let event = AuthenticatedConnectionStateEvent {
                 peer: peer.clone(),
                 device_id: session.device_id.to_string(),
@@ -1178,6 +1179,18 @@ fn mark_trusted_device_connected(
     }
     record.device.connection_state = DeviceConnectionState::Online;
     record.device.last_seen_at = Some(connected_at);
+    repository.upsert(&record).map_err(|_| ())
+}
+
+fn mark_trusted_device_offline(app: &AppHandle, device_id: Uuid) -> Result<(), ()> {
+    let path = database_path(app).map_err(|_| ())?;
+    let connection = open_database(path).map_err(|_| ())?;
+    let repository = DeviceRepository::new(&connection);
+    let mut record = repository.get(device_id).map_err(|_| ())?.ok_or(())?;
+    if record.device.trust_state != DeviceTrustState::Trusted || record.revoked_at.is_some() {
+        return Err(());
+    }
+    record.device.connection_state = DeviceConnectionState::Offline;
     repository.upsert(&record).map_err(|_| ())
 }
 
@@ -1585,6 +1598,7 @@ fn close_authenticated_session(app: &AppHandle, peer: &str) {
         .lock()
     {
         if let Some(mut session) = sessions.remove(peer) {
+            let _ = mark_trusted_device_offline(app, session.device_id);
             let event = AuthenticatedConnectionStateEvent {
                 peer: peer.to_owned(),
                 device_id: session.device_id.to_string(),
