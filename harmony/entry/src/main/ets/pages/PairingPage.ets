@@ -20,7 +20,6 @@ import { ClipboardBridgeService } from '../services/clipboard/ClipboardBridgeSer
 import { EggClipColors } from '../theme/Colors';
 import { EggClipSpacing } from '../theme/Spacing';
 import { EggClipTypography } from '../theme/Typography';
-import { APP_FOREGROUND_STORAGE_KEY } from '../utils/AppLifecycle';
 
 @Component
 export struct PairingPage {
@@ -32,36 +31,31 @@ export struct PairingPage {
   @State private invitationInputText: string = '';
   @State private pasteImportStatus: string = '可以扫码导入，或点击系统 PasteButton 从剪贴板读取邀请。';
   @State private pairingCompleted: boolean = false;
-  @StorageLink(APP_FOREGROUND_STORAGE_KEY) @Watch('onAppForegroundChanged')
-  private appInForeground: boolean = false;
   private pendingProgrammaticInvitationInput: string | null = null;
+  private pairingHandshakeInFlight: boolean = false;
   private readonly connectionListener = (snapshot: PairingConnectionSnapshot): void => {
     this.connectionSnapshot = snapshot;
     if (snapshot.state === PairingConnectionState.AUTHENTICATED &&
-      this.snapshot.state === PairingStoreState.PENDING) {
+      this.pairingHandshakeInFlight && this.snapshot.state === PairingStoreState.PENDING) {
+      this.pairingHandshakeInFlight = false;
       this.pairingCompleted = true;
       // The invitation is single-use. Drop its secret and pending handshake
       // material only when this page's pending pairing becomes authenticated.
       // Normal traffic on an existing session must not clear a newly imported
       // invitation that the user is still reviewing.
-      this.snapshot = this.pairingStore.clear();
+      this.snapshot = this.pairingStore.completePairing();
+    } else if (snapshot.state === PairingConnectionState.FAILED ||
+      snapshot.state === PairingConnectionState.IDLE) {
+      this.pairingHandshakeInFlight = false;
     }
   };
 
   aboutToAppear(): void {
-    const hostContext = this.getUIContext().getHostContext();
-    if (hostContext !== undefined) {
-      pairingConnectionStore.initialize(hostContext as common.Context);
-    }
     pairingConnectionStore.subscribe(this.connectionListener);
   }
 
   aboutToDisappear(): void {
     pairingConnectionStore.unsubscribe(this.connectionListener);
-  }
-
-  private onAppForegroundChanged(): void {
-    pairingConnectionStore.setForeground(this.appInForeground);
   }
 
   build() {
@@ -227,16 +221,24 @@ export struct PairingPage {
       .borderRadius(16)
       .alignItems(HorizontalAlign.Center)
 
-      Button(this.snapshot.state === PairingStoreState.PENDING ? '已确认，正在连接桌面端' : '确认码一致，连接所选地址')
+      Button(this.invitationConfirmButtonText())
         .width('100%')
         .height(42)
-        .enabled(this.snapshot.state === PairingStoreState.READY)
+        .enabled(this.canConfirmInvitation())
         .fontColor(EggClipColors.onPrimary)
-        .backgroundColor(this.snapshot.state === PairingStoreState.READY ? EggClipColors.primary : EggClipColors.textSecondary)
+        .backgroundColor(this.canConfirmInvitation() ? EggClipColors.primary : EggClipColors.textSecondary)
         .borderRadius(21)
         .onClick(() => {
           this.confirmCodeAndPrepareConnection();
         })
+
+      if (this.connectionSnapshot.state === PairingConnectionState.AUTHENTICATED) {
+        Text('当前已经建立认证连接，无需重复配对。如需使用这份新邀请，请先停止当前连接。')
+          .width('100%')
+          .fontSize(11)
+          .fontColor(EggClipColors.textSecondary)
+          .lineHeight(18)
+      }
 
       if (this.snapshot.state === PairingStoreState.PENDING) {
         Text('已从可见输入中清理完整邀请。下一步会连接桌面端并发送 CLIENT_HELLO/AUTH_PROOF；可信设备持久化和 spaceKey 接收仍待后续接入。')
@@ -273,6 +275,7 @@ export struct PairingPage {
           ForEach(summary.endpoints, (endpoint: PairingConnectionEndpoint) => {
             Button(`${endpoint.host}:${endpoint.port}`)
               .height(32)
+              .enabled(this.connectionSnapshot.state !== PairingConnectionState.AUTHENTICATED)
               .fontSize(10)
               .fontColor(this.isSelectedEndpoint(endpoint.host, endpoint.port) ?
                 EggClipColors.onPrimary : EggClipColors.textSecondary)
@@ -442,6 +445,9 @@ export struct PairingPage {
   }
 
   private statusBadgeText(): string {
+    if (this.snapshot.state === PairingStoreState.COMPLETED) {
+      return '配对完成';
+    }
     if (this.snapshot.state === PairingStoreState.READY) {
       return '有效邀请';
     }
@@ -455,6 +461,9 @@ export struct PairingPage {
   }
 
   private statusColor(): ResourceColor {
+    if (this.snapshot.state === PairingStoreState.COMPLETED) {
+      return EggClipColors.statusOnline;
+    }
     if (this.snapshot.state === PairingStoreState.READY) {
       return EggClipColors.statusOnline;
     }
@@ -486,14 +495,14 @@ export struct PairingPage {
   }
 
   private connectionButtonText(): string {
+    if (this.connectionSnapshot.state === PairingConnectionState.AUTHENTICATED) {
+      return '已认证连接';
+    }
     if (this.snapshot.state !== PairingStoreState.PENDING) {
       return '先确认六位码';
     }
     if (this.connectionSnapshot.state === PairingConnectionState.FAILED) {
       return '重试配对握手';
-    }
-    if (this.connectionSnapshot.state === PairingConnectionState.AUTHENTICATED) {
-      return '已认证连接';
     }
     if (this.pairingCompleted) {
       return '邀请已完成配对';
@@ -501,7 +510,25 @@ export struct PairingPage {
     return '连接并发送握手';
   }
 
+  private invitationConfirmButtonText(): string {
+    if (this.connectionSnapshot.state === PairingConnectionState.AUTHENTICATED) {
+      return '已连接，无需重复配对';
+    }
+    if (this.snapshot.state === PairingStoreState.PENDING) {
+      return '已确认，正在连接桌面端';
+    }
+    return '确认码一致，连接所选地址';
+  }
+
+  private canConfirmInvitation(): boolean {
+    return this.snapshot.state === PairingStoreState.READY &&
+      this.connectionSnapshot.state !== PairingConnectionState.AUTHENTICATED;
+  }
+
   private connectionDescriptionText(): string {
+    if (this.connectionSnapshot.state === PairingConnectionState.AUTHENTICATED) {
+      return '认证会话已建立，当前无需再次发送配对握手。';
+    }
     if (this.snapshot.state !== PairingStoreState.PENDING) {
       return '首次配对请先核对六位确认码；已经配对过的设备可直接使用下方按钮恢复可信连接。';
     }
@@ -548,11 +575,13 @@ export struct PairingPage {
       return;
     }
     pairingConnectionStore.initialize(hostContext as common.Context);
+    this.pairingHandshakeInFlight = true;
     pairingConnectionStore.startPairing(this.pairingStore)
       .then((snapshot) => {
         this.connectionSnapshot = snapshot;
       })
       .catch(() => {
+        this.pairingHandshakeInFlight = false;
         this.pasteImportStatus = '配对连接异常，请检查桌面端地址、端口和邀请是否仍有效';
       });
   }
@@ -616,6 +645,10 @@ export struct PairingPage {
   }
 
   private confirmCodeAndPrepareConnection(): void {
+    if (this.connectionSnapshot.state === PairingConnectionState.AUTHENTICATED) {
+      this.pasteImportStatus = '当前已经建立认证连接；如需重新配对，请先停止当前连接。';
+      return;
+    }
     const nextSnapshot = this.pairingStore.confirmCodeMatched();
     this.snapshot = nextSnapshot;
     if (nextSnapshot.state === PairingStoreState.PENDING) {

@@ -25,6 +25,7 @@ export enum PairingStoreState {
   IDLE = 'idle',
   READY = 'ready',
   PENDING = 'pending',
+  COMPLETED = 'completed',
   ERROR = 'error'
 }
 
@@ -222,6 +223,19 @@ export class PairingStore {
       invitationText: '',
       statusText: '已确认六位码一致。邀请 secret 已从可见输入中清理，等待接入身份交换、握手和 spaceKey 安全接收。',
       summary: cloneSummary(this.currentSnapshot.summary),
+      error: null
+    };
+    return this.snapshot();
+  }
+
+  completePairing(): PairingStoreSnapshot {
+    const completedSummary = cloneSummary(this.currentSnapshot.summary);
+    this.pendingPayload = null;
+    this.currentSnapshot = {
+      state: PairingStoreState.COMPLETED,
+      invitationText: '',
+      statusText: '配对完成，已建立认证连接。一次性邀请已安全清理。',
+      summary: completedSummary,
       error: null
     };
     return this.snapshot();

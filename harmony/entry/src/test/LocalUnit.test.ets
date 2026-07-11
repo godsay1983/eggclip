@@ -1471,6 +1471,20 @@ export default function localUnitTest() {
       expect(store.hasPendingHandshakeMaterial()).assertEqual(false);
     });
 
+    it('keepsPairingResultVisibleAfterClearingSingleUseSecret', 0, () => {
+      const store = new PairingStore();
+      store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000000000);
+      store.confirmCodeMatched();
+
+      const completed = store.completePairing();
+
+      expect(completed.state).assertEqual(PairingStoreState.COMPLETED);
+      expect(completed.invitationText).assertEqual('');
+      expect(completed.summary?.confirmationCode).assertEqual('574920');
+      expect(completed.statusText.indexOf('配对完成') >= 0).assertEqual(true);
+      expect(store.hasPendingHandshakeMaterial()).assertEqual(false);
+    });
+
     it('buildsPairingClientHandshakeDraftWithoutExposingPairingSecret', 0, () => {
       const store = new PairingStore();
       const missing = store.buildPendingClientHandshakeDraft(

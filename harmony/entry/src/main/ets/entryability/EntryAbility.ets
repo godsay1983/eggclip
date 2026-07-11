@@ -1,6 +1,7 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
+import { pairingConnectionStore } from '../store/PairingConnectionStore';
 import { APP_FOREGROUND_STORAGE_KEY } from '../utils/AppLifecycle';
 
 const DOMAIN = 0x0000;
@@ -8,6 +9,11 @@ const DOMAIN = 0x0000;
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     AppStorage.setOrCreate<boolean>(APP_FOREGROUND_STORAGE_KEY, false);
+    // Trusted reconnect belongs to the ability lifecycle, not to the Devices
+    // tab. Initialize it before the first page is shown and only connect while
+    // the application is in the foreground.
+    pairingConnectionStore.setForeground(false);
+    pairingConnectionStore.initialize(this.context);
     try {
       this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
     } catch (err) {
@@ -39,11 +45,13 @@ export default class EntryAbility extends UIAbility {
   }
 
   onForeground(): void {
+    pairingConnectionStore.setForeground(true);
     AppStorage.setOrCreate<boolean>(APP_FOREGROUND_STORAGE_KEY, true);
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground');
   }
 
   onBackground(): void {
+    pairingConnectionStore.setForeground(false);
     AppStorage.setOrCreate<boolean>(APP_FOREGROUND_STORAGE_KEY, false);
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
   }
