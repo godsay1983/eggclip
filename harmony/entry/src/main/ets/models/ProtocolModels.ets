@@ -179,6 +179,23 @@ export interface SyncHeadsPayloadResult {
   field?: string;
 }
 
+export interface RequestRange {
+  originDeviceId: string;
+  fromSeq: number;
+  toSeq: number;
+}
+
+export interface RequestRangePayload {
+  ranges: RequestRange[];
+}
+
+export interface RequestRangePayloadResult {
+  ok: boolean;
+  payload?: RequestRangePayload;
+  error?: ProtocolErrorCode;
+  field?: string;
+}
+
 export type JsonValue = Object | string | number | boolean | null;
 export type JsonObject = Record<string, JsonValue>;
 
@@ -401,6 +418,36 @@ export class ProtocolParser {
       }
     }
     return { ok: true, payload: { heads, minimumAvailable } };
+  }
+
+  parseRequestRangePayload(value: JsonValue | undefined): RequestRangePayloadResult {
+    if (value === undefined || !isJsonObject(value)) {
+      return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'payload' };
+    }
+    const rangesValue = (value as JsonObject).ranges;
+    if (!Array.isArray(rangesValue)) {
+      return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'ranges' };
+    }
+    const rangeArray = rangesValue as JsonValue[];
+    if (rangeArray.length === 0 || rangeArray.length > 100) {
+      return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'ranges' };
+    }
+    const ranges: RequestRange[] = [];
+    for (let index = 0; index < rangeArray.length; index += 1) {
+      const range: JsonValue = rangeArray[index];
+      if (!isJsonObject(range)) return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'ranges' };
+      const object = range as JsonObject;
+      const originDeviceId = object.originDeviceId;
+      const fromSeq = object.fromSeq;
+      const toSeq = object.toSeq;
+      if (typeof originDeviceId !== 'string' || typeof fromSeq !== 'number' || typeof toSeq !== 'number' ||
+        !isUuid(originDeviceId) || !Number.isSafeInteger(fromSeq) || !Number.isSafeInteger(toSeq) ||
+        fromSeq < 1 || toSeq < fromSeq) {
+        return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'ranges' };
+      }
+      ranges.push({ originDeviceId, fromSeq, toSeq });
+    }
+    return { ok: true, payload: { ranges } };
   }
 
   private rejectMixedAuth(messageType: MessageType): ProtocolParseResult {

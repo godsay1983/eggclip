@@ -899,6 +899,35 @@ pub struct SyncHeadsPayload {
     pub minimum_available: std::collections::BTreeMap<String, u64>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestRangePayload {
+    pub ranges: Vec<RequestRange>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestRange {
+    pub origin_device_id: String,
+    pub from_seq: u64,
+    pub to_seq: u64,
+}
+
+impl RequestRangePayload {
+    pub fn validate(&self) -> Result<(), ProtocolError> {
+        if self.ranges.is_empty() || self.ranges.len() > 100 {
+            return Err(ProtocolError::InvalidField("ranges"));
+        }
+        for range in &self.ranges {
+            validate_uuid(&range.origin_device_id, "ranges.originDeviceId")?;
+            if range.from_seq == 0 || range.to_seq < range.from_seq {
+                return Err(ProtocolError::InvalidField("ranges.sequence"));
+            }
+        }
+        Ok(())
+    }
+}
+
 impl SyncHeadsPayload {
     pub fn validate(&self) -> Result<(), ProtocolError> {
         validate_device_seq_map(&self.heads, "heads")?;
