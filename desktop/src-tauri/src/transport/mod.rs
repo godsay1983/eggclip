@@ -44,7 +44,7 @@ use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpListener,
     sync::{mpsc, oneshot},
-    time::timeout,
+    time::{interval, timeout, MissedTickBehavior},
 };
 use tokio_tungstenite::{connect_async, tungstenite::Message, WebSocketStream};
 use uuid::Uuid;
@@ -56,6 +56,7 @@ pub use session::{
 
 pub const POC_MAX_FRAME_BYTES: usize = 1024 * 1024;
 const POC_CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
+const AUTHENTICATED_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 const POC_RECENT_ENDPOINT_KEY: &str = "pocRecentEndpoint";
 
 #[derive(Default)]
@@ -855,6 +856,18 @@ where
             PocPeerEvent { peer: write_peer },
         );
     });
+    let heartbeat_tx = outgoing_tx.clone();
+    let heartbeat_task = tauri::async_runtime::spawn(async move {
+        let mut ticker = interval(AUTHENTICATED_HEARTBEAT_INTERVAL);
+        ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        ticker.tick().await;
+        loop {
+            ticker.tick().await;
+            if heartbeat_tx.send(Message::Ping(Vec::new().into())).is_err() {
+                break;
+            }
+        }
+    });
 
     while let Some(message_result) = read.next().await {
         let message = match message_result {
@@ -939,6 +952,9 @@ where
                 record_poc_frame_result(&app, Err(reason));
                 break;
             }
+            Message::Ping(payload) => {
+                let _ = outgoing_tx.send(Message::Pong(payload));
+            }
             Message::Close(_) => break,
             _ => {}
         }
@@ -966,6 +982,7 @@ where
             let _ = app.emit("transport://authenticated-connection", event);
         }
     }
+    heartbeat_task.abort();
     write_task.abort();
     let _ = app.emit("transport://poc-peer-disconnected", PocPeerEvent { peer });
 }
