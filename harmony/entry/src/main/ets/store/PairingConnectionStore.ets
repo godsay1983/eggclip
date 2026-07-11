@@ -39,7 +39,17 @@ import {
   PairingGeneratedHandshakeMaterialResult,
   PairingStore
 } from './PairingStore';
-import { PairingHandshakeDraft } from '../services/pairing/PairingHandshakeDraftService';
+import {
+  PairingHandshakeDraft,
+  PairingHandshakeDraftService
+} from '../services/pairing/PairingHandshakeDraftService';
+import { X25519KeyAgreementService } from '../services/crypto/X25519KeyAgreementService';
+import { TrustedDeviceReconnectTarget } from './TrustedDeviceStore';
+
+enum ConnectionHandshakePurpose {
+  PAIRING = 'pairing',
+  TRUSTED_RECONNECT = 'trustedReconnect'
+}
 
 export enum PairingConnectionState {
   IDLE = 'idle',
@@ -93,6 +103,7 @@ class PairingConnectionStore {
   private authenticatedTransportSession: ProtocolTransportSession | null = null;
   private pendingTrustDraft: PairingHandshakeDraft | null = null;
   private pendingTrustServerHello: HelloPayload | null = null;
+  private connectionPurpose: ConnectionHandshakePurpose = ConnectionHandshakePurpose.PAIRING;
   private state: PairingConnectionState = PairingConnectionState.IDLE;
   private manualHost: string = '127.0.0.1';
   private manualPort: string = '0';
@@ -191,12 +202,60 @@ class PairingConnectionStore {
       nowMs,
       'v1'
     );
-    return await this.startWithPreparedMaterial(material, endpoint);
+    return await this.startWithPreparedMaterial(material, endpoint, ConnectionHandshakePurpose.PAIRING);
+  }
+
+  async startTrustedReconnect(
+    target: TrustedDeviceReconnectTarget,
+    nowMs: number = Date.now()
+  ): Promise<PairingConnectionSnapshot> {
+    if (this.identityService === null) {
+      this.fail('本机身份未初始化', '缺少页面上下文，无法访问 HUKS/RDB 本机身份。');
+      return this.snapshot();
+    }
+    const port = Number(this.manualPort);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      this.fail('重连端口无效', '请输入桌面端显示的 1 到 65535 之间的 WebSocket 端口。');
+      return this.snapshot();
+    }
+    const identity = await this.identityService.ensureLocalIdentity(nowMs, 'v1');
+    if (!identity.ok || identity.identity === undefined) {
+      this.fail('重连材料生成失败', this.describeMaterialFailure(identity.field));
+      return this.snapshot();
+    }
+    const ephemeral = new X25519KeyAgreementService().generateEphemeralKeyPair();
+    if (!ephemeral.ok || ephemeral.privateKey === undefined || ephemeral.publicKey === undefined) {
+      this.fail('重连材料生成失败', '无法生成本次连接所需的临时密钥。');
+      return this.snapshot();
+    }
+    const draft = new PairingHandshakeDraftService().buildTrustedDeviceHandshakeDraft({
+      spaceId: target.spaceId,
+      spaceKeyVersion: target.spaceKeyVersion,
+      remoteDeviceId: target.deviceId,
+      remoteIdentityPublicKey: target.identityPublicKey,
+      localDeviceId: identity.identity.deviceId,
+      localIdentityPublicKey: identity.identity.identityPublicKey,
+      localEphemeralPublicKey: ephemeral.publicKey
+    });
+    if (!draft.ok || draft.draft === undefined) {
+      this.fail('重连材料生成失败', '已保存的同步空间或可信设备身份记录无效。');
+      return this.snapshot();
+    }
+    return await this.startWithPreparedMaterial({
+      ok: true,
+      draft: draft.draft,
+      localDeviceId: identity.identity.deviceId,
+      localIdentityPublicKey: identity.identity.identityPublicKey,
+      localIdentityPrivateKeyRef: identity.identity.identityPrivateKeyRef,
+      localEphemeralPrivateKey: ephemeral.privateKey,
+      localEphemeralPublicKey: ephemeral.publicKey
+    }, { host: this.manualHost, port }, ConnectionHandshakePurpose.TRUSTED_RECONNECT);
   }
 
   async startWithPreparedMaterial(
     material: PairingGeneratedHandshakeMaterialResult,
-    endpoint: ManualEndpoint
+    endpoint: ManualEndpoint,
+    purpose: ConnectionHandshakePurpose = ConnectionHandshakePurpose.PAIRING
   ): Promise<PairingConnectionSnapshot> {
     if (!material.ok || material.draft === undefined || material.localEphemeralPrivateKey === undefined ||
       material.localIdentityPrivateKeyRef === undefined) {
@@ -206,6 +265,7 @@ class PairingConnectionStore {
 
     this.endpointLabel = `${endpoint.host}:${endpoint.port}`;
     this.localIdentityPrivateKeyRef = material.localIdentityPrivateKeyRef;
+    this.connectionPurpose = purpose;
     this.pendingTrustDraft = material.draft;
     this.pendingTrustServerHello = null;
     this.networkHandshake.reset();
@@ -221,8 +281,10 @@ class PairingConnectionStore {
     }
 
     this.state = PairingConnectionState.CONNECTING;
-    this.title = '正在连接桌面端';
-    this.description = `${this.endpointLabel} · 连接成功后会发送 CLIENT_HELLO。`;
+    this.title = purpose === ConnectionHandshakePurpose.TRUSTED_RECONNECT ? '正在恢复可信连接' : '正在连接桌面端';
+    this.description = purpose === ConnectionHandshakePurpose.TRUSTED_RECONNECT
+      ? `${this.endpointLabel} · 将使用已保存的设备身份恢复认证连接。`
+      : `${this.endpointLabel} · 连接成功后会发送 CLIENT_HELLO。`;
     this.emit();
 
     const handshakeSession = new ProtocolHandshakeTransportSession();
@@ -297,8 +359,12 @@ class PairingConnectionStore {
       }
       this.authenticatedTransportSession = authenticated.transportSession;
       this.state = PairingConnectionState.AUTHENTICATED;
-      this.title = '配对握手已认证';
-      this.description = '已创建正式协议会话，正在等待桌面端下发加密空间密钥。';
+      this.title = this.connectionPurpose === ConnectionHandshakePurpose.TRUSTED_RECONNECT
+        ? '可信连接已认证'
+        : '配对握手已认证';
+      this.description = this.connectionPurpose === ConnectionHandshakePurpose.TRUSTED_RECONNECT
+        ? '已恢复正式协议会话，无需重新配对或下发空间密钥。'
+        : '已创建正式协议会话，正在等待桌面端下发加密空间密钥。';
       this.emit();
       return this.snapshot();
     }
@@ -357,6 +423,7 @@ class PairingConnectionStore {
     this.authenticatedTransportSession = null;
     this.pendingTrustDraft = null;
     this.pendingTrustServerHello = null;
+    this.connectionPurpose = ConnectionHandshakePurpose.PAIRING;
     this.networkHandshake.reset();
     this.state = PairingConnectionState.IDLE;
     this.title = '已停止配对';

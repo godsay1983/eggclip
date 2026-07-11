@@ -616,38 +616,38 @@ export struct DevicesPage {
       .padding(EggClipSpacing.cardPadding)
       .backgroundColor(EggClipColors.cardBackground)
       .borderRadius(EggClipSpacing.radiusLarge)
-      return;
-    }
-    Column({ space: 14 }) {
-      Text('◌')
-        .fontSize(42)
-        .fontColor(EggClipColors.primary)
+    } else {
+      Column({ space: 14 }) {
+        Text('◌')
+          .fontSize(42)
+          .fontColor(EggClipColors.primary)
 
-      Column({ space: 6 }) {
-        Text('可信设备')
-          .fontSize(20)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(EggClipColors.textPrimary)
+        Column({ space: 6 }) {
+          Text('可信设备')
+            .fontSize(20)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(EggClipColors.textPrimary)
 
-        Text('还没有完成安全配对的设备。正式配对完成后，这里会显示设备名称、在线状态、公钥短指纹、最后在线时间和移除入口。')
-          .fontSize(EggClipTypography.captionSize)
+          Text('还没有完成安全配对的设备。正式配对完成后，这里会显示设备名称、在线状态、公钥短指纹、最后在线时间和移除入口。')
+            .fontSize(EggClipTypography.captionSize)
+            .fontColor(EggClipColors.textSecondary)
+            .textAlign(TextAlign.Center)
+            .lineHeight(20)
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Center)
+
+        Text('请使用上方“设备配对”导入桌面端邀请；自动发现和手动 IP 仅放在下方连接诊断里。')
+          .fontSize(11)
           .fontColor(EggClipColors.textSecondary)
           .textAlign(TextAlign.Center)
-          .lineHeight(20)
       }
       .width('100%')
       .alignItems(HorizontalAlign.Center)
-
-      Text('请使用上方“设备配对”导入桌面端邀请；自动发现和手动 IP 仅放在下方连接诊断里。')
-        .fontSize(11)
-        .fontColor(EggClipColors.textSecondary)
-        .textAlign(TextAlign.Center)
+      .padding(EggClipSpacing.cardPadding)
+      .backgroundColor(EggClipColors.cardBackground)
+      .borderRadius(EggClipSpacing.radiusLarge)
     }
-    .width('100%')
-    .alignItems(HorizontalAlign.Center)
-    .padding(EggClipSpacing.cardPadding)
-    .backgroundColor(EggClipColors.cardBackground)
-    .borderRadius(EggClipSpacing.radiusLarge)
   }
 
   private loadTrustedDevices(): void {

@@ -9,6 +9,13 @@ export interface TrustedDeviceSummary {
   lastSeen: string;
 }
 
+export interface TrustedDeviceReconnectTarget {
+  spaceId: string;
+  spaceKeyVersion: number;
+  deviceId: string;
+  identityPublicKey: string;
+}
+
 export class TrustedDeviceStore {
   private readonly devices: DeviceRdbRepository;
   private readonly spaces: SpaceRdbRepository;
@@ -30,6 +37,21 @@ export class TrustedDeviceStore {
         shortFingerprint: shortId(record.device.identityPublicKeyRef),
         lastSeen: record.device.lastSeenAt === undefined ? '尚未在线' : formatTime(record.device.lastSeenAt)
       }));
+  }
+
+  async loadFirstReconnectTarget(): Promise<TrustedDeviceReconnectTarget | null> {
+    const space = await this.spaces.latestActiveWithKeyRef();
+    if (space === null) return null;
+    const records = await this.devices.listBySpace(space.space.spaceId);
+    const record = records.find((item) => item.device.trustState === DeviceTrustState.TRUSTED &&
+      item.revokedAt === undefined && item.device.identityPublicKeyRef.length > 0);
+    if (record === undefined) return null;
+    return {
+      spaceId: space.space.spaceId,
+      spaceKeyVersion: space.space.keyVersion,
+      deviceId: record.device.deviceId,
+      identityPublicKey: record.device.identityPublicKeyRef
+    };
   }
 }
 

@@ -9,6 +9,7 @@ import {
   PairingConnectionState,
   pairingConnectionStore
 } from '../store/PairingConnectionStore';
+import { TrustedDeviceStore } from '../store/TrustedDeviceStore';
 import { common } from '@kit.AbilityKit';
 import { PairingInvitationSummary } from '../services/pairing/PairingInvitationService';
 import { PairingScanService } from '../services/pairing/PairingScanService';
@@ -305,6 +306,17 @@ export struct PairingPage {
       }
       .width('100%')
 
+      Button('连接已配对设备')
+        .width('100%')
+        .height(42)
+        .enabled(!this.isPairingConnectionBusy())
+        .fontColor(EggClipColors.primary)
+        .backgroundColor(EggClipColors.cardBackground)
+        .borderRadius(21)
+        .onClick(() => {
+          this.startTrustedReconnect();
+        })
+
       Text(this.connectionDescriptionText())
         .width('100%')
         .fontSize(11)
@@ -413,7 +425,7 @@ export struct PairingPage {
 
   private connectionDescriptionText(): string {
     if (this.snapshot.state !== PairingStoreState.PENDING) {
-      return '先核对桌面端和手机端显示的六位确认码；确认一致后才能连接并发送握手。';
+      return '首次配对请先核对六位确认码；已经配对过的设备可直接使用下方按钮恢复可信连接。';
     }
     return this.connectionSnapshot.description;
   }
@@ -459,6 +471,33 @@ export struct PairingPage {
       })
       .catch(() => {
         this.pasteImportStatus = '配对连接异常，请检查桌面端地址、端口和邀请是否仍有效';
+      });
+  }
+
+  private startTrustedReconnect(): void {
+    const hostContext = this.getUIContext().getHostContext();
+    if (hostContext === undefined) {
+      this.pasteImportStatus = '无法恢复可信连接：未获取到页面上下文';
+      return;
+    }
+    const context = hostContext as common.Context;
+    pairingConnectionStore.initialize(context);
+    new TrustedDeviceStore(context).loadFirstReconnectTarget()
+      .then((target) => {
+        if (target === null) {
+          this.pasteImportStatus = '没有可重连的可信桌面端，请先完成一次配对。';
+          return;
+        }
+        pairingConnectionStore.startTrustedReconnect(target)
+          .then((snapshot) => {
+            this.connectionSnapshot = snapshot;
+          })
+          .catch(() => {
+            this.pasteImportStatus = '恢复可信连接异常，请检查桌面端地址和网络。';
+          });
+      })
+      .catch(() => {
+        this.pasteImportStatus = '无法读取可信设备记录，请重启应用后重试。';
       });
   }
 
