@@ -20,7 +20,7 @@ use crate::{
     },
     protocol::{
         parse_envelope, ClipboardItem as ProtocolClipboardItem, HelloPayload, MessageType,
-        ProtocolEnvelope,
+        ProtocolEnvelope, SyncHeadsPayload,
     },
     settings::{database_path, now_ms},
     storage::{
@@ -673,6 +673,56 @@ fn authenticated_local_item_payload(
     }))
 }
 
+fn send_authenticated_sync_heads(app: &AppHandle, peer: &str) -> Result<(), ()> {
+    let runtime = app.state::<PocTransportRuntime>();
+    let space_id = runtime
+        .authenticated_sessions
+        .lock()
+        .map_err(|_| ())?
+        .get(peer)
+        .map(|entry| entry.space_id)
+        .ok_or(())?;
+    let payload = build_sync_heads_payload(app, space_id)?;
+    let frame = runtime
+        .authenticated_sessions
+        .lock()
+        .map_err(|_| ())?
+        .get_mut(peer)
+        .ok_or(())?
+        .session
+        .encode_business_message(MessageType::SyncHeads, Uuid::now_v7().to_string(), &payload)
+        .map_err(|_| ())?;
+    let sent = runtime
+        .peers
+        .lock()
+        .map_err(|_| ())?
+        .get(peer)
+        .ok_or(())?
+        .send(frame)
+        .map_err(|_| ());
+    sent
+}
+
+fn build_sync_heads_payload(app: &AppHandle, space_id: Uuid) -> Result<serde_json::Value, ()> {
+    let path = database_path(app).map_err(|_| ())?;
+    let connection = open_database(path).map_err(|_| ())?;
+    let heads = ClipboardRepository::new(&connection)
+        .summarize_available_sequences(space_id, now_ms().map_err(|_| ())?)
+        .map_err(|_| ())?;
+    let mut latest = std::collections::BTreeMap::new();
+    let mut minimum_available = std::collections::BTreeMap::new();
+    for head in heads {
+        latest.insert(head.origin_device_id.to_string(), head.latest_origin_seq);
+        minimum_available.insert(head.origin_device_id.to_string(), head.minimum_available);
+    }
+    let payload = SyncHeadsPayload {
+        heads: latest,
+        minimum_available,
+    };
+    payload.validate().map_err(|_| ())?;
+    serde_json::to_value(payload).map_err(|_| ())
+}
+
 fn broadcast_authenticated_item_live(
     runtime: &PocTransportRuntime,
     space_id: Uuid,
@@ -920,6 +970,13 @@ where
                         record_poc_frame_result(&app, Ok(()));
                         for frame in frames {
                             let _ = outgoing_tx.send(Message::Text(frame.into()));
+                        }
+                        if send_authenticated_sync_heads(&app, &peer).is_err() {
+                            record_poc_frame_result(
+                                &app,
+                                Err(PocRejectionReason::PairingInternalError),
+                            );
+                            break;
                         }
                         continue;
                     }
