@@ -50,7 +50,6 @@ export struct HomePage {
     this.latestReceivedSource = snapshot.latestReceivedSource;
     this.latestReceivedAt = snapshot.latestReceivedAt;
     this.latestReceivedByteLength = snapshot.latestReceivedByteLength;
-    this.transportDiagnostics = snapshot.transportDiagnostics;
     if (pairingConnectionStore.snapshot().state !== PairingConnectionState.AUTHENTICATED) {
       this.connectionTitle = snapshot.connectionTitle;
       this.connectionDescription = snapshot.connectionDescription;
@@ -79,7 +78,7 @@ export struct HomePage {
     }
     if (snapshot.state === PairingConnectionState.AUTHENTICATED) {
       this.connectionTitle = snapshot.title;
-      this.connectionDescription = '正式认证会话在线；PasteButton 会优先通过加密 ITEM_LIVE 发送。';
+      this.connectionDescription = '安全连接已建立，可以同步纯文本。';
     } else if (snapshot.state === PairingConnectionState.FAILED) {
       this.connectionTitle = snapshot.title;
       this.connectionDescription = snapshot.description;
@@ -100,7 +99,6 @@ export struct HomePage {
     }
   };
   @State private pasteStatus: string = '点击“粘贴”后读取并发送一次';
-  @State private transportDiagnostics: string = '帧诊断：接收 0 · 接受 0 · 拒绝 0';
   @State private copyStatus: string = '桌面端文本可手动复制到本机';
   @State private outboundState: OutboundSendState = OutboundSendState.IDLE;
   @State private outboundTitle: string = '等待本机文本';
@@ -121,6 +119,7 @@ export struct HomePage {
   @State private deletingHistoryItemId: string = '';
   @State private clearingHistory: boolean = false;
   @State private expandedHistoryItemId: string = '';
+  @State private historyActionsItemId: string = '';
   @State private copiedHistoryItemId: string = '';
   @State private trustedDeviceCount: number = 0;
   @State private retryingTrustedConnection: boolean = false;
@@ -305,8 +304,8 @@ export struct HomePage {
         })
           .width('100%')
           .height(46)
-          .fontColor(EggClipColors.onPrimary)
-          .backgroundColor(EggClipColors.primary)
+          .fontColor(this.latestReceivedText.length > 0 ? EggClipColors.textPrimary : EggClipColors.onPrimary)
+          .backgroundColor(this.latestReceivedText.length > 0 ? EggClipColors.controlBackground : EggClipColors.primary)
           .borderRadius(23)
           .onClick((_event: ClickEvent, result: PasteButtonOnClickResult) => {
             if (result !== PasteButtonOnClickResult.SUCCESS) {
@@ -400,9 +399,6 @@ export struct HomePage {
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
-    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
-    .backgroundColor(EggClipColors.controlBackground)
-    .borderRadius(14)
   }
 
   @Builder
@@ -428,7 +424,7 @@ export struct HomePage {
             .backgroundColor(EggClipColors.controlBackground)
             .borderRadius(14)
             .onClick(() => {
-              this.clearHistory();
+              this.confirmClearHistory();
             })
         }
         .width('100%')
@@ -484,83 +480,114 @@ export struct HomePage {
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
-    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
-    .backgroundColor(EggClipColors.controlBackground)
-    .borderRadius(14)
   }
 
   @Builder
   private HistoryItem(item: HistoryPreviewItem) {
-    Column({ space: 4 }) {
-      Row({ space: 8 }) {
-        Column({ space: 4 }) {
+    Column({ space: 5 }) {
+      Column({ space: 4 }) {
+        Row({ space: 8 }) {
           Text(item.title)
             .fontSize(EggClipTypography.captionSize)
             .fontWeight(FontWeight.Medium)
             .fontColor(EggClipColors.textPrimary)
+            .layoutWeight(1)
 
+          Text(this.copiedHistoryItemId === item.id ? '已复制' : item.receivedAt)
+            .fontSize(11)
+            .fontColor(EggClipColors.textSecondary)
+        }
+        .width('100%')
+
+        Row({ space: 8 }) {
           Text(this.expandedHistoryItemId === item.id && item.text.length > 0 ? item.text : item.preview)
-            .width('100%')
+            .layoutWeight(1)
+            .maxLines(this.expandedHistoryItemId === item.id ? 8 : 1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
             .fontSize(11)
             .fontColor(EggClipColors.textSecondary)
             .lineHeight(18)
-        }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
 
-        Text(item.receivedAt)
-          .fontSize(11)
-          .fontColor(EggClipColors.textSecondary)
-      }
-      .width('100%')
-
-      Row({ space: 8 }) {
-        Text(item.source)
-          .fontSize(10)
-          .fontColor(EggClipColors.textSecondary)
-          .layoutWeight(1)
-
-        if (item.text.length > 180) {
-          Button(this.expandedHistoryItemId === item.id ? '收起' : '详情')
+          Button('•••')
+            .width(34)
             .height(28)
             .fontSize(11)
             .fontColor(EggClipColors.textSecondary)
-            .backgroundColor(EggClipColors.cardBackground)
-            .borderRadius(14)
+            .backgroundColor(Color.Transparent)
             .onClick(() => {
-              this.expandedHistoryItemId = this.expandedHistoryItemId === item.id ? '' : item.id;
+              this.historyActionsItemId = this.historyActionsItemId === item.id ? '' : item.id;
             })
         }
+        .width('100%')
+      }
+      .width('100%')
+      .padding({ left: 8, right: 4, top: 8, bottom: 8 })
+      .borderRadius(12)
+      .onClick(() => {
+        if (item.canCopy) this.copyHistoryItem(item.id);
+      })
 
-        Button(this.copiedHistoryItemId === item.id ? '已复制' : '复制')
-          .height(28)
-          .enabled(item.canCopy)
-          .fontSize(11)
-          .fontColor(EggClipColors.textSecondary)
-          .backgroundColor(EggClipColors.cardBackground)
-          .borderRadius(14)
-          .onClick(() => {
-            this.copyHistoryItem(item.id);
-          })
+      if (this.historyActionsItemId === item.id) {
+        Row({ space: 8 }) {
+          Text(item.source)
+            .fontSize(10)
+            .fontColor(EggClipColors.textSecondary)
+            .layoutWeight(1)
 
-        Button(this.deletingHistoryItemId === item.id ? '删除中' : '删除')
+          if (item.text.length > 180) {
+            Button(this.expandedHistoryItemId === item.id ? '收起详情' : '查看详情')
+              .height(28)
+              .fontSize(11)
+              .fontColor(EggClipColors.textSecondary)
+              .backgroundColor(Color.Transparent)
+              .onClick(() => {
+                this.expandedHistoryItemId = this.expandedHistoryItemId === item.id ? '' : item.id;
+              })
+          }
+
+          Button('删除')
           .height(28)
           .enabled(this.deletingHistoryItemId.length === 0 && !this.clearingHistory)
           .fontSize(11)
-          .fontColor(EggClipColors.textSecondary)
-          .backgroundColor(EggClipColors.cardBackground)
+          .fontColor(Color.Red)
+          .backgroundColor(Color.Transparent)
           .borderRadius(14)
           .onClick(() => {
-            this.deleteHistoryItem(item.id);
+            this.confirmDeleteHistoryItem(item.id);
           })
+        }
+        .width('100%')
       }
-      .width('100%')
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
-    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
-    .backgroundColor(EggClipColors.controlBackground)
-    .borderRadius(14)
+    .border({ width: { bottom: 1 }, color: EggClipColors.controlBackground })
+  }
+
+  private confirmDeleteHistoryItem(itemId: string): void {
+    this.getUIContext().showAlertDialog({
+      title: '删除这条记录？',
+      message: '只会删除 EggClip 的本机历史，不会修改系统剪贴板。',
+      primaryButton: { value: '取消', action: () => {} },
+      secondaryButton: {
+        value: '删除',
+        fontColor: Color.Red,
+        action: () => { this.deleteHistoryItem(itemId); }
+      }
+    });
+  }
+
+  private confirmClearHistory(): void {
+    this.getUIContext().showAlertDialog({
+      title: '清空本机历史？',
+      message: '全部 EggClip 历史会被删除，系统剪贴板不受影响。',
+      primaryButton: { value: '取消', action: () => {} },
+      secondaryButton: {
+        value: '清空',
+        fontColor: Color.Red,
+        action: () => { this.clearHistory(); }
+      }
+    });
   }
 
   private copyHistoryItem(itemId: string): void {
@@ -596,14 +623,14 @@ export struct HomePage {
           return;
         }
 
-        this.setOutboundStatus(OutboundSendState.PENDING, '正在发送到桌面端', '正在通过当前 POC WebSocket 连接发送文本。');
+        this.setOutboundStatus(OutboundSendState.PENDING, '正在发送到桌面端', '正在使用当前连接发送文本。');
         pocConnectionStore.sendClipboardText(text)
           .then((sent) => {
-            this.pasteStatus = sent ? '已发送到桌面端' : '发送失败：WebSocket 未连接';
+            this.pasteStatus = sent ? '已发送到桌面端' : '发送失败：连接已断开';
             this.setOutboundStatus(
               sent ? OutboundSendState.SENT : OutboundSendState.FAILED,
               sent ? '已发送到桌面端' : '发送失败',
-              sent ? '已通过 POC 连接发送；正式协议接入后会改为 ITEM_LIVE。' : 'WebSocket 已断开，本机历史已保留。'
+              sent ? '文本已发送到桌面端。' : '连接已断开，本机历史已保留。'
             );
           })
           .catch(() => {
@@ -651,7 +678,7 @@ export struct HomePage {
           this.setOutboundStatus(
             OutboundSendState.SENT,
             '已发送到桌面端',
-            '本机事务已确认，并已通过正式加密 ITEM_LIVE 会话发送。'
+            '文本已安全保存并发送到桌面端。'
           );
           this.loadHistorySummary();
           return;
@@ -661,7 +688,7 @@ export struct HomePage {
           this.setOutboundStatus(
             OutboundSendState.PENDING,
             '等待桌面端确认',
-            '本机记录已持久化并通过加密 ITEM_LIVE 发出；收到确认后才标记完成。'
+            '文本已安全保存，正在等待桌面端确认。'
           );
           this.loadHistorySummary();
           return;
@@ -821,6 +848,8 @@ export struct HomePage {
         this.historyUsed = snapshot.used;
         this.historyLimit = snapshot.limit;
         this.historyItems = snapshot.items;
+        this.historyActionsItemId = '';
+        this.expandedHistoryItemId = '';
         this.historyStatus = snapshot.errorMessage.length > 0 ? snapshot.errorMessage : '已删除历史记录';
       })
       .catch(() => {
@@ -843,6 +872,8 @@ export struct HomePage {
         this.historyUsed = snapshot.used;
         this.historyLimit = snapshot.limit;
         this.historyItems = snapshot.items;
+        this.historyActionsItemId = '';
+        this.expandedHistoryItemId = '';
         this.historyStatus = snapshot.errorMessage.length > 0 ? snapshot.errorMessage : '已清空本机历史；不会修改系统剪贴板';
       })
       .catch(() => {

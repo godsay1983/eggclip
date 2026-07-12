@@ -184,7 +184,7 @@ function toHistoryPreviewItem(record: ClipboardItemRecord, text: string): Histor
   return {
     id: record.item.itemId,
     title: `${record.item.contentLength} 字节文本`,
-    preview: text.length > 0 ? trimPreview(text) : '正文暂不可解密；请检查同步空间密钥',
+    preview: text.length > 0 ? trimPreview(text) : '内容暂不可用',
     source: `来源设备 ${record.item.originDeviceId.slice(0, 8)}`,
     receivedAt: formatTime(record.receivedAt),
     text,

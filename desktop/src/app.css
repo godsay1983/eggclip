@@ -1062,41 +1062,129 @@ footer {
 
 .history-list {
   display: grid;
-  gap: 10px;
+  gap: 0;
 }
 
 .history-item {
   display: grid;
-  gap: 7px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
+  gap: 6px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.history-item:last-child {
+  border-bottom: 0;
+}
+
+.history-item-row {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.history-item-main {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 3px;
+  padding: 9px 8px;
+  border: 0;
+  border-radius: 12px;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.history-item-main:hover:not(:disabled) {
   background: var(--control);
 }
 
-.history-item-copy {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+.history-item-main:disabled {
+  cursor: default;
+}
+
+.history-item-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 10px;
-  align-items: start;
+}
+
+.history-item-heading > span,
+.history-item-preview {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.history-item-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-more {
+  width: 36px;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
 }
 
 .history-item-actions {
   display: flex;
-  flex: 0 0 auto;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
+  padding: 0 8px 6px;
+}
+
+.history-item-actions .metadata {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .history-item strong {
   font-size: 13px;
 }
 
-.history-item p {
-  margin-top: 3px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
+.history-confirmation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  color: var(--text);
+  background: rgba(214, 92, 74, 0.1);
+  font-size: 11px;
+}
+
+.history-confirmation > div {
+  display: flex;
+  gap: 6px;
+}
+
+@media (max-width: 460px) {
+  .panel-shell {
+    gap: 14px;
+    padding: 20px;
+  }
+
+  .panel-main {
+    gap: 14px;
+  }
+
+  .clipboard-card,
+  .device-section,
+  .history-section {
+    padding: 16px;
+    border-radius: 22px;
+  }
 }
 
 .empty-state {

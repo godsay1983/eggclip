@@ -433,8 +433,8 @@ export struct DevicesPage {
 
             Button('连接')
               .height(34)
-              .fontColor(EggClipColors.onPrimary)
-              .backgroundColor(EggClipColors.primary)
+              .fontColor(EggClipColors.primary)
+              .backgroundColor(EggClipColors.cardBackground)
               .borderRadius(17)
               .onClick(() => {
                 pocConnectionStore.connectCandidate(candidate);
@@ -580,8 +580,8 @@ export struct DevicesPage {
       Button('连接上次地址')
         .width('100%')
         .height(38)
-        .fontColor(EggClipColors.onPrimary)
-        .backgroundColor(EggClipColors.primary)
+        .fontColor(EggClipColors.primary)
+        .backgroundColor(EggClipColors.cardBackground)
         .borderRadius(19)
         .onClick(() => {
           pocConnectionStore.connectLastSuccessfulEndpoint();

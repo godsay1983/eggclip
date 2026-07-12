@@ -61,6 +61,7 @@ struct Index {
     .barPosition(BarPosition.End)
     .barMode(ExtendBarMode.HALF_SCREEN_FIXED)
     .vertical(false)
+    .animationDuration(160)
     .divider({ mode: DividerMode.NONE })
     .onSelected((index: number) => {
       this.selectedIndex = index;
@@ -71,10 +72,10 @@ struct Index {
         mediumWidth: 216,
         largeWidth: 228
       },
-      barBottomMargin: 18,
+      barBottomMargin: 14,
       gradientMask: {
         maskColor: EggClipColors.pageBackground,
-        maskHeight: 118
+        maskHeight: 82
       },
       systemMaterialEffect: {
         materialType: hdsMaterial.MaterialType.ADAPTIVE,
@@ -113,11 +114,9 @@ struct Index {
         this.SettingsGlyph(selected)
       }
     }
-    .width(30)
-    .height(30)
+    .width(24)
+    .height(24)
     .alignContent(Alignment.Center)
-    .backgroundColor(selected ? EggClipColors.primary : EggClipColors.controlBackground)
-    .borderRadius(12)
   }
 
   @Builder
@@ -126,7 +125,7 @@ struct Index {
       Row() {}
         .width(10)
         .height(3)
-        .backgroundColor(selected ? EggClipColors.onPrimary : EggClipColors.textPrimary)
+        .backgroundColor(selected ? EggClipColors.primary : EggClipColors.textPrimary)
         .borderRadius(2)
         .rotate({ angle: -38 })
         .offset({ x: -4, y: -5 })
@@ -134,7 +133,7 @@ struct Index {
       Row() {}
         .width(10)
         .height(3)
-        .backgroundColor(selected ? EggClipColors.onPrimary : EggClipColors.textPrimary)
+        .backgroundColor(selected ? EggClipColors.primary : EggClipColors.textPrimary)
         .borderRadius(2)
         .rotate({ angle: 38 })
         .offset({ x: 4, y: -5 })
@@ -143,7 +142,7 @@ struct Index {
         Row() {}
           .width(4)
           .height(7)
-          .backgroundColor(selected ? EggClipColors.onPrimary : EggClipColors.textPrimary)
+          .backgroundColor(selected ? EggClipColors.primary : EggClipColors.textPrimary)
           .borderRadius(2)
           .margin({ top: 7 })
       }
@@ -152,7 +151,7 @@ struct Index {
       .justifyContent(FlexAlign.Center)
       .border({
         width: 2,
-        color: selected ? EggClipColors.onPrimary : EggClipColors.textPrimary
+        color: selected ? EggClipColors.primary : EggClipColors.textPrimary
       })
       .borderRadius(5)
       .offset({ x: 0, y: 4 })
@@ -170,7 +169,7 @@ struct Index {
         .height(17)
         .border({
           width: 2,
-          color: selected ? EggClipColors.onPrimary : EggClipColors.textPrimary
+          color: selected ? EggClipColors.primary : EggClipColors.textPrimary
         })
         .borderRadius(5)
         .offset({ x: -4, y: -3 })
@@ -178,10 +177,10 @@ struct Index {
       Row() {}
         .width(13)
         .height(17)
-        .backgroundColor(selected ? EggClipColors.primary : EggClipColors.controlBackground)
+        .backgroundColor(Color.Transparent)
         .border({
           width: 2,
-          color: selected ? EggClipColors.onPrimary : EggClipColors.textPrimary
+          color: selected ? EggClipColors.primary : EggClipColors.textPrimary
         })
         .borderRadius(5)
         .offset({ x: 5, y: 4 })
@@ -189,7 +188,7 @@ struct Index {
       Row() {}
         .width(5)
         .height(2)
-        .backgroundColor(selected ? EggClipColors.onPrimary : EggClipColors.textPrimary)
+        .backgroundColor(selected ? EggClipColors.primary : EggClipColors.textPrimary)
         .borderRadius(1)
         .offset({ x: 5, y: 10 })
     }
@@ -213,20 +212,18 @@ struct Index {
       Row() {}
         .width(17)
         .height(17)
-        .backgroundColor(selected ? EggClipColors.primary : EggClipColors.controlBackground)
         .border({
           width: 2,
-          color: selected ? EggClipColors.onPrimary : EggClipColors.textPrimary
+          color: selected ? EggClipColors.primary : EggClipColors.textPrimary
         })
         .borderRadius(9)
 
       Row() {}
         .width(6)
         .height(6)
-        .backgroundColor(selected ? EggClipColors.primary : EggClipColors.controlBackground)
         .border({
           width: 2,
-          color: selected ? EggClipColors.onPrimary : EggClipColors.textPrimary
+          color: selected ? EggClipColors.primary : EggClipColors.textPrimary
         })
         .borderRadius(3)
     }
@@ -240,7 +237,7 @@ struct Index {
     Row() {}
       .width(width)
       .height(height)
-      .backgroundColor(selected ? EggClipColors.onPrimary : EggClipColors.textPrimary)
+      .backgroundColor(selected ? EggClipColors.primary : EggClipColors.textPrimary)
       .borderRadius(2)
       .rotate({ angle })
       .offset({ x, y })

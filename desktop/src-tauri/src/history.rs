@@ -228,7 +228,7 @@ fn to_history_item_summary_with_text(
         preview: text
             .as_deref()
             .map(history_preview)
-            .unwrap_or_else(|| "正文暂不可解密；请检查同步空间密钥".to_string()),
+            .unwrap_or_else(|| "内容暂不可用".to_string()),
         source: format!("来源设备 {short_device}"),
         received_at_ms: record.received_at,
         content_length: record.item.content_length,
@@ -328,7 +328,7 @@ mod tests {
         assert_eq!(items.len(), 2);
         assert_eq!(items[0].id, second_item_id);
         assert_eq!(items[0].content_length, 8);
-        assert!(items[0].preview.contains("暂不可解密"));
+        assert_eq!(items[0].preview, "内容暂不可用");
         assert!(
             delete_clipboard_history_item_at_path(&path, &second_item_id, 1_700_000_001_500)
                 .expect("item should delete")
@@ -381,7 +381,7 @@ mod tests {
 
         assert_eq!(captured.content_length, text.len());
         assert!(captured.title.contains(&text.len().to_string()));
-        assert!(captured.preview.contains("暂不可解密"));
+        assert_eq!(captured.preview, "内容暂不可用");
         assert_eq!(
             get_clipboard_history_used_at_path(&path).expect("history count should reload"),
             1

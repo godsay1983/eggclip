@@ -115,8 +115,8 @@ export struct PairingPage {
           })
             .width('100%')
             .height(42)
-            .fontColor(EggClipColors.onPrimary)
-            .backgroundColor(EggClipColors.primary)
+            .fontColor(EggClipColors.textPrimary)
+            .backgroundColor(EggClipColors.controlBackground)
             .borderRadius(21)
             .onClick((_event: ClickEvent, result: PasteButtonOnClickResult) => {
               if (result !== PasteButtonOnClickResult.SUCCESS) {
@@ -201,9 +201,6 @@ export struct PairingPage {
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
-    .padding(EggClipSpacing.cardPadding)
-    .backgroundColor(EggClipColors.cardBackground)
-    .borderRadius(EggClipSpacing.radiusMedium)
   }
 
   @Builder
@@ -262,9 +259,8 @@ export struct PairingPage {
       }
     }
     .width('100%')
-    .padding(12)
-    .backgroundColor(EggClipColors.controlBackground)
-    .borderRadius(16)
+    .padding({ top: 4, bottom: 10 })
+    .border({ width: { bottom: 1 }, color: EggClipColors.controlBackground })
   }
 
   @Builder
@@ -415,9 +411,7 @@ export struct PairingPage {
         .lineHeight(18)
     }
     .width('100%')
-    .padding(12)
-    .backgroundColor(EggClipColors.controlBackground)
-    .borderRadius(16)
+    .padding({ top: 4 })
     .alignItems(HorizontalAlign.Start)
   }
 
@@ -444,9 +438,6 @@ export struct PairingPage {
       .fontColor(EggClipColors.textSecondary)
       .lineHeight(18)
     .width('100%')
-    .padding(12)
-    .backgroundColor(EggClipColors.controlBackground)
-    .borderRadius(16)
   }
 
   private statusBadgeText(): string {
