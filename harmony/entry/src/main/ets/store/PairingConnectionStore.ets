@@ -84,6 +84,7 @@ export enum PairingConnectionState {
 
 export interface PairingConnectionSnapshot {
   state: PairingConnectionState;
+  trustedDeviceId: string;
   manualHost: string;
   manualPort: string;
   endpointLabel: string;
@@ -196,6 +197,7 @@ class PairingConnectionStore {
   snapshot(): PairingConnectionSnapshot {
     return {
       state: this.state,
+      trustedDeviceId: this.reconnectTarget?.deviceId ?? this.pendingTrustServerHello?.deviceId ?? '',
       manualHost: this.manualHost,
       manualPort: this.manualPort,
       endpointLabel: this.endpointLabel,

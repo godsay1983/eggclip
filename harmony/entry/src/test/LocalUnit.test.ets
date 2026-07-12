@@ -141,6 +141,7 @@ import {
   describePairingAuthError,
   trustedDiscoveryEndpoint
 } from '../main/ets/store/PairingConnectionStore';
+import { normalizeTrustedDeviceName } from '../main/ets/store/TrustedDeviceStore';
 import {
   InboundItemLiveService,
   InboundItemLiveStatus,
@@ -234,6 +235,13 @@ import { MAX_TEXT_BYTES } from '../main/ets/utils/TextLimits';
 
 export default function localUnitTest() {
   describe('EggClipH1Boundaries', () => {
+    it('normalizesTrustedDeviceNamesForSafeDisplay', 0, () => {
+      expect(normalizeTrustedDeviceName('  我的   桌面端  ')).assertEqual('我的 桌面端');
+      expect(normalizeTrustedDeviceName('   ')).assertEqual('');
+      expect(normalizeTrustedDeviceName('123456789012345678901234567890123456789012345'))
+        .assertEqual('1234567890123456789012345678901234567890');
+    });
+
     it('keepsPublishAndDiscoveryMdnsTypesDistinct', 0, () => {
       expect(EGGCLIP_MDNS_SERVICE_TYPE).assertEqual('_eggclip._tcp.local.');
       expect(EGGCLIP_MDNS_DISCOVERY_TYPE).assertEqual('_eggclip._tcp');

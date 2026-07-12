@@ -182,6 +182,9 @@ export class SpaceRdbRepository {
     const store = await Database.getStore(this.context);
     store.beginTransaction();
     try {
+      await store.executeSql('DELETE FROM clipboard_items', []);
+      await store.executeSql('DELETE FROM sync_heads', []);
+      await store.executeSql('DELETE FROM devices', []);
       await store.executeSql('DELETE FROM spaces', []);
       await store.executeSql('DELETE FROM app_metadata WHERE key = ?', [TRUSTED_CONNECTION_ENDPOINT_KEY]);
       store.commit();

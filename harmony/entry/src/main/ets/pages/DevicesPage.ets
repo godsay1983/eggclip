@@ -11,6 +11,11 @@ import {
   pocConnectionStore
 } from '../store/PocConnectionStore';
 import { TrustedDeviceStore, TrustedDeviceSummary } from '../store/TrustedDeviceStore';
+import {
+  PairingConnectionSnapshot,
+  PairingConnectionState,
+  pairingConnectionStore
+} from '../store/PairingConnectionStore';
 import { EggClipColors } from '../theme/Colors';
 import { EggClipSpacing } from '../theme/Spacing';
 import { EggClipTypography } from '../theme/Typography';
@@ -37,6 +42,11 @@ export struct DevicesPage {
     this.connectionTitle = snapshot.connectionTitle;
     this.connectionDescription = snapshot.connectionDescription;
   };
+  private readonly pairingSnapshotListener = (snapshot: PairingConnectionSnapshot): void => {
+    this.pairingConnectionState = snapshot.state;
+    this.pairingTrustedDeviceId = snapshot.trustedDeviceId;
+    this.loadTrustedDevices();
+  };
   @StorageLink(APP_FOREGROUND_STORAGE_KEY) @Watch('onAppForegroundChanged')
   private appInForeground: boolean = false;
   @State private manualHost: string = '127.0.0.1';
@@ -56,6 +66,12 @@ export struct DevicesPage {
   @State private connectionDescription: string = '正在等待 mDNS 候选，也可以使用手动 IP';
   @State private diagnosticsExpanded: boolean = false;
   @State private trustedDevices: TrustedDeviceSummary[] = [];
+  @State private pairingConnectionState: PairingConnectionState = PairingConnectionState.IDLE;
+  @State private pairingTrustedDeviceId: string = '';
+  @State private editingDeviceId: string = '';
+  @State private deviceNameDraft: string = '';
+  @State private busyDeviceId: string = '';
+  @State private deviceActionStatus: string = '';
 
   aboutToAppear(): void {
     const hostContext = this.getUIContext().getHostContext();
@@ -66,11 +82,13 @@ export struct DevicesPage {
       }
     }
     pocConnectionStore.subscribe(this.connectionSnapshotListener);
+    pairingConnectionStore.subscribe(this.pairingSnapshotListener);
     this.loadTrustedDevices();
   }
 
   aboutToDisappear(): void {
     pocConnectionStore.unsubscribe(this.connectionSnapshotListener);
+    pairingConnectionStore.unsubscribe(this.pairingSnapshotListener);
   }
 
   build() {
@@ -596,20 +614,108 @@ export struct DevicesPage {
           .fontColor(EggClipColors.textPrimary)
           .width('100%')
         ForEach(this.trustedDevices, (device: TrustedDeviceSummary) => {
-          Column({ space: 5 }) {
-            Text(device.displayName)
-              .fontSize(EggClipTypography.bodySize)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(EggClipColors.textPrimary)
-            Text(`指纹 ${device.shortFingerprint} · 最后在线 ${device.lastSeen}`)
-              .fontSize(EggClipTypography.captionSize)
-              .fontColor(EggClipColors.textSecondary)
+          Column({ space: 10 }) {
+            Row({ space: 10 }) {
+              Column({ space: 5 }) {
+                Text(device.displayName)
+                  .fontSize(EggClipTypography.bodySize)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor(EggClipColors.textPrimary)
+                Text(`指纹 ${device.shortFingerprint} · 最后在线 ${device.lastSeen}`)
+                  .fontSize(EggClipTypography.captionSize)
+                  .fontColor(EggClipColors.textSecondary)
+              }
+              .alignItems(HorizontalAlign.Start)
+              .layoutWeight(1)
+
+              Text(this.trustedDeviceStateLabel(device.deviceId))
+                .fontSize(11)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(this.trustedDeviceStateColor(device.deviceId))
+                .padding({ left: 9, right: 9, top: 5, bottom: 5 })
+                .backgroundColor(EggClipColors.cardBackground)
+                .borderRadius(14)
+            }
+            .width('100%')
+
+            if (this.editingDeviceId === device.deviceId) {
+              Row({ space: 8 }) {
+                TextInput({ text: this.deviceNameDraft, placeholder: '设备名称' })
+                  .layoutWeight(1)
+                  .height(36)
+                  .fontSize(EggClipTypography.captionSize)
+                  .backgroundColor(EggClipColors.cardBackground)
+                  .borderRadius(18)
+                  .onChange((value: string) => {
+                    this.deviceNameDraft = value;
+                  })
+
+                Button('保存')
+                  .height(34)
+                  .fontSize(12)
+                  .fontColor(EggClipColors.onPrimary)
+                  .backgroundColor(EggClipColors.primary)
+                  .borderRadius(17)
+                  .enabled(this.busyDeviceId.length === 0)
+                  .onClick(() => {
+                    this.saveDeviceName(device.deviceId);
+                  })
+
+                Button('取消')
+                  .height(34)
+                  .fontSize(12)
+                  .fontColor(EggClipColors.textSecondary)
+                  .backgroundColor(EggClipColors.cardBackground)
+                  .borderRadius(17)
+                  .onClick(() => {
+                    this.editingDeviceId = '';
+                    this.deviceNameDraft = '';
+                  })
+              }
+              .width('100%')
+            } else {
+              Row({ space: 8 }) {
+                Button('重命名')
+                  .height(32)
+                  .fontSize(12)
+                  .fontColor(EggClipColors.textPrimary)
+                  .backgroundColor(EggClipColors.cardBackground)
+                  .borderRadius(16)
+                  .enabled(this.busyDeviceId.length === 0)
+                  .onClick(() => {
+                    this.editingDeviceId = device.deviceId;
+                    this.deviceNameDraft = device.displayName;
+                    this.deviceActionStatus = '';
+                  })
+
+                Button(this.busyDeviceId === device.deviceId ? '正在移除' : '移除设备')
+                  .height(32)
+                  .fontSize(12)
+                  .fontColor(Color.Red)
+                  .backgroundColor(EggClipColors.cardBackground)
+                  .borderRadius(16)
+                  .enabled(this.busyDeviceId.length === 0)
+                  .onClick(() => {
+                    this.confirmRemoveDevice(device);
+                  })
+              }
+              .width('100%')
+              .justifyContent(FlexAlign.End)
+            }
           }
           .width('100%')
           .padding(12)
           .backgroundColor(EggClipColors.controlBackground)
           .borderRadius(EggClipSpacing.radiusMedium)
         }, (device: TrustedDeviceSummary) => device.deviceId)
+
+        if (this.deviceActionStatus.length > 0) {
+          Text(this.deviceActionStatus)
+            .width('100%')
+            .fontSize(EggClipTypography.captionSize)
+            .fontColor(EggClipColors.textSecondary)
+            .lineHeight(18)
+        }
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
@@ -655,6 +761,88 @@ export struct DevicesPage {
     this.trustedDeviceStore.load()
       .then((devices) => { this.trustedDevices = devices; })
       .catch(() => { this.trustedDevices = []; });
+  }
+
+  private saveDeviceName(deviceId: string): void {
+    if (this.trustedDeviceStore === null || this.busyDeviceId.length > 0) return;
+    this.busyDeviceId = deviceId;
+    this.trustedDeviceStore.rename(deviceId, this.deviceNameDraft)
+      .then((result) => {
+        this.busyDeviceId = '';
+        if (!result.ok) {
+          this.deviceActionStatus = result.reason ?? '设备重命名失败';
+          return;
+        }
+        this.editingDeviceId = '';
+        this.deviceNameDraft = '';
+        this.deviceActionStatus = '设备名称已更新';
+        this.loadTrustedDevices();
+      })
+      .catch(() => {
+        this.busyDeviceId = '';
+        this.deviceActionStatus = '设备重命名失败，请稍后重试';
+      });
+  }
+
+  private confirmRemoveDevice(device: TrustedDeviceSummary): void {
+    this.getUIContext().showAlertDialog({
+      title: `移除“${device.displayName}”？`,
+      message: '这会立即停止自动重连，撤销本机可信记录，并清除本机旧同步空间密钥与历史。桌面端还需移除本设备以轮换空间密钥；再次使用时需要重新配对。',
+      primaryButton: {
+        value: '取消',
+        action: () => {
+        }
+      },
+      secondaryButton: {
+        value: '确认移除',
+        fontColor: Color.Red,
+        action: () => {
+          this.removeDevice(device.deviceId);
+        }
+      }
+    });
+  }
+
+  private removeDevice(deviceId: string): void {
+    if (this.trustedDeviceStore === null || this.busyDeviceId.length > 0) return;
+    this.busyDeviceId = deviceId;
+    this.editingDeviceId = '';
+    pairingConnectionStore.close();
+    this.trustedDeviceStore.removeAndClearPairingSecurity(deviceId)
+      .then((result) => {
+        this.busyDeviceId = '';
+        if (!result.ok) {
+          this.deviceActionStatus = result.reason ?? '设备移除未完整完成，请到设置中重新初始化配对安全状态';
+          this.loadTrustedDevices();
+          return;
+        }
+        this.deviceActionStatus = '设备已移除，本机旧空间密钥和历史已清理，请在桌面端同步移除本设备';
+        this.loadTrustedDevices();
+      })
+      .catch(() => {
+        this.busyDeviceId = '';
+        this.deviceActionStatus = '设备移除失败，请到设置中重新初始化配对安全状态';
+        this.loadTrustedDevices();
+      });
+  }
+
+  private trustedDeviceStateLabel(deviceId: string): string {
+    if (deviceId !== this.pairingTrustedDeviceId) return '离线';
+    if (this.pairingConnectionState === PairingConnectionState.AUTHENTICATED) return '在线';
+    if (this.pairingConnectionState === PairingConnectionState.PREPARING ||
+      this.pairingConnectionState === PairingConnectionState.CONNECTING ||
+      this.pairingConnectionState === PairingConnectionState.CLIENT_HELLO_SENT ||
+      this.pairingConnectionState === PairingConnectionState.WAITING_AUTH_OK) return '连接中';
+    if (this.pairingConnectionState === PairingConnectionState.FAILED) return '连接失败';
+    return '离线';
+  }
+
+  private trustedDeviceStateColor(deviceId: string): ResourceColor {
+    const label = this.trustedDeviceStateLabel(deviceId);
+    if (label === '在线') return EggClipColors.statusOnline;
+    if (label === '连接中') return EggClipColors.primary;
+    if (label === '连接失败') return Color.Red;
+    return EggClipColors.textSecondary;
   }
 
   @Builder
