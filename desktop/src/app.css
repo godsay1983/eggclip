@@ -106,7 +106,7 @@ footer,
 
 .brand-row {
   gap: 14px;
-  align-items: flex-start;
+  align-items: center;
 }
 
 .brand-mark {
@@ -131,18 +131,10 @@ footer,
   gap: 8px;
 }
 
-.beta-badge,
-.brand-pills span,
 .status-label {
   border-radius: 999px;
   font-size: 11px;
   font-weight: 700;
-}
-
-.beta-badge {
-  padding: 4px 8px;
-  color: #3d2d00;
-  background: var(--primary);
 }
 
 h1,
@@ -171,20 +163,6 @@ footer {
 
 .brand-copy p {
   margin-top: 4px;
-}
-
-.brand-pills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 9px;
-}
-
-.brand-pills span {
-  padding: 5px 9px;
-  color: var(--muted);
-  background: var(--control);
-  font-weight: 600;
 }
 
 .icon-button,
@@ -578,46 +556,6 @@ footer {
   height: 1px;
   margin: 14px 0 2px;
   background: var(--line);
-}
-
-.settings-note {
-  margin: 0 0 12px;
-  padding: 10px 12px;
-  border-radius: 16px;
-  color: var(--muted);
-  background: var(--control);
-  font-size: 12px;
-  line-height: 1.55;
-}
-
-.privacy-summary {
-  display: grid;
-  gap: 8px;
-  margin-bottom: 12px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  color: var(--muted);
-  background: rgba(255, 243, 196, 0.62);
-  font-size: 12px;
-  line-height: 1.55;
-}
-
-.privacy-summary h3 {
-  margin: 0 0 4px;
-  color: var(--text);
-  font-size: 13px;
-}
-
-.privacy-summary p,
-.privacy-summary ul {
-  margin: 0;
-}
-
-.privacy-summary ul {
-  display: grid;
-  gap: 4px;
-  padding-left: 18px;
 }
 
 .space-summary {
@@ -1141,7 +1079,7 @@ footer {
 
 footer {
   flex: 0 0 auto;
-  justify-content: space-between;
+  justify-content: flex-end;
   margin-top: 0;
   padding-top: 14px;
   border-top: 1px solid var(--line);
@@ -1197,10 +1135,6 @@ footer {
 }
 
 :root[data-theme="dark"] .setting-grid label {
-  background: rgba(57, 51, 41, 0.62);
-}
-
-:root[data-theme="dark"] .privacy-summary {
   background: rgba(57, 51, 41, 0.62);
 }
 
@@ -1292,10 +1226,6 @@ footer {
   }
 
   :root:not([data-theme="light"]):not([data-theme="dark"]) .setting-grid label {
-    background: rgba(57, 51, 41, 0.62);
-  }
-
-  :root:not([data-theme="light"]):not([data-theme="dark"]) .privacy-summary {
     background: rgba(57, 51, 41, 0.62);
   }
 

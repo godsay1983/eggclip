@@ -68,33 +68,37 @@
     </div>
   {:else}
     <p class="clipboard-placeholder">
-      完成配对后，在线实时内容会自动写入桌面剪贴板；离线补齐的历史只会显示在列表中。
+      复制一段文本即可开始同步；收到的实时文本会显示在这里。
     </p>
   {/if}
 
-  <div class={`outbound-status ${outbound.state}`} aria-label="发送状态">
-    <div>
-      <strong>{outbound.title}</strong>
-      <p>{outbound.description}</p>
-      {#if outbound.updatedAt}
-        <span class="metadata">更新时间：{outbound.updatedAt}</span>
-      {/if}
+  {#if current || outbound.state !== "idle"}
+    <div class={`outbound-status ${outbound.state}`} aria-label="发送状态">
+      <div>
+        <strong>{outbound.title}</strong>
+        <p>{outbound.description}</p>
+        {#if outbound.updatedAt}
+          <span class="metadata">更新时间：{outbound.updatedAt}</span>
+        {/if}
+      </div>
+      <span class="outbound-badge">{outboundLabel}</span>
     </div>
-    <span class="outbound-badge">{outboundLabel}</span>
-  </div>
+  {/if}
 
   <div class="action-row">
     <button class="secondary-action" type="button" on:click={onRead}>读取本机剪贴板</button>
-    <button class="primary-action" type="button" disabled={!current?.canCopy} on:click={onCopy}>
-      复制此内容
-    </button>
-    <button
-      class="secondary-action"
-      type="button"
-      disabled={!current || sendDisabled}
-      on:click={onSend}
-    >
-      {sendLabel}
-    </button>
+    {#if current}
+      <button class="primary-action" type="button" disabled={!current.canCopy} on:click={onCopy}>
+        复制
+      </button>
+      <button
+        class="secondary-action"
+        type="button"
+        disabled={sendDisabled}
+        on:click={onSend}
+      >
+        {sendLabel}
+      </button>
+    {/if}
   </div>
 </section>

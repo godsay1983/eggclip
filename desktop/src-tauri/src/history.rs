@@ -43,6 +43,7 @@ pub fn clear_clipboard_history(app: AppHandle) -> Result<usize, String> {
 #[tauri::command]
 pub fn get_clipboard_history_used(app: AppHandle) -> Result<usize, String> {
     let path = database_path(&app)?;
+    apply_global_history_retention_at_path(&path, now_ms()?)?;
     get_clipboard_history_used_at_path(&path)
 }
 
@@ -108,6 +109,18 @@ fn get_clipboard_history_used_at_path(path: &Path) -> Result<usize, String> {
         .map_err(|error| format!("无法读取历史数量：{error}"))
 }
 
+fn apply_global_history_retention_at_path(path: &Path, current_time: u64) -> Result<(), String> {
+    let connection = open_database(path).map_err(|error| format!("无法打开本地数据库：{error}"))?;
+    let settings = SettingsRepository::new(&connection)
+        .load_app_settings()
+        .map_err(|error| format!("无法读取设置：{error}"))?
+        .unwrap_or_default();
+    ClipboardRepository::new(&connection)
+        .apply_global_retention(&settings, current_time)
+        .map(|_| ())
+        .map_err(|error| format!("无法清理过期历史：{error}"))
+}
+
 #[cfg(test)]
 fn list_clipboard_history_preview_at_path(
     path: &Path,
@@ -167,7 +180,7 @@ pub(crate) fn capture_clipboard_history_text_at_path(
     )
     .map_err(|error| format!("无法保存本机历史：{error}"))?;
     ClipboardRepository::new(&connection)
-        .apply_retention(space_id, &settings, captured_at)
+        .apply_global_retention(&settings, captured_at)
         .map_err(|error| format!("无法清理过期历史：{error}"))?;
     Ok(Some(to_history_item_summary(&result.record)))
 }

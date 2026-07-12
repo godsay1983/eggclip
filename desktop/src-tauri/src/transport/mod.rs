@@ -729,7 +729,7 @@ fn persist_and_broadcast_authenticated_local_clipboard(
         )
         .map_err(|_| ())?;
         ClipboardRepository::new(&connection)
-            .apply_retention(space_id, &settings, captured_at)
+            .apply_global_retention(&settings, captured_at)
             .map_err(|_| ())?;
         authenticated_local_item_payload(&result.record.item).ok_or(())
     })();
@@ -1941,7 +1941,7 @@ fn persist_authenticated_remote_history_if_possible(
         .insert_deduplicated(&record)
         .map_err(|_| ())?;
     ClipboardRepository::new(&connection)
-        .apply_retention(space_id, settings, received_at)
+        .apply_global_retention(settings, received_at)
         .map_err(|_| ())?;
     Ok(match outcome {
         ClipboardInsertOutcome::Inserted => AuthenticatedRemoteHistoryOutcome::Inserted,

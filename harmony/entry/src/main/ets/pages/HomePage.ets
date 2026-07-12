@@ -99,9 +99,9 @@ export struct HomePage {
       this.setOutboundStatus(OutboundSendState.FAILED, '待同步状态读取失败', snapshot.outboundDeliveryDescription);
     }
   };
-  @State private pasteStatus: string = '等待点击 PasteButton 触发一次性授权';
+  @State private pasteStatus: string = '点击“粘贴”后读取并发送一次';
   @State private transportDiagnostics: string = '帧诊断：接收 0 · 接受 0 · 拒绝 0';
-  @State private copyStatus: string = '收到桌面文本后可手动复制到本机';
+  @State private copyStatus: string = '桌面端文本可手动复制到本机';
   @State private outboundState: OutboundSendState = OutboundSendState.IDLE;
   @State private outboundTitle: string = '等待本机文本';
   @State private outboundDescription: string = '点击系统 PasteButton 后，会先保存本机历史，再按同步策略尝试发送。';
@@ -179,19 +179,15 @@ export struct HomePage {
   private ConnectionExperienceCard() {
     Column({ space: 10 }) {
       if (this.currentConnectionExperience().showFirstUse) {
-        Text('三步开始同步')
+        Text('还没有配对设备')
           .fontSize(EggClipTypography.bodySize)
           .fontWeight(FontWeight.Bold)
           .fontColor(EggClipColors.textPrimary)
           .width('100%')
-        Text('1. 桌面端生成邀请  ·  2. 到“设备”页扫码或粘贴  ·  3. 核对六位确认码')
+        Text('请到设备页扫描二维码或粘贴桌面端邀请。')
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
           .lineHeight(20)
-          .width('100%')
-        Text('完成一次配对后，应用回到前台会自动恢复可信连接，无需每次扫码。')
-          .fontSize(11)
-          .fontColor(EggClipColors.textSecondary)
           .width('100%')
       } else {
         Row({ space: 10 }) {
@@ -236,28 +232,18 @@ export struct HomePage {
   private Header() {
     Row({ space: 12 }) {
       Image($r('app.media.startIcon'))
-        .width(54)
-        .height(54)
+        .width(46)
+        .height(46)
         .objectFit(ImageFit.Contain)
 
       Column({ space: 4 }) {
-        Row({ space: 8 }) {
-          Text('蛋定 Clip')
-            .fontSize(EggClipTypography.titleSize)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(EggClipColors.textPrimary)
+        Text('蛋定 Clip')
+          .fontSize(EggClipTypography.titleSize)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(EggClipColors.textPrimary)
+          .width('100%')
 
-          Text('Beta')
-            .fontSize(EggClipTypography.captionSize)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(EggClipColors.onPrimary)
-            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .backgroundColor(EggClipColors.primary)
-            .borderRadius(16)
-        }
-        .width('100%')
-
-        Text('剪贴板收发')
+        Text('剪贴板')
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
       }
@@ -272,7 +258,7 @@ export struct HomePage {
   private LatestClipboardCard() {
     Column({ space: 14 }) {
       Row() {
-        Text('剪贴板收发')
+        Text('剪贴板')
           .fontSize(EggClipTypography.bodySize)
           .fontWeight(FontWeight.Bold)
           .fontColor(EggClipColors.textPrimary)
@@ -348,28 +334,26 @@ export struct HomePage {
       .width('100%')
       .alignItems(HorizontalAlign.Start)
 
-      this.OutboundStatusCard()
+      if (this.outboundState !== OutboundSendState.IDLE) {
+        this.OutboundStatusCard()
+      }
 
-      Button('复制到本机')
-        .width('100%')
-        .height(46)
-        .enabled(this.latestReceivedText.length > 0)
-        .fontColor(EggClipColors.onPrimary)
-        .backgroundColor(EggClipColors.primary)
-        .borderRadius(23)
-        .onClick(() => {
-          this.copyLatestReceivedToLocal();
-        })
+      if (this.latestReceivedText.length > 0) {
+        Button('复制')
+          .width('100%')
+          .height(46)
+          .fontColor(EggClipColors.onPrimary)
+          .backgroundColor(EggClipColors.primary)
+          .borderRadius(23)
+          .onClick(() => {
+            this.copyLatestReceivedToLocal();
+          })
 
-      Text(this.copyStatus)
-        .width('100%')
-        .fontSize(EggClipTypography.captionSize)
-        .fontColor(EggClipColors.textSecondary)
-
-      Text(this.transportDiagnostics)
-        .width('100%')
-        .fontSize(11)
-        .fontColor(EggClipColors.textSecondary)
+        Text(this.copyStatus)
+          .width('100%')
+          .fontSize(EggClipTypography.captionSize)
+          .fontColor(EggClipColors.textSecondary)
+      }
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -450,7 +434,7 @@ export struct HomePage {
         .width('100%')
         .alignItems(VerticalAlign.Center)
 
-        Text(`当前本机历史 ${this.historyUsed} / ${this.historyLimit}；离线补齐只进历史，不覆盖当前剪贴板。`)
+        Text(`${this.historyUsed} / ${this.historyLimit} 条 · 离线补齐不会覆盖当前剪贴板`)
           .width('100%')
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
@@ -649,14 +633,14 @@ export struct HomePage {
     if (this.connectionTitle.indexOf('暂停') >= 0) {
       return `${this.connectionTitle}：${this.connectionDescription}。恢复自动接收后，桌面端文本才会进入预览。`;
     }
-    return '桌面端发来的文本会先显示在这里，点击后才会复制到本机剪贴板。发送手机剪贴板必须点击系统 PasteButton。连接和发现入口已移到设备页。';
+    return '桌面端复制的文本会显示在这里；点击“粘贴”可发送手机剪贴板。';
   }
 
   private emptyHistoryHelpText(): string {
     if (this.historyLimit === 0) {
       return '当前只保留实时同步，不写入本机历史。可以在设置页把历史数量改为 20、50 或 100 条。';
     }
-    return '点击 PasteButton 发送本机剪贴板，或接收桌面端文本后，这里会显示最近记录的元数据；正文预览等待加密/解密链路接入。';
+    return '发送或收到文本后，最近记录会显示在这里。';
   }
 
   private persistLocalHistoryThenSend(text: string): void {

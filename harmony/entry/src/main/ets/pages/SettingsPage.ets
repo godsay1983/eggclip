@@ -87,8 +87,8 @@ export struct SettingsPage {
         this.SyncPolicyCard()
         this.HistoryPolicyCard()
         this.AppearanceCard()
-        this.DiagnosticsCard()
         this.PrivacyCard()
+        this.DiagnosticsCard()
       }
       .width('100%')
       .constraintSize({ maxWidth: 960 })
@@ -114,10 +114,12 @@ export struct SettingsPage {
         .fontColor(EggClipColors.textPrimary)
         .width('100%')
 
-      Text(this.statusText)
-        .fontSize(EggClipTypography.captionSize)
-        .fontColor(this.storeState === SettingsStoreState.ERROR ? Color.Red : EggClipColors.textSecondary)
-        .width('100%')
+      if (this.storeState === SettingsStoreState.ERROR) {
+        Text(this.statusText)
+          .fontSize(EggClipTypography.captionSize)
+          .fontColor(Color.Red)
+          .width('100%')
+      }
     }
     .alignItems(HorizontalAlign.Start)
     .width('100%')
@@ -160,14 +162,13 @@ export struct SettingsPage {
         .width('100%')
 
       Row({ space: 8 }) {
-        this.HistoryLimitButton(0)
         this.HistoryLimitButton(20)
         this.HistoryLimitButton(50)
         this.HistoryLimitButton(100)
       }
       .width('100%')
 
-      Text(`最长保留：${this.retentionDays} 天`)
+      Text(`最长保留：${this.retentionDays === 0 ? '不限' : `${this.retentionDays} 天`}`)
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
         .width('100%')
@@ -213,12 +214,6 @@ export struct SettingsPage {
         .fontColor(EggClipColors.textPrimary)
         .width('100%')
 
-      Text('主题设置保存在本机，只影响当前应用界面。')
-        .fontSize(EggClipTypography.captionSize)
-        .fontColor(EggClipColors.textSecondary)
-        .lineHeight(20)
-        .width('100%')
-
       Row({ space: 8 }) {
         this.ThemeModeButton(ThemeMode.SYSTEM, '跟随')
         this.ThemeModeButton(ThemeMode.LIGHT, '浅色')
@@ -242,16 +237,14 @@ export struct SettingsPage {
         .fontColor(EggClipColors.textPrimary)
         .width('100%')
 
-      Text('EggClip v1 只在局域网内同步 text/plain，不使用账号、云同步、中心服务器或公网中继。')
+      Text('仅在局域网同步纯文本，不使用账号或云端。')
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
         .lineHeight(20)
         .width('100%')
 
-      this.PrivacyPoint('剪贴板读取', 'HarmonyOS 端必须点击系统 PasteButton 才会读取一次剪贴板，应用不会静默读取。')
-      this.PrivacyPoint('历史保留', '历史只保存在本机 RDB，可关闭、限制数量和保留天数，也可清空本机历史。')
-      this.PrivacyPoint('诊断信息', '局域网诊断只显示连接状态、候选数量、错误类型和帧统计，不显示正文、摘要、邀请或密钥。')
-      this.PrivacyPoint('前台同步', '移动端只在前台发现和连接；进入后台会停止发现和 WebSocket 连接。')
+      this.PrivacyPoint('剪贴板', '只有点击系统“粘贴”后才读取一次，收到的文本由你手动复制。')
+      this.PrivacyPoint('本机数据', '历史和设置保存在本机，可随时关闭或清空。')
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -283,7 +276,7 @@ export struct SettingsPage {
   private DiagnosticsCard() {
     Column({ space: 10 }) {
       Row() {
-        Text('局域网诊断')
+        Text('高级诊断')
           .fontSize(EggClipTypography.bodySize)
           .fontWeight(FontWeight.Bold)
           .fontColor(EggClipColors.textPrimary)
@@ -406,14 +399,14 @@ export struct SettingsPage {
         Text('自动同步')
           .fontSize(EggClipTypography.bodySize)
           .fontColor(EggClipColors.textPrimary)
-        Text(this.syncEnabled ? '已开启' : '已关闭')
+        Text('控制前台连接和同步')
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
-      Button(this.syncEnabled ? '关闭' : '开启')
+      Button(this.syncEnabled ? '已开启' : '已关闭')
         .height(34)
         .enabled(this.storeState !== SettingsStoreState.SAVING)
         .fontColor(this.syncEnabled ? EggClipColors.textSecondary : EggClipColors.onPrimary)
@@ -434,14 +427,14 @@ export struct SettingsPage {
         Text('自动接收')
           .fontSize(EggClipTypography.bodySize)
           .fontColor(EggClipColors.textPrimary)
-        Text(this.autoReceiveEnabled ? '已开启' : '已关闭')
+        Text('接收桌面端实时文本')
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
-      Button(this.autoReceiveEnabled ? '关闭' : '开启')
+      Button(this.autoReceiveEnabled ? '已开启' : '已关闭')
         .height(34)
         .enabled(this.storeState !== SettingsStoreState.SAVING)
         .fontColor(this.autoReceiveEnabled ? EggClipColors.textSecondary : EggClipColors.onPrimary)
@@ -462,14 +455,14 @@ export struct SettingsPage {
         Text('自动写入剪贴板')
           .fontSize(EggClipTypography.bodySize)
           .fontColor(EggClipColors.textPrimary)
-        Text(this.autoWriteEnabled ? '已开启' : '已关闭')
+        Text('收到文本后写入系统剪贴板')
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
-      Button(this.autoWriteEnabled ? '关闭' : '开启')
+      Button(this.autoWriteEnabled ? '已开启' : '已关闭')
         .height(34)
         .enabled(this.storeState !== SettingsStoreState.SAVING)
         .fontColor(this.autoWriteEnabled ? EggClipColors.textSecondary : EggClipColors.onPrimary)
@@ -490,14 +483,14 @@ export struct SettingsPage {
         Text('保存历史')
           .fontSize(EggClipTypography.bodySize)
           .fontColor(EggClipColors.textPrimary)
-        Text(this.historyEnabled ? '已开启' : '已关闭')
+        Text('在本机保留最近记录')
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
-      Button(this.historyEnabled ? '关闭' : '开启')
+      Button(this.historyEnabled ? '已开启' : '已关闭')
         .height(34)
         .enabled(this.storeState !== SettingsStoreState.SAVING)
         .fontColor(this.historyEnabled ? EggClipColors.textSecondary : EggClipColors.onPrimary)
@@ -544,7 +537,7 @@ export struct SettingsPage {
 
   @Builder
   private RetentionButton(days: number) {
-    Button(days === 0 ? '0' : days.toString())
+    Button(days === 0 ? '不限' : days.toString())
       .layoutWeight(1)
       .height(36)
       .enabled(this.storeState !== SettingsStoreState.SAVING)

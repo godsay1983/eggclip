@@ -97,7 +97,6 @@ export struct DevicesPage {
         this.Header()
         PairingPage()
         this.TrustedDevicesCard()
-        this.DevicePolicyCard()
         this.ConnectionDiagnosticsSection()
       }
       .width('100%')
@@ -124,7 +123,7 @@ export struct DevicesPage {
         .fontColor(EggClipColors.textPrimary)
         .width('100%')
 
-      Text('先配对可信设备；配对后再通过局域网自动连接。')
+      Text('已配对设备会在应用前台自动连接。')
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
         .width('100%')

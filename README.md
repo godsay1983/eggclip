@@ -118,6 +118,7 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 - [隐私说明](docs/PRIVACY.md)
 - [局域网连接排障](docs/LAN_TROUBLESHOOTING.md)
 - [发布、升级与回滚清单](docs/RELEASE.md)
+- [双端 UI 精简改造 Roadmap](docs/UI_REFINEMENT_ROADMAP.md)
 - [桌面端开发计划](DESKTOP_DEVELOPMENT_TODO.md)
 - [HarmonyOS 开发计划](HARMONY_DEVELOPMENT_TODO.md)
 

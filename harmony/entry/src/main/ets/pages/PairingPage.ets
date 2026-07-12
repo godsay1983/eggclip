@@ -67,7 +67,7 @@ export struct PairingPage {
             .fontWeight(FontWeight.Bold)
             .fontColor(EggClipColors.textPrimary)
 
-          Text('导入桌面端生成的 eggclip://pair 邀请，核对确认码后连接桌面端完成安全握手。')
+          Text('扫描二维码或粘贴桌面端邀请，核对确认码后连接。')
             .fontSize(EggClipTypography.captionSize)
             .fontColor(EggClipColors.textSecondary)
             .lineHeight(20)
@@ -241,7 +241,7 @@ export struct PairingPage {
       }
 
       if (this.snapshot.state === PairingStoreState.PENDING) {
-        Text('已从可见输入中清理完整邀请。下一步会连接桌面端并发送 CLIENT_HELLO/AUTH_PROOF；可信设备持久化和 spaceKey 接收仍待后续接入。')
+        Text('邀请已从输入框安全清理，继续连接即可完成配对。')
           .width('100%')
           .fontSize(11)
           .fontColor(EggClipColors.textSecondary)
@@ -293,7 +293,7 @@ export struct PairingPage {
       .scrollBar(BarState.Off)
       .width('100%')
 
-      Text('默认选择普通网卡优先的地址；如果电脑开启了 VPN、虚拟网卡或多网络，请在确认配对前切换。')
+      Text('电脑使用 VPN 或多个网络时，请确认选择的是当前局域网地址。')
         .width('100%')
         .fontSize(10)
         .fontColor(EggClipColors.textSecondary)
@@ -426,22 +426,14 @@ export struct PairingPage {
 
   @Builder
   private SecurityBoundary() {
-    Column({ space: 6 }) {
-      Text('安全边界')
-        .fontSize(12)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(EggClipColors.textPrimary)
-
-      Text('邀请字符串包含一次性 pairingSecret。导入校验不会把邀请保存到历史，也不会写入 RDB；握手只发送协议帧，不在普通日志或 UI 展示 secret、私钥和正文。')
-        .fontSize(11)
-        .fontColor(EggClipColors.textSecondary)
-        .lineHeight(18)
-    }
+    Text('邀请仅使用一次，5 分钟后失效，也不会保存到剪贴板历史。')
+      .fontSize(11)
+      .fontColor(EggClipColors.textSecondary)
+      .lineHeight(18)
     .width('100%')
     .padding(12)
     .backgroundColor(EggClipColors.controlBackground)
     .borderRadius(16)
-    .alignItems(HorizontalAlign.Start)
   }
 
   private statusBadgeText(): string {
