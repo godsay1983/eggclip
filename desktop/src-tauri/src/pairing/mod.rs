@@ -81,6 +81,7 @@ pub struct TrustedDeviceSummary {
     pub short_fingerprint: String,
     pub paired_at_ms: Option<u64>,
     pub last_seen_at_ms: Option<u64>,
+    pub endpoint: Option<String>,
 }
 
 pub(crate) struct SpaceKeyRotationMaterial {
@@ -659,15 +660,31 @@ pub fn list_trusted_devices(app: tauri::AppHandle) -> Result<Vec<TrustedDeviceSu
     let connection = open_database(path).map_err(|error| format!("无法打开本地数据库：{error}"))?;
     let mut devices =
         list_trusted_devices_in_database(&connection).map_err(|error| error.to_string())?;
-    let online_device_ids = crate::transport::authenticated_device_ids(&app);
+    let authenticated_peers = crate::transport::authenticated_device_peers(&app);
     for device in &mut devices {
-        device.connection_state = Uuid::parse_str(&device.device_id)
+        let authenticated_peer = Uuid::parse_str(&device.device_id)
             .ok()
-            .filter(|device_id| online_device_ids.contains(device_id))
-            .map(|_| "online".to_owned())
-            .unwrap_or_else(|| "offline".to_owned());
+            .and_then(|device_id| authenticated_peers.get(&device_id));
+        if let Some(peer) = authenticated_peer {
+            device.connection_state = "online".to_owned();
+            device.endpoint = Some(peer.clone());
+        }
     }
     Ok(devices)
+}
+
+pub fn reset_trusted_device_connection_states(app: &tauri::AppHandle) -> Result<(), String> {
+    let path = database_path(app)?;
+    let connection = open_database(path).map_err(|error| format!("无法打开本地数据库：{error}"))?;
+    connection
+        .execute(
+            "UPDATE devices
+             SET connection_state = 'offline'
+             WHERE trust_state = 'trusted' AND revoked_at IS NULL",
+            [],
+        )
+        .map_err(|error| format!("无法重置可信设备连接状态：{error}"))?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -839,6 +856,7 @@ fn trusted_device_summary(
         short_fingerprint: encode_base64url(&digest[..6]),
         paired_at_ms: record.paired_at,
         last_seen_at_ms: record.device.last_seen_at,
+        endpoint: None,
     }
 }
 

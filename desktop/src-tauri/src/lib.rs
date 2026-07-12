@@ -49,6 +49,8 @@ pub fn run() {
         .manage(discovery::PocDiscoveryRuntime::default())
         .manage(transport::PocTransportRuntime::default())
         .setup(|app| {
+            pairing::reset_trusted_device_connection_states(app.handle())
+                .map_err(std::io::Error::other)?;
             let tray_icon = tray::create_tray(app.handle())?;
             app.manage(tray_icon);
             clipboard::start_clipboard_monitor(app.handle().clone());

@@ -143,6 +143,7 @@ interface TrustedDeviceSummaryDto {
   shortFingerprint: string;
   pairedAtMs: number | null;
   lastSeenAtMs: number | null;
+  endpoint: string | null;
 }
 
 interface AuthenticatedConnectionStateEvent {
@@ -500,6 +501,7 @@ function toTrustedDeviceSummary(device: TrustedDeviceSummaryDto): DeviceSummary 
     trustKind: "trusted",
     shortFingerprint: device.shortFingerprint,
     lastSeen,
+    endpoint: device.endpoint ?? undefined,
     note: device.connectionState === "online" ? "认证会话在线" : "已配对，等待可信重连",
     pairedAtMs: device.pairedAtMs,
     lastSeenAtMs: device.lastSeenAtMs,

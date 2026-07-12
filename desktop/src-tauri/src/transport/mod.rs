@@ -1,12 +1,6 @@
 mod session;
 
-use std::{
-    collections::{HashMap, HashSet},
-    net::Ipv4Addr,
-    str::FromStr,
-    sync::Mutex,
-    time::Duration,
-};
+use std::{collections::HashMap, net::Ipv4Addr, str::FromStr, sync::Mutex, time::Duration};
 
 use crate::{
     clipboard::{ClipboardText, ClipboardTextError},
@@ -72,11 +66,16 @@ pub struct PocTransportRuntime {
     diagnostics: Mutex<PocTransportDiagnostics>,
 }
 
-pub(crate) fn authenticated_device_ids(app: &AppHandle) -> HashSet<Uuid> {
+pub(crate) fn authenticated_device_peers(app: &AppHandle) -> HashMap<Uuid, String> {
     app.state::<PocTransportRuntime>()
         .authenticated_sessions
         .lock()
-        .map(|sessions| sessions.values().map(|session| session.device_id).collect())
+        .map(|sessions| {
+            sessions
+                .iter()
+                .map(|(peer, session)| (session.device_id, peer.clone()))
+                .collect()
+        })
         .unwrap_or_default()
 }
 

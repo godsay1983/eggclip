@@ -44,6 +44,7 @@ let monitorStarted = false;
 let pocEventsStarted = false;
 let pocTransportStarted = false;
 let pocReceiveEnabled = true;
+let trustedDeviceRefreshTimer: ReturnType<typeof setInterval> | null = null;
 const pocPeers = new Set<string>();
 const authenticatedPeers = new Set<string>();
 const authenticatedDeviceIds = new Set<string>();
@@ -120,8 +121,13 @@ function rememberPocEndpoint(endpoint: PocRecentEndpoint) {
 }
 
 function updatePocDevices(title: string, description: string) {
+  const trustedEndpoints = new Set(
+    trustedDevices
+      .map((device) => device.endpoint)
+      .filter((endpoint): endpoint is string => endpoint !== undefined),
+  );
   const peers = Array.from(pocPeers)
-    .filter((peer) => !authenticatedPeers.has(peer))
+    .filter((peer) => !authenticatedPeers.has(peer) && !trustedEndpoints.has(peer))
     .sort();
   const pocDevices: DeviceSummary[] = peers.map((peer) => ({
     id: `poc-${peer}`,
@@ -325,6 +331,11 @@ export const shellSnapshot = {
           }));
         }),
       ]);
+      if (trustedDeviceRefreshTimer === null) {
+        trustedDeviceRefreshTimer = setInterval(() => {
+          void refreshTrustedDeviceState();
+        }, 1500);
+      }
     } catch (error) {
       pocEventsStarted = false;
       snapshot.update((state) => ({

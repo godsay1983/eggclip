@@ -30,7 +30,7 @@ export interface PairingHandshakeTransportCallbacks {
   onClose: (reason: string) => void;
   onError: (reason: string) => void;
   onFrame: (result: ProtocolTransportFrameResult) => void;
-  onTextFrame?: (message: string, result: ProtocolTransportFrameResult) => void;
+  onTextFrame?: (message: string, result: ProtocolTransportFrameResult) => Promise<void> | void;
   protocolSessionProvider?: () => ProtocolTransportSession | null;
 }
 
@@ -159,6 +159,7 @@ export class WebSocketTransportService {
     session: ProtocolHandshakeTransportSession,
     callbacks: PairingHandshakeTransportCallbacks
   ): Promise<EndpointValidationResult> {
+    let frameProcessing: Promise<void> = Promise.resolve();
     return this.connectInternal(endpoint, {
       timeoutMessage: '连接桌面配对握手超时',
       connectFailureMessage: '连接桌面配对握手失败',
@@ -166,15 +167,21 @@ export class WebSocketTransportService {
       onClose: callbacks.onClose,
       onError: callbacks.onError,
       onTextMessage: (message: string) => {
-        const protocolSession = session.state() === ProtocolSessionState.AUTHENTICATED &&
-          callbacks.protocolSessionProvider !== undefined ? callbacks.protocolSessionProvider() : null;
-        const result = protocolSession === null ?
-          this.decodeHandshakeFrameMessage(message, session) :
-          this.decodeProtocolFrameMessage(message, protocolSession);
-        callbacks.onFrame(result);
-        if (callbacks.onTextFrame !== undefined) {
-          callbacks.onTextFrame(message, result);
-        }
+        frameProcessing = frameProcessing
+          .then(async () => {
+            const protocolSession = session.state() === ProtocolSessionState.AUTHENTICATED &&
+              callbacks.protocolSessionProvider !== undefined ? callbacks.protocolSessionProvider() : null;
+            const result = protocolSession === null ?
+              this.decodeHandshakeFrameMessage(message, session) :
+              this.decodeProtocolFrameMessage(message, protocolSession);
+            callbacks.onFrame(result);
+            if (callbacks.onTextFrame !== undefined) {
+              await callbacks.onTextFrame(message, result);
+            }
+          })
+          .catch(() => {
+            callbacks.onError('处理桌面端协议帧时出现异常');
+          });
       },
       onBinaryMessage: () => {
         session.close();

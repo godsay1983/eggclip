@@ -392,25 +392,31 @@ class PairingConnectionStore {
         this.sendClientHello(started.outgoingFrame ?? '');
       },
       onClose: (reason: string) => {
+        if (this.closingByUserOrLifecycle || !this.foreground) return;
+        if (this.connectionPurpose === ConnectionHandshakePurpose.TRUSTED_RECONNECT &&
+          this.reconnectTarget !== null) {
+          this.authenticatedTransportSession?.close();
+          this.authenticatedTransportSession = null;
+          this.state = PairingConnectionState.IDLE;
+          this.title = '可信连接已断开';
+          this.description = `${this.describeCloseReason(reason)}；正在尝试恢复已配对设备连接。`;
+          this.emit();
+          this.scheduleTrustedReconnect();
+          return;
+        }
         if (this.state !== PairingConnectionState.AUTHENTICATED && this.state !== PairingConnectionState.FAILED) {
-          if (this.connectionPurpose === ConnectionHandshakePurpose.TRUSTED_RECONNECT &&
-            !this.closingByUserOrLifecycle && this.foreground) {
-            this.state = PairingConnectionState.IDLE;
-            this.title = '可信连接已断开';
-            this.description = '正在尝试恢复已配对设备连接。';
-            this.emit();
-            this.scheduleTrustedReconnect();
-          } else {
-            this.fail(this.describeCloseTitle(), this.describeCloseReason(reason));
-          }
+          this.fail(this.describeCloseTitle(), this.describeCloseReason(reason));
         }
       },
       onError: (reason: string) => {
+        if (this.closingByUserOrLifecycle || !this.foreground) return;
         if (this.connectionPurpose === ConnectionHandshakePurpose.TRUSTED_RECONNECT &&
-          !this.closingByUserOrLifecycle && this.foreground) {
+          this.reconnectTarget !== null) {
+          this.authenticatedTransportSession?.close();
+          this.authenticatedTransportSession = null;
           this.state = PairingConnectionState.IDLE;
           this.title = '可信连接失败';
-          this.description = '正在尝试恢复已配对设备连接。';
+          this.description = `${this.describeTransportError(reason)}；正在尝试恢复已配对设备连接。`;
           this.emit();
           this.scheduleTrustedReconnect();
           return;
@@ -419,10 +425,8 @@ class PairingConnectionStore {
       },
       onFrame: () => {
       },
-      onTextFrame: (message, frameResult) => {
-        this.handleHandshakeTextFrame(message, frameResult).catch(() => {
-          this.fail('配对握手处理失败', '处理桌面端握手帧时出现异常。');
-        });
+      onTextFrame: async (message, frameResult) => {
+        await this.handleHandshakeTextFrame(message, frameResult);
       },
       protocolSessionProvider: () => {
         return this.authenticatedTransportSession;
