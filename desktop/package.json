@@ -1,6 +1,6 @@
 {
   "name": "eggclip-desktop",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "EggClip LAN clipboard desktop application",
   "type": "module",
   "packageManager": "pnpm@11.3.0",
