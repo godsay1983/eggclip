@@ -62,15 +62,10 @@ export struct PairingPage {
     Column({ space: 12 }) {
       Row() {
         Column({ space: 4 }) {
-          Text('设备配对')
+          Text('导入邀请')
             .fontSize(EggClipTypography.bodySize)
             .fontWeight(FontWeight.Bold)
             .fontColor(EggClipColors.textPrimary)
-
-          Text('扫描二维码或粘贴桌面端邀请，核对确认码后连接。')
-            .fontSize(EggClipTypography.captionSize)
-            .fontColor(EggClipColors.textSecondary)
-            .lineHeight(20)
         }
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
@@ -99,8 +94,9 @@ export struct PairingPage {
           })
 
         Column({ space: 6 }) {
+          Row({ space: 8 }) {
           Button('扫码导入桌面端二维码')
-            .width('100%')
+            .layoutWeight(1)
             .height(42)
             .fontColor(EggClipColors.textPrimary)
             .backgroundColor(EggClipColors.controlBackground)
@@ -109,33 +105,38 @@ export struct PairingPage {
               this.importInvitationFromScan();
             })
 
-          PasteButton({
-            text: PasteDescription.PASTE,
-            buttonType: ButtonType.Capsule
-          })
-            .width('100%')
-            .height(42)
-            .fontColor(EggClipColors.textPrimary)
-            .backgroundColor(EggClipColors.controlBackground)
-            .borderRadius(21)
-            .onClick((_event: ClickEvent, result: PasteButtonOnClickResult) => {
-              if (result !== PasteButtonOnClickResult.SUCCESS) {
-                this.pasteImportStatus = 'PasteButton 临时授权失败，未读取系统剪贴板';
-                return;
-              }
-              this.pasteImportStatus = 'PasteButton 已授权，正在读取邀请文本';
-              this.clipboardBridge.readPlainTextAfterPasteButton()
-                .then((readResult) => {
-                  if (!readResult.ok) {
-                    this.pasteImportStatus = readResult.message;
-                    return;
-                  }
-                  this.importInvitationText(readResult.text, '已从剪贴板读取并校验邀请');
-                })
-                .catch(() => {
-                  this.pasteImportStatus = '读取剪贴板失败，请确认当前内容是纯文本邀请';
-                });
+          Row() {
+            PasteButton({
+              text: PasteDescription.PASTE,
+              buttonType: ButtonType.Capsule
             })
+              .width('100%')
+              .height(42)
+              .fontColor(EggClipColors.textPrimary)
+              .backgroundColor(EggClipColors.controlBackground)
+              .borderRadius(21)
+              .onClick((_event: ClickEvent, result: PasteButtonOnClickResult) => {
+                if (result !== PasteButtonOnClickResult.SUCCESS) {
+                  this.pasteImportStatus = 'PasteButton 临时授权失败，未读取系统剪贴板';
+                  return;
+                }
+                this.pasteImportStatus = 'PasteButton 已授权，正在读取邀请文本';
+                this.clipboardBridge.readPlainTextAfterPasteButton()
+                  .then((readResult) => {
+                    if (!readResult.ok) {
+                      this.pasteImportStatus = readResult.message;
+                      return;
+                    }
+                    this.importInvitationText(readResult.text, '已从剪贴板读取并校验邀请');
+                  })
+                  .catch(() => {
+                    this.pasteImportStatus = '读取剪贴板失败，请确认当前内容是纯文本邀请';
+                  });
+              })
+          }
+          .layoutWeight(1)
+          }
+          .width('100%')
 
           Text(this.pasteImportStatus)
             .width('100%')
@@ -173,7 +174,7 @@ export struct PairingPage {
       } else {
         Button('重新导入邀请')
           .width('100%')
-          .height(36)
+          .height(40)
           .fontColor(EggClipColors.textSecondary)
           .backgroundColor(EggClipColors.controlBackground)
           .borderRadius(18)
@@ -283,7 +284,7 @@ export struct PairingPage {
         Row({ space: 8 }) {
           ForEach(summary.endpoints, (endpoint: PairingConnectionEndpoint) => {
             Button(`${endpoint.host}:${endpoint.port}`)
-              .height(32)
+              .height(40)
               .enabled(this.connectionSnapshot.state !== PairingConnectionState.AUTHENTICATED)
               .fontSize(10)
               .fontColor(this.isSelectedEndpoint(endpoint.host, endpoint.port) ?

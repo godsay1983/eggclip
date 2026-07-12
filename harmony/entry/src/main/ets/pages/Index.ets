@@ -75,7 +75,7 @@ struct Index {
       barBottomMargin: 14,
       gradientMask: {
         maskColor: EggClipColors.pageBackground,
-        maskHeight: 82
+        maskHeight: 96
       },
       systemMaterialEffect: {
         materialType: hdsMaterial.MaterialType.ADAPTIVE,

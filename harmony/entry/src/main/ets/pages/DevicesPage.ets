@@ -133,7 +133,7 @@ export struct DevicesPage {
         .layoutWeight(1)
 
         Button(this.pairingExpanded ? '收起' : '开始配对')
-          .height(32)
+          .height(40)
           .fontSize(12)
           .fontColor(this.pairingExpanded ? EggClipColors.textSecondary : EggClipColors.onPrimary)
           .backgroundColor(this.pairingExpanded ? EggClipColors.controlBackground : EggClipColors.primary)
@@ -198,7 +198,7 @@ export struct DevicesPage {
         .layoutWeight(1)
 
         Button(this.diagnosticsExpanded ? '收起' : '展开')
-          .height(32)
+          .height(40)
           .fontSize(12)
           .fontColor(EggClipColors.textSecondary)
           .backgroundColor(EggClipColors.controlBackground)
@@ -391,7 +391,7 @@ export struct DevicesPage {
       Row({ space: 8 }) {
         Button('开始发现')
           .layoutWeight(1)
-          .height(38)
+          .height(40)
           .fontColor(EggClipColors.onPrimary)
           .backgroundColor(EggClipColors.primary)
           .borderRadius(19)
@@ -401,7 +401,7 @@ export struct DevicesPage {
 
         Button('停止发现')
           .layoutWeight(1)
-          .height(38)
+          .height(40)
           .fontColor(EggClipColors.textSecondary)
           .backgroundColor(EggClipColors.controlBackground)
           .borderRadius(19)
@@ -432,7 +432,7 @@ export struct DevicesPage {
             .layoutWeight(1)
 
             Button('连接')
-              .height(34)
+              .height(40)
               .fontColor(EggClipColors.primary)
               .backgroundColor(EggClipColors.cardBackground)
               .borderRadius(17)
@@ -564,7 +564,7 @@ export struct DevicesPage {
         .layoutWeight(1)
 
         Button('回填')
-          .height(30)
+          .height(40)
           .fontSize(11)
           .fontColor(EggClipColors.textSecondary)
           .backgroundColor(EggClipColors.cardBackground)
@@ -579,7 +579,7 @@ export struct DevicesPage {
 
       Button('连接上次地址')
         .width('100%')
-        .height(38)
+        .height(40)
         .fontColor(EggClipColors.primary)
         .backgroundColor(EggClipColors.cardBackground)
         .borderRadius(19)
@@ -685,7 +685,7 @@ export struct DevicesPage {
               Row({ space: 8 }) {
                 TextInput({ text: this.deviceNameDraft, placeholder: '设备名称' })
                   .layoutWeight(1)
-                  .height(36)
+                  .height(40)
                   .fontSize(EggClipTypography.captionSize)
                   .backgroundColor(EggClipColors.cardBackground)
                   .borderRadius(18)
@@ -694,7 +694,7 @@ export struct DevicesPage {
                   })
 
                 Button('保存')
-                  .height(34)
+                  .height(40)
                   .fontSize(12)
                   .fontColor(EggClipColors.onPrimary)
                   .backgroundColor(EggClipColors.primary)
@@ -705,7 +705,7 @@ export struct DevicesPage {
                   })
 
                 Button('取消')
-                  .height(34)
+                  .height(40)
                   .fontSize(12)
                   .fontColor(EggClipColors.textSecondary)
                   .backgroundColor(EggClipColors.cardBackground)
@@ -719,7 +719,7 @@ export struct DevicesPage {
             } else {
               Row({ space: 8 }) {
                 Button('重命名')
-                  .height(32)
+                  .height(40)
                   .fontSize(12)
                   .fontColor(EggClipColors.textPrimary)
                   .backgroundColor(EggClipColors.cardBackground)
@@ -732,7 +732,7 @@ export struct DevicesPage {
                   })
 
                 Button(this.busyDeviceId === device.deviceId ? '正在移除' : '移除设备')
-                  .height(32)
+                  .height(40)
                   .fontSize(12)
                   .fontColor(Color.Red)
                   .backgroundColor(EggClipColors.cardBackground)

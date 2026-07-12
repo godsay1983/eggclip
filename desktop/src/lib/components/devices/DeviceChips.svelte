@@ -64,9 +64,8 @@
   <div class="section-heading compact">
     <div>
       <h2>设备</h2>
-      <span class="metadata">POC 连接不等于可信设备</span>
+      <span class="metadata">已配对设备会在连接后显示在线状态</span>
     </div>
-    <button class="text-button" type="button" disabled title="配对流程接入后开放">添加设备</button>
   </div>
   <div class="device-list">
     {#if devices.length === 0}

@@ -205,7 +205,7 @@ export struct HomePage {
 
           if (this.currentConnectionExperience().showRetry) {
             Button(this.retryingTrustedConnection ? '重试中' : '立即重试')
-              .height(34)
+              .height(40)
               .enabled(this.currentConnectionExperience().retryEnabled)
               .fontSize(12)
               .fontColor(EggClipColors.onPrimary)
@@ -283,7 +283,7 @@ export struct HomePage {
 
           if (this.latestReceivedText.length > 180) {
             Button(this.latestReceivedExpanded ? '收起' : '展开')
-              .height(28)
+              .height(40)
               .fontSize(11)
               .fontColor(EggClipColors.textSecondary)
               .backgroundColor(EggClipColors.controlBackground)
@@ -417,7 +417,7 @@ export struct HomePage {
             .layoutWeight(1)
 
           Button(this.clearingHistory ? '清理中' : '清空')
-            .height(28)
+            .height(40)
             .enabled(this.historyUsed > 0 && !this.clearingHistory && this.deletingHistoryItemId.length === 0)
             .fontSize(11)
             .fontColor(EggClipColors.textSecondary)
@@ -508,12 +508,13 @@ export struct HomePage {
             .fontColor(EggClipColors.textSecondary)
             .lineHeight(18)
 
-          Button('•••')
-            .width(34)
-            .height(28)
-            .fontSize(11)
+          Button('⋯')
+            .width(40)
+            .height(40)
+            .fontSize(18)
             .fontColor(EggClipColors.textSecondary)
             .backgroundColor(Color.Transparent)
+            .accessibilityText('更多操作')
             .onClick(() => {
               this.historyActionsItemId = this.historyActionsItemId === item.id ? '' : item.id;
             })
@@ -523,6 +524,7 @@ export struct HomePage {
       .width('100%')
       .padding({ left: 8, right: 4, top: 8, bottom: 8 })
       .borderRadius(12)
+      .accessibilityText(item.canCopy ? `复制 ${item.title}` : `${item.title}，内容暂不可用`)
       .onClick(() => {
         if (item.canCopy) this.copyHistoryItem(item.id);
       })
@@ -536,7 +538,7 @@ export struct HomePage {
 
           if (item.text.length > 180) {
             Button(this.expandedHistoryItemId === item.id ? '收起详情' : '查看详情')
-              .height(28)
+              .height(40)
               .fontSize(11)
               .fontColor(EggClipColors.textSecondary)
               .backgroundColor(Color.Transparent)
@@ -546,7 +548,7 @@ export struct HomePage {
           }
 
           Button('删除')
-          .height(28)
+          .height(40)
           .enabled(this.deletingHistoryItemId.length === 0 && !this.clearingHistory)
           .fontSize(11)
           .fontColor(Color.Red)

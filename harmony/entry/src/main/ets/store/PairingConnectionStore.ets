@@ -609,11 +609,11 @@ class PairingConnectionStore {
         this.fail('桌面端同步头被拒绝', '收到的 SYNC_HEADS 不符合协议，或本机可信设备上下文已失效。');
         return this.snapshot();
       }
-      this.title = '已收到桌面端同步状态';
+      this.title = '同步状态已更新';
       const requested = await this.requestMissingRanges(frameResult.decryptedPayload);
       this.description = requested
-        ? '已保存桌面端同步状态，并已请求本机缺失的历史范围。'
-        : '已保存桌面端各来源设备的可用序号，没有需要补齐的历史范围。';
+        ? '正在补齐本机缺失的最近记录。'
+        : '最近记录已是最新。';
       this.emit();
       return this.snapshot();
     }

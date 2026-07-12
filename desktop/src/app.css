@@ -70,6 +70,13 @@ button {
   font: inherit;
 }
 
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 3px solid rgba(244, 196, 48, 0.78);
+  outline-offset: 2px;
+}
+
 .panel-shell {
   position: relative;
   display: flex;
@@ -1124,7 +1131,8 @@ footer {
 }
 
 .history-more {
-  width: 36px;
+  width: 40px;
+  min-height: 40px;
   border: 0;
   color: var(--muted);
   background: transparent;
@@ -1145,6 +1153,12 @@ footer {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.history-item-actions .text-button,
+.history-confirmation .text-button {
+  min-height: 32px;
+  padding-inline: 6px;
 }
 
 .history-item strong {

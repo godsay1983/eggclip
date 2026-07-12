@@ -255,7 +255,7 @@ export struct SettingsPage {
 
       Button(this.spaceKeyDiagnosticRunning ? '自检中' : '自检空间密钥与摘要')
         .width('100%')
-        .height(38)
+        .height(40)
         .enabled(!this.spaceKeyDiagnosticRunning)
         .fontColor(this.spaceKeyDiagnosticRunning ? EggClipColors.textSecondary : EggClipColors.onPrimary)
         .backgroundColor(this.spaceKeyDiagnosticRunning ? EggClipColors.controlBackground : EggClipColors.primary)
@@ -266,7 +266,7 @@ export struct SettingsPage {
 
       Button(this.spaceKeyRecoveryRunning ? '正在重新初始化' : '重新初始化配对安全状态')
         .width('100%')
-        .height(38)
+        .height(40)
         .enabled(!this.spaceKeyDiagnosticRunning && !this.spaceKeyRecoveryRunning)
         .fontColor(Color.Red)
         .backgroundColor(EggClipColors.controlBackground)
@@ -343,7 +343,7 @@ export struct SettingsPage {
       .layoutWeight(1)
 
       Button(this.syncEnabled ? '已开启' : '已关闭')
-        .height(34)
+        .height(40)
         .enabled(this.storeState !== SettingsStoreState.SAVING)
         .fontColor(this.syncEnabled ? EggClipColors.textSecondary : EggClipColors.onPrimary)
         .backgroundColor(this.syncEnabled ? EggClipColors.controlBackground : EggClipColors.primary)
@@ -371,7 +371,7 @@ export struct SettingsPage {
       .layoutWeight(1)
 
       Button(this.autoReceiveEnabled ? '已开启' : '已关闭')
-        .height(34)
+        .height(40)
         .enabled(this.storeState !== SettingsStoreState.SAVING)
         .fontColor(this.autoReceiveEnabled ? EggClipColors.textSecondary : EggClipColors.onPrimary)
         .backgroundColor(this.autoReceiveEnabled ? EggClipColors.controlBackground : EggClipColors.primary)
@@ -399,7 +399,7 @@ export struct SettingsPage {
       .layoutWeight(1)
 
       Button(this.historyEnabled ? '已开启' : '已关闭')
-        .height(34)
+        .height(40)
         .enabled(this.storeState !== SettingsStoreState.SAVING)
         .fontColor(this.historyEnabled ? EggClipColors.textSecondary : EggClipColors.onPrimary)
         .backgroundColor(this.historyEnabled ? EggClipColors.controlBackground : EggClipColors.primary)
@@ -416,7 +416,7 @@ export struct SettingsPage {
   private ThemeModeButton(mode: ThemeMode, label: string) {
     Button(label)
       .layoutWeight(1)
-      .height(36)
+      .height(40)
       .enabled(this.storeState !== SettingsStoreState.SAVING)
       .fontColor(this.themeMode === mode ? EggClipColors.onPrimary : EggClipColors.textSecondary)
       .backgroundColor(this.themeMode === mode ? EggClipColors.primary : EggClipColors.controlBackground)
@@ -432,7 +432,7 @@ export struct SettingsPage {
   private HistoryLimitButton(limit: number) {
     Button(limit === 0 ? '0' : limit.toString())
       .layoutWeight(1)
-      .height(36)
+      .height(40)
       .enabled(this.storeState !== SettingsStoreState.SAVING)
       .fontColor(this.historyLimit === limit ? EggClipColors.onPrimary : EggClipColors.textSecondary)
       .backgroundColor(this.historyLimit === limit ? EggClipColors.primary : EggClipColors.controlBackground)
@@ -447,7 +447,7 @@ export struct SettingsPage {
   private RetentionButton(days: number) {
     Button(days === 0 ? '不限' : days.toString())
       .layoutWeight(1)
-      .height(36)
+      .height(40)
       .enabled(this.storeState !== SettingsStoreState.SAVING)
       .fontColor(this.retentionDays === days ? EggClipColors.onPrimary : EggClipColors.textSecondary)
       .backgroundColor(this.retentionDays === days ? EggClipColors.primary : EggClipColors.controlBackground)
