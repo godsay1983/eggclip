@@ -22,6 +22,11 @@
   let settingsSection: "general" | "devices" | "advanced" = "general";
   let pendingSpaceDeletionId = "";
   let expandedSpaceActionsId = "";
+  let qrExpanded = false;
+
+  $: if (qrExpanded && !$shellSnapshot.syncSpace.invitation) {
+    qrExpanded = false;
+  }
 
   async function deleteSyncSpace(spaceId: string): Promise<void> {
     try {
@@ -100,6 +105,14 @@
     $settingsSnapshot.settings.autoReceiveEnabled,
   );
 </script>
+
+<svelte:window
+  on:keydown={(event) => {
+    if (event.key === "Escape") {
+      qrExpanded = false;
+    }
+  }}
+/>
 
 <svelte:head>
   <meta
@@ -393,6 +406,11 @@
               <div class="invitation-qr" aria-label="配对二维码">
                 {@html $shellSnapshot.syncSpace.invitation.qrSvg}
                 <span>用鸿蒙端扫码导入，或复制邀请字符串手动导入。</span>
+                <button
+                  class="invitation-qr-expand"
+                  type="button"
+                  on:click={() => (qrExpanded = true)}
+                >放大扫码</button>
               </div>
               <button
                 class="secondary-action invitation-copy"
@@ -457,6 +475,47 @@
         <NetworkTroubleshootingCard transport={$shellSnapshot.pocTransport} />
       {/if}
     </section>
+  {/if}
+
+  {#if qrExpanded && $shellSnapshot.syncSpace.invitation}
+    <div class="qr-dialog-layer">
+      <button
+        class="qr-dialog-backdrop"
+        type="button"
+        aria-label="关闭放大二维码"
+        on:click={() => (qrExpanded = false)}
+      ></button>
+      <dialog
+        open
+        class="qr-dialog-card"
+        aria-modal="true"
+        aria-labelledby="qr-dialog-title"
+        aria-describedby="qr-dialog-description"
+      >
+        <header class="qr-dialog-header">
+          <div>
+            <h2 id="qr-dialog-title">扫描配对二维码</h2>
+            <p id="qr-dialog-description">请用鸿蒙端保持镜头稳定并完整框住二维码。</p>
+          </div>
+          <button
+            class="qr-dialog-close"
+            type="button"
+            aria-label="关闭放大二维码"
+            on:click={() => (qrExpanded = false)}
+          >×</button>
+        </header>
+        <div class="expanded-invitation-qr" aria-label="放大的配对二维码">
+          {@html $shellSnapshot.syncSpace.invitation.qrSvg}
+        </div>
+        <div class="qr-dialog-confirmation">
+          <span>配对确认码</span>
+          <strong>{$shellSnapshot.syncSpace.invitation.confirmationCode}</strong>
+        </div>
+        <p class="qr-dialog-expiry">
+          邀请将在 {$shellSnapshot.syncSpace.invitation.expiresAt} 到期；关闭后仍可复制邀请字符串。
+        </p>
+      </dialog>
+    </div>
   {/if}
 
   {#if !aboutVisible}

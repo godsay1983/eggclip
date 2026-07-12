@@ -893,6 +893,136 @@ footer {
   text-align: center;
 }
 
+.invitation-qr-expand {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid rgba(167, 122, 0, 0.2);
+  border-radius: 999px;
+  color: #5f4700;
+  background: rgba(244, 196, 48, 0.2);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.invitation-qr-expand:hover {
+  background: rgba(244, 196, 48, 0.32);
+}
+
+.qr-dialog-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 8px;
+}
+
+.qr-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: rgba(31, 27, 20, 0.62);
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+}
+
+.qr-dialog-card {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: min(424px, 100%);
+  max-height: 100%;
+  gap: 12px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid rgba(167, 122, 0, 0.2);
+  border-radius: 24px;
+  background: #fffdf7;
+  color: #29251e;
+  box-shadow: 0 24px 64px rgba(31, 27, 20, 0.32);
+}
+
+.qr-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 2px 0 4px;
+}
+
+.qr-dialog-header h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.qr-dialog-header p,
+.qr-dialog-expiry {
+  margin: 4px 0 0;
+  color: #746b5d;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.qr-dialog-close {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(93, 75, 42, 0.12);
+  border-radius: 12px;
+  color: #746b5d;
+  background: #fff3c4;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.expanded-invitation-qr {
+  display: grid;
+  width: 100%;
+  place-items: center;
+  padding: 10px;
+  border: 1px solid rgba(93, 75, 42, 0.1);
+  border-radius: 14px;
+  background: #fff8e7;
+}
+
+.expanded-invitation-qr svg {
+  display: block;
+  width: min(372px, 100%);
+  height: auto;
+}
+
+.qr-dialog-confirmation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 13px;
+  color: #746b5d;
+  background: #fff3c4;
+  font-size: 11px;
+}
+
+.qr-dialog-confirmation strong {
+  color: #29251e;
+  font-size: 17px;
+  letter-spacing: 0.14em;
+}
+
+.qr-dialog-expiry {
+  margin: 0 4px 2px;
+  text-align: center;
+}
+
 .invitation-copy {
   display: inline-flex;
   align-items: center;
@@ -1446,6 +1576,15 @@ footer {
 
 :root[data-theme="dark"] .invitation-qr span {
   color: #5f4d21;
+}
+
+:root[data-theme="dark"] .qr-dialog-card {
+  border-color: rgba(231, 190, 50, 0.2);
+  background: #29251e;
+}
+
+:root[data-theme="dark"] .qr-dialog-header h2 {
+  color: #f7f0e4;
 }
 
 :root[data-theme="dark"] .invitation-copy {
