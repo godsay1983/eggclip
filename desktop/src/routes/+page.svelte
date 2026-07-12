@@ -1,5 +1,6 @@
 <script lang="ts">
   import ClipboardCard from "$lib/components/clipboard/ClipboardCard.svelte";
+  import AboutPage from "$lib/components/about/AboutPage.svelte";
   import HistoryList from "$lib/components/clipboard/HistoryList.svelte";
   import HmacDiagnosticCard from "$lib/components/devices/HmacDiagnosticCard.svelte";
   import DeviceChips from "$lib/components/devices/DeviceChips.svelte";
@@ -13,8 +14,10 @@
   import type { AppSettings, ThemeMode } from "$lib/types/settings";
   import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
+  import packageMetadata from "../../package.json";
 
   let settingsVisible = false;
+  let aboutVisible = false;
   let settingsSection: "general" | "devices" | "advanced" = "general";
   let pendingSpaceDeletionId = "";
   let expandedSpaceActionsId = "";
@@ -40,15 +43,21 @@
     void settingsSnapshot.load();
     const traySettingsListener = listen("settings://changed", () => settingsSnapshot.load());
     const trayDevicesListener = listen("tray://open-devices", () => {
+      aboutVisible = false;
       settingsVisible = true;
       settingsSection = "devices";
       requestAnimationFrame(() => {
         document.getElementById("trusted-devices")?.scrollIntoView({ behavior: "smooth", block: "start" });
       });
     });
+    const trayAboutListener = listen("tray://open-about", () => {
+      settingsVisible = false;
+      aboutVisible = true;
+    });
     return () => {
       void traySettingsListener.then((unlisten) => unlisten());
       void trayDevicesListener.then((unlisten) => unlisten());
+      void trayAboutListener.then((unlisten) => unlisten());
     };
   });
 
@@ -112,13 +121,17 @@
       aria-label="打开设置"
       aria-expanded={settingsVisible}
       on:click={() => {
+        aboutVisible = false;
         settingsVisible = !settingsVisible;
       }}>⚙</button
     >
   </header>
 
-  <div class="panel-main">
-    <ClipboardCard
+  {#if aboutVisible}
+    <AboutPage version={packageMetadata.version} onBack={() => (aboutVisible = false)} />
+  {:else}
+    <div class="panel-main">
+      <ClipboardCard
       current={$shellSnapshot.current}
       outbound={$shellSnapshot.outbound}
       onRead={() => shellSnapshot.readLocalClipboard()}
@@ -128,7 +141,7 @@
       sendLabel={$settingsSnapshot.settings.syncEnabled ? "发送到 Harmony" : "同步已暂停"}
     />
 
-    <HistoryList
+      <HistoryList
       history={{
         ...$shellSnapshot.history,
         limit: $settingsSnapshot.settings.historyLimit,
@@ -137,8 +150,9 @@
       onClear={() => shellSnapshot.clearHistory()}
       onDelete={(itemId) => shellSnapshot.deleteHistoryItem(itemId)}
       onCopy={(itemId) => shellSnapshot.copyHistoryItem(itemId)}
-    />
-  </div>
+      />
+    </div>
+  {/if}
 
   {#if settingsVisible}
     <section class="settings-popover" aria-label="设置">
@@ -426,7 +440,8 @@
     </section>
   {/if}
 
-  <footer>
+  {#if !aboutVisible}
+    <footer>
     <button
       class="sync-toggle"
       type="button"
@@ -436,5 +451,6 @@
       <StatusDot state={$settingsSnapshot.settings.syncEnabled ? "online" : "paused"} />
       {$settingsSnapshot.settings.syncEnabled ? "同步已开启" : "同步已暂停"}
     </button>
-  </footer>
+    </footer>
+  {/if}
 </main>

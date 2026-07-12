@@ -101,6 +101,130 @@ select:focus-visible {
   padding-right: 4px;
 }
 
+.about-page {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  gap: 18px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px 4px 4px 0;
+}
+
+.about-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+}
+
+.about-back {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--muted);
+  background: var(--card);
+  cursor: pointer;
+}
+
+.about-back:hover {
+  color: var(--text);
+}
+
+.about-hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 19px;
+  border: 1px solid var(--line);
+  border-radius: 26px;
+  background:
+    linear-gradient(135deg, var(--primary-soft), transparent 52%),
+    var(--card-strong);
+}
+
+.about-hero img {
+  width: 68px;
+  height: 68px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  padding: 5px;
+  border-radius: 22px;
+  background: var(--control);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.about-hero h2 {
+  font-size: 23px;
+  letter-spacing: -0.02em;
+}
+
+.about-hero p,
+.about-summary,
+.about-details p,
+.about-footer {
+  color: var(--muted);
+}
+
+.about-hero p {
+  margin-top: 5px;
+  font-size: 12px;
+}
+
+.about-summary {
+  padding: 0 4px;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.about-details {
+  display: grid;
+  gap: 10px;
+}
+
+.about-details article {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 15px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--card);
+}
+
+.about-details article > span {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 12px;
+  color: var(--primary-deep);
+  background: var(--control);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.about-details strong {
+  font-size: 13px;
+}
+
+.about-details p {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.about-footer {
+  margin-top: auto;
+  padding: 4px;
+  text-align: center;
+  font-size: 11px;
+}
+
 .brand-row,
 .section-heading,
 .status-card,
