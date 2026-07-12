@@ -55,11 +55,28 @@ export struct SettingsPage {
     Scroll() {
       Column({ space: EggClipSpacing.sectionGap }) {
         this.Header()
-        this.SyncPolicyCard()
-        this.HistoryPolicyCard()
-        this.AppearanceCard()
-        this.PrivacyCard()
-        this.SecurityRecoveryCard()
+        GridRow({
+          columns: { sm: 12, md: 12, lg: 12 },
+          gutter: { x: EggClipSpacing.sectionGap, y: EggClipSpacing.sectionGap }
+        }) {
+          GridCol({ span: { sm: 12, md: 6, lg: 6 } }) {
+            Column({ space: EggClipSpacing.sectionGap }) {
+              this.SyncPolicyCard()
+              this.HistoryPolicyCard()
+            }
+            .width('100%')
+          }
+
+          GridCol({ span: { sm: 12, md: 6, lg: 6 } }) {
+            Column({ space: EggClipSpacing.sectionGap }) {
+              this.AppearanceCard()
+              this.PrivacyCard()
+              this.SecurityRecoveryCard()
+            }
+            .width('100%')
+          }
+        }
+        .width('100%')
       }
       .width('100%')
       .constraintSize({ maxWidth: 960 })

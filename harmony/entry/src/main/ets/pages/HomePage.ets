@@ -150,11 +150,11 @@ export struct HomePage {
       Column({ space: EggClipSpacing.sectionGap }) {
         this.Header()
         this.ConnectionExperienceCard()
-        GridRow({ columns: { sm: 1, md: 2, lg: 2 }, gutter: { x: EggClipSpacing.sectionGap, y: EggClipSpacing.sectionGap } }) {
-          GridCol({ span: { sm: 1, md: 1, lg: 1 } }) {
+        GridRow({ columns: { sm: 12, md: 12, lg: 12 }, gutter: { x: EggClipSpacing.sectionGap, y: EggClipSpacing.sectionGap } }) {
+          GridCol({ span: { sm: 12, md: 6, lg: 5 } }) {
             this.LatestClipboardCard()
           }
-          GridCol({ span: { sm: 1, md: 1, lg: 1 } }) {
+          GridCol({ span: { sm: 12, md: 6, lg: 7 } }) {
             this.HistoryPlaceholder()
           }
         }

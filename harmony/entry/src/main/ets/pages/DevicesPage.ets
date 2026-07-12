@@ -98,9 +98,23 @@ export struct DevicesPage {
     Scroll() {
       Column({ space: EggClipSpacing.sectionGap }) {
         this.Header()
-        this.TrustedDevicesCard()
-        this.AddDeviceSection()
-        this.ConnectionDiagnosticsSection()
+        GridRow({
+          columns: { sm: 12, md: 12, lg: 12 },
+          gutter: { x: EggClipSpacing.sectionGap, y: EggClipSpacing.sectionGap }
+        }) {
+          GridCol({ span: { sm: 12, md: 5, lg: 5 } }) {
+            this.TrustedDevicesCard()
+          }
+
+          GridCol({ span: { sm: 12, md: 7, lg: 7 } }) {
+            Column({ space: EggClipSpacing.sectionGap }) {
+              this.AddDeviceSection()
+              this.ConnectionDiagnosticsSection()
+            }
+            .width('100%')
+          }
+        }
+        .width('100%')
       }
       .width('100%')
       .constraintSize({ maxWidth: 960 })

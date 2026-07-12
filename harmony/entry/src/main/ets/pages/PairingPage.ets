@@ -201,6 +201,8 @@ export struct PairingPage {
       this.SecurityBoundary()
     }
     .width('100%')
+    .constraintSize({ maxWidth: 600 })
+    .alignSelf(ItemAlign.Center)
     .alignItems(HorizontalAlign.Start)
   }
 
