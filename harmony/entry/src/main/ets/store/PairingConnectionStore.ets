@@ -111,6 +111,40 @@ export enum OutboundDeliveryState {
   FAILED = 'failed'
 }
 
+export interface OutboundDeliverySummary {
+  state: OutboundDeliveryState;
+  description: string;
+}
+
+export function resolveOutboundDelivery(
+  pendingCount: number,
+  authenticated: boolean,
+  readFailed: boolean = false
+): OutboundDeliverySummary {
+  if (readFailed) {
+    return {
+      state: OutboundDeliveryState.FAILED,
+      description: '无法读取待同步记录状态，本机历史仍保留'
+    };
+  }
+  if (!Number.isSafeInteger(pendingCount) || pendingCount <= 0) {
+    return {
+      state: OutboundDeliveryState.SENT,
+      description: '本机同步记录均已收到桌面端确认'
+    };
+  }
+  if (authenticated) {
+    return {
+      state: OutboundDeliveryState.SENDING,
+      description: `${pendingCount} 条本机记录正在等待桌面端确认`
+    };
+  }
+  return {
+    state: OutboundDeliveryState.QUEUED,
+    description: `${pendingCount} 条本机记录等待连接恢复后自动补发`
+  };
+}
+
 export enum AuthenticatedLocalSendStatus {
   SENT = 'sent',
   QUEUED = 'queued',
@@ -1158,27 +1192,26 @@ class PairingConnectionStore {
         local?.latestOriginSeq ?? 0,
         remote?.head.latestOriginSeq ?? 0
       );
-      if (this.pendingOutboundCount === 0) {
-        this.outboundDeliveryState = OutboundDeliveryState.SENT;
-        this.outboundDeliveryDescription = '本机同步记录均已收到桌面端确认';
-      } else if (this.state === PairingConnectionState.AUTHENTICATED) {
-        this.outboundDeliveryState = OutboundDeliveryState.SENDING;
-        this.outboundDeliveryDescription = `${this.pendingOutboundCount} 条本机记录正在等待桌面端确认`;
-      } else {
-        this.queuePendingAfterDisconnect();
-      }
+      const delivery = resolveOutboundDelivery(
+        this.pendingOutboundCount,
+        this.state === PairingConnectionState.AUTHENTICATED
+      );
+      this.outboundDeliveryState = delivery.state;
+      this.outboundDeliveryDescription = delivery.description;
       this.emit();
     } catch (_) {
-      this.outboundDeliveryState = OutboundDeliveryState.FAILED;
-      this.outboundDeliveryDescription = '无法读取待同步记录状态，本机历史仍保留';
+      const delivery = resolveOutboundDelivery(this.pendingOutboundCount, false, true);
+      this.outboundDeliveryState = delivery.state;
+      this.outboundDeliveryDescription = delivery.description;
       this.emit();
     }
   }
 
   private queuePendingAfterDisconnect(): void {
     if (this.pendingOutboundCount <= 0) return;
-    this.outboundDeliveryState = OutboundDeliveryState.QUEUED;
-    this.outboundDeliveryDescription = `${this.pendingOutboundCount} 条本机记录等待连接恢复后自动补发`;
+    const delivery = resolveOutboundDelivery(this.pendingOutboundCount, false);
+    this.outboundDeliveryState = delivery.state;
+    this.outboundDeliveryDescription = delivery.description;
   }
 
   private setOutboundDelivery(state: OutboundDeliveryState, description: string): void {

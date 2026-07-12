@@ -61,6 +61,12 @@ pnpm tauri dev
 pnpm release:check
 ```
 
+发布包生成后，额外指定实际包路径检查归档内是否混入调试产物：
+
+```powershell
+.\scripts\release-safety-check.ps1 -PackagePaths <发布包路径>
+```
+
 ## HarmonyOS 端
 
 使用 DevEco Studio 打开：
@@ -86,7 +92,7 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 
 - 桌面：Svelte 类型检查、Vitest、前端构建、Rust fmt/check/test 通过；Rust 共 130 个测试通过。
 - 桌面：托盘菜单已接入在线数、暂停/恢复、设备管理入口和动态 tooltip，完整交互仍需 Windows 人工回归。
-- HarmonyOS：mDNS 搜索代码、WebSocket/PasteButton POC、协议解析模型以及 H1/D3 边界单测已通过 `hvigorw test`，当前产物未签名。
+- HarmonyOS：同步、连接管理、stores、首页状态策略和跨端协议向量自动化测试已通过 `hvigorw test`，当前产物未签名。
 - 桌面 POC server 启动时会发布 `_eggclip._tcp.local.` 临时服务；mDNS 只提供候选地址，不代表设备可信。
 - 当前手动回归清单包含 Windows 剪贴板隐私标记样本工具和 POC WebSocket 帧探针脚本，D1/H1 手动验收已通过。
 - 已创建 `protocol/README.md`、`protocol/v1.schema.json` 和初始 schema/解析测试向量目录；桌面 Rust 与 HarmonyOS ArkTS 已接入协议类型和 fixture 测试，密码学字节级向量仍待补齐。
@@ -103,6 +109,8 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 
 - [开发约定](AGENTS.md)
 - [最佳实现方案](docs/EggClip最佳实现方案.md)
+- [隐私说明](docs/PRIVACY.md)
+- [局域网连接排障](docs/LAN_TROUBLESHOOTING.md)
 - [桌面端开发计划](DESKTOP_DEVELOPMENT_TODO.md)
 - [HarmonyOS 开发计划](HARMONY_DEVELOPMENT_TODO.md)
 

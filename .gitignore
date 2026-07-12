@@ -9,6 +9,7 @@ harmony/.hvigor/
 harmony/.idea/
 harmony/oh_modules/
 harmony/local.properties
+harmony/build-profile.local.json5
 harmony/**/build/
 harmony/**/.preview/
 harmony/**/.test/
@@ -30,4 +31,3 @@ harmony/.appanalyzer/
 # OS/editor files
 .DS_Store
 Thumbs.db
-

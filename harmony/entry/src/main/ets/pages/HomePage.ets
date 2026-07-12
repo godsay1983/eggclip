@@ -22,6 +22,10 @@ import { EggClipSpacing } from '../theme/Spacing';
 import { EggClipTypography } from '../theme/Typography';
 import { TrustedDeviceStore } from '../store/TrustedDeviceStore';
 import { APP_FOREGROUND_STORAGE_KEY } from '../utils/AppLifecycle';
+import {
+  ConnectionExperiencePolicy,
+  connectionExperiencePolicy
+} from '../services/ui/ConnectionExperiencePolicy';
 
 enum OutboundSendState {
   IDLE = 'idle',
@@ -174,7 +178,7 @@ export struct HomePage {
   @Builder
   private ConnectionExperienceCard() {
     Column({ space: 10 }) {
-      if (this.trustedDeviceCount === 0) {
+      if (this.currentConnectionExperience().showFirstUse) {
         Text('三步开始同步')
           .fontSize(EggClipTypography.bodySize)
           .fontWeight(FontWeight.Bold)
@@ -204,10 +208,10 @@ export struct HomePage {
           .alignItems(HorizontalAlign.Start)
           .layoutWeight(1)
 
-          if (this.connectionTitle.indexOf('失败') >= 0 || this.connectionTitle.indexOf('断开') >= 0) {
+          if (this.currentConnectionExperience().showRetry) {
             Button(this.retryingTrustedConnection ? '重试中' : '立即重试')
               .height(34)
-              .enabled(!this.retryingTrustedConnection && this.appInForeground)
+              .enabled(this.currentConnectionExperience().retryEnabled)
               .fontSize(12)
               .fontColor(EggClipColors.onPrimary)
               .backgroundColor(EggClipColors.primary)
@@ -810,6 +814,15 @@ export struct HomePage {
       .finally(() => {
         this.retryingTrustedConnection = false;
       });
+  }
+
+  private currentConnectionExperience(): ConnectionExperiencePolicy {
+    return connectionExperiencePolicy(
+      this.trustedDeviceCount,
+      this.connectionTitle,
+      this.appInForeground,
+      this.retryingTrustedConnection
+    );
   }
 
   private deleteHistoryItem(itemId: string): void {

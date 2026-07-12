@@ -138,11 +138,14 @@ import {
 import {
   PairingConnectionState,
   PairingConnectionStore,
+  OutboundDeliveryState,
   calculatePendingOutboundCount,
   describePairingAuthError,
+  resolveOutboundDelivery,
   trustedDiscoveryEndpoint
 } from '../main/ets/store/PairingConnectionStore';
 import { normalizeTrustedDeviceName } from '../main/ets/store/TrustedDeviceStore';
+import { connectionExperiencePolicy } from '../main/ets/services/ui/ConnectionExperiencePolicy';
 import {
   InboundItemLiveService,
   InboundItemLiveStatus,
@@ -240,6 +243,29 @@ export default function localUnitTest() {
       expect(calculatePendingOutboundCount(8, 5)).assertEqual(3);
       expect(calculatePendingOutboundCount(5, 8)).assertEqual(0);
       expect(calculatePendingOutboundCount(-1, 0)).assertEqual(0);
+    });
+
+    it('mapsReliableOutboundQueueToVisibleDeliveryStates', 0, () => {
+      expect(resolveOutboundDelivery(0, true).state).assertEqual(OutboundDeliveryState.SENT);
+      expect(resolveOutboundDelivery(3, false).state).assertEqual(OutboundDeliveryState.QUEUED);
+      expect(resolveOutboundDelivery(3, true).state).assertEqual(OutboundDeliveryState.SENDING);
+      expect(resolveOutboundDelivery(3, true, true).state).assertEqual(OutboundDeliveryState.FAILED);
+      expect(resolveOutboundDelivery(-1, false).state).assertEqual(OutboundDeliveryState.SENT);
+    });
+
+    it('keepsFirstUseAndTrustedRetryUiStatesActionable', 0, () => {
+      const firstUse = connectionExperiencePolicy(0, '等待桌面端', true, false);
+      expect(firstUse.showFirstUse).assertTrue();
+      expect(firstUse.showRetry).assertFalse();
+
+      const offline = connectionExperiencePolicy(1, '可信连接已断开', false, false);
+      expect(offline.showFirstUse).assertFalse();
+      expect(offline.showRetry).assertTrue();
+      expect(offline.retryEnabled).assertFalse();
+
+      const foreground = connectionExperiencePolicy(1, '可信连接失败', true, false);
+      expect(foreground.retryEnabled).assertTrue();
+      expect(connectionExperiencePolicy(1, '可信连接失败', true, true).retryEnabled).assertFalse();
     });
 
     it('normalizesTrustedDeviceNamesForSafeDisplay', 0, () => {

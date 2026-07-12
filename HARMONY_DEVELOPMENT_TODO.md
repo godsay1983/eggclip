@@ -59,7 +59,7 @@
 
 ## H7：测试与发布准备
 
-- [ ] 覆盖 sync、ConnectionManager、stores、UI smoke 与跨端协议互通的自动化测试。
+- [x] 覆盖 sync、ConnectionManager、stores、UI smoke 与跨端协议互通的自动化测试。
 - [ ] 手机/平板真机回归：网络切换、前后台、锁屏、配对异常、PasteButton、Emoji/最大文本/连续发送。
 - [ ] 正式签名、隐私/权限说明、发布包秘密检查、升级与回滚清单。
 
