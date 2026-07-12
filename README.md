@@ -61,6 +61,12 @@ pnpm tauri dev
 pnpm release:check
 ```
 
+生成 Windows NSIS 内部验收包：
+
+```powershell
+pnpm release:bundle
+```
+
 发布包生成后，额外指定实际包路径检查归档内是否混入调试产物：
 
 ```powershell
@@ -111,6 +117,7 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 - [最佳实现方案](docs/EggClip最佳实现方案.md)
 - [隐私说明](docs/PRIVACY.md)
 - [局域网连接排障](docs/LAN_TROUBLESHOOTING.md)
+- [发布、升级与回滚清单](docs/RELEASE.md)
 - [桌面端开发计划](DESKTOP_DEVELOPMENT_TODO.md)
 - [HarmonyOS 开发计划](HARMONY_DEVELOPMENT_TODO.md)
 

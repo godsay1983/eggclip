@@ -31,13 +31,33 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis"],
+    "publisher": "EggClip Contributors",
+    "copyright": "Copyright © 2026 EggClip Contributors",
+    "category": "Utility",
+    "shortDescription": "纯局域网剪贴板同步工具",
+    "longDescription": "EggClip 在已配对的 Windows 与 HarmonyOS 设备之间通过局域网安全同步纯文本剪贴板。",
+    "licenseFile": "../../LICENSE",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "compression": "lzma",
+        "displayLanguageSelector": false,
+        "installMode": "currentUser",
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "languages": ["SimpChinese", "English"],
+        "startMenuFolder": "EggClip"
+      }
+    }
   }
 }

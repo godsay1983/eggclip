@@ -37,4 +37,12 @@ cargo check
 cargo test
 ```
 
+## NSIS 内部验收包
+
+```powershell
+pnpm release:bundle
+```
+
+该命令先执行完整检查和统一版本门禁，再生成仅面向 Windows 的当前用户 NSIS 安装器，并检查发布目录是否混入调试产物。未配置受信任代码签名证书时只可用于内部验收；正式发布、覆盖升级、卸载和回滚步骤见根目录 `docs/RELEASE.md`。
+
 完整计划见根目录 `DESKTOP_DEVELOPMENT_TODO.md`，架构决策见 `docs/EggClip最佳实现方案.md`。

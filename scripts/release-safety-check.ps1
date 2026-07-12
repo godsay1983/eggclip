@@ -28,7 +28,7 @@ foreach ($relativePath in $tracked) {
   if (-not (Test-Path -LiteralPath $absolutePath -PathType Leaf)) { continue }
   if ([IO.Path]::GetExtension($absolutePath) -match '(?i)\.(png|ico|icns|woff2?)') { continue }
   if ($normalized -eq 'scripts/release-safety-check.ps1') { continue }
-  $content = Get-Content -LiteralPath $absolutePath -Raw -ErrorAction SilentlyContinue
+  $content = Get-Content -LiteralPath $absolutePath -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
   if ($null -eq $content) { continue }
   foreach ($marker in $secretMarkers) {
     if ($content -match $marker.Pattern) {
@@ -39,7 +39,7 @@ foreach ($relativePath in $tracked) {
 
 $buildProfilePath = Join-Path $repoRoot 'harmony/build-profile.json5'
 if (Test-Path -LiteralPath $buildProfilePath) {
-  $profile = Get-Content -LiteralPath $buildProfilePath -Raw
+  $profile = Get-Content -LiteralPath $buildProfilePath -Raw -Encoding UTF8
   if ($profile -match '(?i)["'']?(?:storeFile|storePassword|keyPassword|certpath)["'']?\s*:') {
     $violations.Add('harmony/build-profile.json5 [signing material key present]')
   }
@@ -55,16 +55,25 @@ foreach ($requestedPath in $PackagePaths) {
     $violations.Add("$requestedPath [release package missing]")
     continue
   }
-  $entries = @(& tar -tf $packagePath 2>$null)
   $relative = $requestedPath -replace '\\', '/'
-  if ($LASTEXITCODE -ne 0) {
-    $violations.Add("$relative [release archive cannot be inspected]")
-  } elseif ($entries | Where-Object { $_ -match '(?i)\.(pdb|ilk|map|log|dmp)$' }) {
-    $violations.Add("$relative [debug artifact packaged in release archive]")
+  if ([IO.Path]::GetExtension($packagePath) -ieq '.exe') {
+    $debugSibling = Get-ChildItem -LiteralPath (Split-Path -Parent $packagePath) -Recurse -File |
+      Where-Object { $_.Extension -match '(?i)^\.(pdb|ilk|map|log|dmp)$' } |
+      Select-Object -First 1
+    if ($null -ne $debugSibling) {
+      $violations.Add("$relative [debug artifact found beside release installer]")
+    }
+  } else {
+    $entries = @(& tar -tf $packagePath 2>$null)
+    if ($LASTEXITCODE -ne 0) {
+      $violations.Add("$relative [release archive cannot be inspected]")
+    } elseif ($entries | Where-Object { $_ -match '(?i)\.(pdb|ilk|map|log|dmp)$' }) {
+      $violations.Add("$relative [debug artifact packaged in release archive]")
+    }
   }
 }
 
-foreach ($requiredDocument in @('docs/PRIVACY.md', 'docs/LAN_TROUBLESHOOTING.md')) {
+foreach ($requiredDocument in @('docs/PRIVACY.md', 'docs/LAN_TROUBLESHOOTING.md', 'docs/RELEASE.md')) {
   if (-not (Test-Path -LiteralPath (Join-Path $repoRoot $requiredDocument))) {
     $violations.Add("$requiredDocument [required release document missing]")
   }
