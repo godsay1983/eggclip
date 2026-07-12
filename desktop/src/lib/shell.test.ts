@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { createInitialShellSnapshot } from "$lib/api/shell";
 import { defaultAppSettings, validateAppSettings } from "$lib/api/settings";
 import type { AppSettings } from "$lib/types/settings";
+import { countOnlineDevices, mergeRuntimeDevices } from "$lib/stores/shell-state";
+import type { DeviceSummary } from "$lib/types/shell";
 
 describe("desktop shell", () => {
   it("keeps the first release text-only limit explicit", () => {
@@ -37,5 +39,36 @@ describe("desktop shell", () => {
         historyLimit: 10 as AppSettings["historyLimit"],
       }),
     ).not.toBeNull();
+  });
+
+  it("keeps authenticated endpoints out of the POC device list", () => {
+    const trusted: DeviceSummary[] = [{
+      id: "trusted-1",
+      name: "Harmony",
+      state: "online",
+      trustKind: "trusted",
+      shortFingerprint: "12345678",
+      lastSeen: "当前会话在线",
+      endpoint: "192.168.1.9:4567",
+      note: "认证会话在线",
+    }];
+    const devices = mergeRuntimeDevices(
+      trusted,
+      ["192.168.1.9:4567", "192.168.1.10:4567", "192.168.1.10:4567"],
+      new Set(["192.168.1.9:4567"]),
+    );
+
+    expect(devices).toHaveLength(2);
+    expect(devices[0].trustKind).toBe("trusted");
+    expect(devices[1].id).toBe("poc-192.168.1.10:4567");
+    expect(countOnlineDevices(devices)).toBe(1);
+  });
+
+  it("returns a single offline placeholder when no runtime device exists", () => {
+    const devices = mergeRuntimeDevices([], [], new Set());
+
+    expect(devices).toHaveLength(1);
+    expect(devices[0].trustKind).toBe("placeholder");
+    expect(countOnlineDevices(devices)).toBe(0);
   });
 });

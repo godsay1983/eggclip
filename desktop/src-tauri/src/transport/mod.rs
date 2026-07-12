@@ -61,7 +61,8 @@ pub use session::{
 
 pub const POC_MAX_FRAME_BYTES: usize = 1024 * 1024;
 const POC_CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
-const AUTHENTICATED_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
+const AUTHENTICATED_HEARTBEAT_INTERVAL: Duration =
+    Duration::from_secs(crate::protocol::HEARTBEAT_INTERVAL_SECONDS);
 const POC_RECENT_ENDPOINT_KEY: &str = "pocRecentEndpoint";
 
 #[derive(Default)]
@@ -2072,12 +2073,13 @@ fn remember_authenticated_session(
     let device_id = Uuid::parse_str(&accepted.peer_device_id).map_err(|_| ())?;
     let space_id = Uuid::parse_str(&accepted.space_id).map_err(|_| ())?;
     let mut sessions = runtime.authenticated_sessions.lock().map_err(|_| ())?;
-    let displaced: Vec<String> = sessions
-        .iter()
-        .filter_map(|(existing_peer, entry)| {
-            (entry.device_id == device_id && existing_peer != peer).then(|| existing_peer.clone())
-        })
-        .collect();
+    let displaced = authenticated_peers_to_displace(
+        sessions
+            .iter()
+            .map(|(existing_peer, entry)| (existing_peer.as_str(), entry.device_id)),
+        device_id,
+        peer,
+    );
     for displaced_peer in &displaced {
         if let Some(mut session) = sessions.remove(displaced_peer) {
             session.session.close();
@@ -2119,6 +2121,20 @@ fn remember_authenticated_session(
         },
     );
     Ok(())
+}
+
+fn authenticated_peers_to_displace<'a>(
+    connections: impl Iterator<Item = (&'a str, Uuid)>,
+    device_id: Uuid,
+    current_peer: &str,
+) -> Vec<String> {
+    let mut peers = connections
+        .filter_map(|(peer, candidate_device_id)| {
+            (candidate_device_id == device_id && peer != current_peer).then(|| peer.to_owned())
+        })
+        .collect::<Vec<_>>();
+    peers.sort();
+    peers
 }
 
 fn disconnect_authenticated_device(app: &AppHandle, device_id: Uuid, reason: &'static str) {
@@ -2430,6 +2446,34 @@ mod tests {
         assert_eq!(authenticated_message_type(client_hello), None);
         assert_eq!(authenticated_message_type(auth_proof), None);
         assert_eq!(authenticated_message_type(poc_clipboard), None);
+    }
+
+    #[test]
+    fn connection_manager_displaces_only_older_sessions_for_the_same_device() {
+        let device_id = Uuid::now_v7();
+        let other_device_id = Uuid::now_v7();
+        let connections = [
+            ("192.168.1.8:5001", device_id),
+            ("192.168.1.8:5002", device_id),
+            ("192.168.1.9:5001", other_device_id),
+        ];
+
+        assert_eq!(
+            authenticated_peers_to_displace(connections.into_iter(), device_id, "192.168.1.8:5002"),
+            vec!["192.168.1.8:5001".to_owned()]
+        );
+    }
+
+    #[test]
+    fn connection_manager_heartbeat_matches_protocol_lifecycle() {
+        assert_eq!(
+            AUTHENTICATED_HEARTBEAT_INTERVAL,
+            Duration::from_secs(crate::protocol::HEARTBEAT_INTERVAL_SECONDS)
+        );
+        assert!(
+            AUTHENTICATED_HEARTBEAT_INTERVAL
+                < Duration::from_secs(crate::protocol::IDLE_DISCONNECT_SECONDS)
+        );
     }
 
     #[test]

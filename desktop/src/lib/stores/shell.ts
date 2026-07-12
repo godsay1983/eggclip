@@ -38,6 +38,7 @@ import {
 } from "$lib/api/shell";
 import type { ClipboardPreview, DeviceSummary, OutboundSyncStatus } from "$lib/types/shell";
 import type { PocRecentEndpoint } from "$lib/types/shell";
+import { countOnlineDevices, mergeRuntimeDevices } from "$lib/stores/shell-state";
 
 const snapshot = writable(createInitialShellSnapshot());
 let monitorStarted = false;
@@ -121,25 +122,10 @@ function rememberPocEndpoint(endpoint: PocRecentEndpoint) {
 }
 
 function updatePocDevices(title: string, description: string) {
-  const trustedEndpoints = new Set(
-    trustedDevices
-      .map((device) => device.endpoint)
-      .filter((endpoint): endpoint is string => endpoint !== undefined),
-  );
   const peers = Array.from(pocPeers)
-    .filter((peer) => !authenticatedPeers.has(peer) && !trustedEndpoints.has(peer))
+    .filter((peer) => !authenticatedPeers.has(peer))
     .sort();
-  const pocDevices: DeviceSummary[] = peers.map((peer) => ({
-    id: `poc-${peer}`,
-    name: "远端 POC 连接",
-    state: "online",
-    trustKind: "poc",
-    shortFingerprint: "未配对",
-    lastSeen: "当前会话在线",
-    endpoint: peer,
-    note: "实验连接尚未完成设备身份认证，仅用于手动收发验证。",
-  }));
-  const devices = [...trustedDevices, ...pocDevices];
+  const devices = mergeRuntimeDevices(trustedDevices, peers, authenticatedPeers);
   snapshot.update((state) => ({
     ...state,
     connection: {
@@ -147,20 +133,7 @@ function updatePocDevices(title: string, description: string) {
       title,
       description,
     },
-    devices:
-      devices.length > 0
-        ? devices
-        : [
-            {
-              id: "placeholder",
-              name: "等待可信设备",
-              state: "offline" as const,
-              trustKind: "placeholder" as const,
-              shortFingerprint: "等待配对",
-              lastSeen: "暂无",
-              note: "正式配对完成后，这里会显示设备名称、公钥短指纹和最后在线时间。",
-            },
-          ],
+    devices,
   }));
 }
 
@@ -1023,5 +996,5 @@ export const shellSnapshot = {
 };
 
 export const onlineDeviceCount = derived(snapshot, ($snapshot) =>
-  $snapshot.devices.filter((device) => device.state === "online").length,
+  countOnlineDevices($snapshot.devices),
 );

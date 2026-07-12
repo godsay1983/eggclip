@@ -332,6 +332,22 @@ class PairingConnectionStore {
     }, { host: this.manualHost, port }, ConnectionHandshakePurpose.TRUSTED_RECONNECT);
   }
 
+  async retryTrustedConnection(): Promise<PairingConnectionSnapshot> {
+    if (this.isConnectionBusy() || this.state === PairingConnectionState.AUTHENTICATED) {
+      return this.snapshot();
+    }
+    if (this.reconnectTarget === null && this.context !== null) {
+      this.reconnectTarget = await new TrustedDeviceStore(this.context).loadFirstReconnectTarget();
+    }
+    if (this.reconnectTarget === null) {
+      this.fail('没有可恢复的可信设备', '请先到设备页扫码或粘贴桌面端邀请完成配对。');
+      return this.snapshot();
+    }
+    this.clearReconnectTimer();
+    this.closingByUserOrLifecycle = false;
+    return await this.startTrustedReconnect(this.reconnectTarget);
+  }
+
   setForeground(foreground: boolean): void {
     this.foreground = foreground;
     if (!foreground) {

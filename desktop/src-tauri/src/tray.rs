@@ -162,24 +162,35 @@ pub fn start_status_task(app: AppHandle) {
 pub fn refresh_status(app: &AppHandle) {
     let settings = crate::settings::load_app_settings(app.clone()).unwrap_or_default();
     let online_count = crate::transport::authenticated_device_peers(app).len();
+    let labels = tray_status_labels(settings.sync_enabled, online_count);
     let state = app.state::<TrayStatusState>();
-    let _ = state
-        .status_item
-        .set_text(format!("{online_count} 台可信设备在线"));
-    let _ = state.toggle_sync_item.set_text(if settings.sync_enabled {
-        "暂停同步"
-    } else {
-        "恢复同步"
-    });
+    let _ = state.status_item.set_text(labels.status);
+    let _ = state.toggle_sync_item.set_text(labels.toggle_sync);
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        let sync_label = if settings.sync_enabled {
-            "同步已开启"
+        let _ = tray.set_tooltip(Some(labels.tooltip));
+    }
+}
+
+struct TrayStatusLabels {
+    status: String,
+    toggle_sync: &'static str,
+    tooltip: String,
+}
+
+fn tray_status_labels(sync_enabled: bool, online_count: usize) -> TrayStatusLabels {
+    let sync_label = if sync_enabled {
+        "同步已开启"
+    } else {
+        "同步已暂停"
+    };
+    TrayStatusLabels {
+        status: format!("{online_count} 台可信设备在线"),
+        toggle_sync: if sync_enabled {
+            "暂停同步"
         } else {
-            "同步已暂停"
-        };
-        let _ = tray.set_tooltip(Some(format!(
-            "蛋定 Clip · {sync_label} · {online_count} 台设备在线"
-        )));
+            "恢复同步"
+        },
+        tooltip: format!("蛋定 Clip · {sync_label} · {online_count} 台设备在线"),
     }
 }
 
@@ -293,5 +304,17 @@ mod tests {
         assert!(state.handle_blur());
         state.mark_tray_press();
         assert!(!state.consume_matching_blur());
+    }
+
+    #[test]
+    fn tray_status_labels_cover_online_count_and_pause_action() {
+        let active = tray_status_labels(true, 2);
+        assert_eq!(active.status, "2 台可信设备在线");
+        assert_eq!(active.toggle_sync, "暂停同步");
+        assert!(active.tooltip.contains("同步已开启"));
+
+        let paused = tray_status_labels(false, 0);
+        assert_eq!(paused.toggle_sync, "恢复同步");
+        assert!(paused.tooltip.contains("同步已暂停"));
     }
 }

@@ -20,6 +20,8 @@ import {
 import { EggClipColors } from '../theme/Colors';
 import { EggClipSpacing } from '../theme/Spacing';
 import { EggClipTypography } from '../theme/Typography';
+import { TrustedDeviceStore } from '../store/TrustedDeviceStore';
+import { APP_FOREGROUND_STORAGE_KEY } from '../utils/AppLifecycle';
 
 enum OutboundSendState {
   IDLE = 'idle',
@@ -35,6 +37,7 @@ enum OutboundSendState {
 export struct HomePage {
   private readonly clipboardBridge: ClipboardBridgeService = new ClipboardBridgeService();
   private historyStore: HistoryStore | null = null;
+  private trustedDeviceStore: TrustedDeviceStore | null = null;
   private lastPairingHistoryRevision: number = 0;
   private readonly connectionSnapshotListener = (snapshot: PocConnectionSnapshot): void => {
     const previousReceivedText = this.latestReceivedText;
@@ -77,6 +80,9 @@ export struct HomePage {
       this.connectionTitle = snapshot.title;
       this.connectionDescription = snapshot.description;
     }
+    if (snapshot.state === PairingConnectionState.AUTHENTICATED && this.trustedDeviceCount === 0) {
+      this.loadTrustedDeviceCount();
+    }
     if (snapshot.outboundDeliveryState === OutboundDeliveryState.QUEUED) {
       this.setOutboundStatus(OutboundSendState.WAITING,
         `${snapshot.pendingOutboundCount} 条等待发送`, snapshot.outboundDeliveryDescription);
@@ -112,17 +118,22 @@ export struct HomePage {
   @State private clearingHistory: boolean = false;
   @State private expandedHistoryItemId: string = '';
   @State private copiedHistoryItemId: string = '';
+  @State private trustedDeviceCount: number = 0;
+  @State private retryingTrustedConnection: boolean = false;
+  @StorageLink(APP_FOREGROUND_STORAGE_KEY) private appInForeground: boolean = false;
 
   aboutToAppear(): void {
     if (this.historyStore === null) {
       const hostContext = this.getUIContext().getHostContext();
       if (hostContext !== undefined) {
         this.historyStore = new HistoryStore(hostContext as common.UIAbilityContext);
+        this.trustedDeviceStore = new TrustedDeviceStore(hostContext as common.UIAbilityContext);
       }
     }
     pocConnectionStore.subscribe(this.connectionSnapshotListener);
     pairingConnectionStore.subscribe(this.pairingSnapshotListener);
     this.loadHistorySummary();
+    this.loadTrustedDeviceCount();
   }
 
   aboutToDisappear(): void {
@@ -134,6 +145,7 @@ export struct HomePage {
     Scroll() {
       Column({ space: EggClipSpacing.sectionGap }) {
         this.Header()
+        this.ConnectionExperienceCard()
         GridRow({ columns: { sm: 1, md: 2, lg: 2 }, gutter: { x: EggClipSpacing.sectionGap, y: EggClipSpacing.sectionGap } }) {
           GridCol({ span: { sm: 1, md: 1, lg: 1 } }) {
             this.LatestClipboardCard()
@@ -145,6 +157,8 @@ export struct HomePage {
         .width('100%')
       }
       .width('100%')
+      .constraintSize({ maxWidth: 960 })
+      .alignSelf(ItemAlign.Center)
       .padding({
         left: EggClipSpacing.pagePadding,
         right: EggClipSpacing.pagePadding,
@@ -155,6 +169,63 @@ export struct HomePage {
     .width('100%')
     .height('100%')
     .backgroundColor(EggClipColors.pageBackground)
+  }
+
+  @Builder
+  private ConnectionExperienceCard() {
+    Column({ space: 10 }) {
+      if (this.trustedDeviceCount === 0) {
+        Text('三步开始同步')
+          .fontSize(EggClipTypography.bodySize)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(EggClipColors.textPrimary)
+          .width('100%')
+        Text('1. 桌面端生成邀请  ·  2. 到“设备”页扫码或粘贴  ·  3. 核对六位确认码')
+          .fontSize(EggClipTypography.captionSize)
+          .fontColor(EggClipColors.textSecondary)
+          .lineHeight(20)
+          .width('100%')
+        Text('完成一次配对后，应用回到前台会自动恢复可信连接，无需每次扫码。')
+          .fontSize(11)
+          .fontColor(EggClipColors.textSecondary)
+          .width('100%')
+      } else {
+        Row({ space: 10 }) {
+          Column({ space: 4 }) {
+            Text(this.connectionTitle)
+              .fontSize(EggClipTypography.bodySize)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(EggClipColors.textPrimary)
+            Text(this.appInForeground ? this.connectionDescription : '应用位于后台，可信连接已暂停；回到前台后会自动恢复。')
+              .fontSize(EggClipTypography.captionSize)
+              .fontColor(EggClipColors.textSecondary)
+              .lineHeight(19)
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+
+          if (this.connectionTitle.indexOf('失败') >= 0 || this.connectionTitle.indexOf('断开') >= 0) {
+            Button(this.retryingTrustedConnection ? '重试中' : '立即重试')
+              .height(34)
+              .enabled(!this.retryingTrustedConnection && this.appInForeground)
+              .fontSize(12)
+              .fontColor(EggClipColors.onPrimary)
+              .backgroundColor(EggClipColors.primary)
+              .borderRadius(17)
+              .onClick(() => {
+                this.retryTrustedConnection();
+              })
+          }
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(EggClipSpacing.cardPadding)
+    .backgroundColor(EggClipColors.controlBackground)
+    .borderRadius(EggClipSpacing.radiusMedium)
   }
 
   @Builder
@@ -714,6 +785,30 @@ export struct HomePage {
       .catch(() => {
         this.historyItems = [];
         this.historyStatus = '读取历史摘要失败';
+      });
+  }
+
+  private loadTrustedDeviceCount(): void {
+    if (this.trustedDeviceStore === null) return;
+    this.trustedDeviceStore.load()
+      .then((devices) => {
+        this.trustedDeviceCount = devices.length;
+      })
+      .catch(() => {
+        this.trustedDeviceCount = 0;
+      });
+  }
+
+  private retryTrustedConnection(): void {
+    if (this.retryingTrustedConnection || !this.appInForeground) return;
+    this.retryingTrustedConnection = true;
+    pairingConnectionStore.retryTrustedConnection()
+      .catch(() => {
+        this.connectionTitle = '可信连接重试失败';
+        this.connectionDescription = '请检查桌面端是否运行、当前 Wi-Fi 和 Windows 防火墙设置。';
+      })
+      .finally(() => {
+        this.retryingTrustedConnection = false;
       });
   }
 

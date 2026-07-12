@@ -84,7 +84,7 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 
 ## 当前验证结果
 
-- 桌面：Svelte 类型检查、Vitest、前端构建、Rust fmt/check/test 通过；Rust 共 127 个测试通过。
+- 桌面：Svelte 类型检查、Vitest、前端构建、Rust fmt/check/test 通过；Rust 共 130 个测试通过。
 - 桌面：托盘菜单已接入在线数、暂停/恢复、设备管理入口和动态 tooltip，完整交互仍需 Windows 人工回归。
 - HarmonyOS：mDNS 搜索代码、WebSocket/PasteButton POC、协议解析模型以及 H1/D3 边界单测已通过 `hvigorw test`，当前产物未签名。
 - 桌面 POC server 启动时会发布 `_eggclip._tcp.local.` 临时服务；mDNS 只提供候选地址，不代表设备可信。

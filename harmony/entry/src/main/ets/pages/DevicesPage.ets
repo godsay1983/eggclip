@@ -101,6 +101,8 @@ export struct DevicesPage {
         this.ConnectionDiagnosticsSection()
       }
       .width('100%')
+      .constraintSize({ maxWidth: 960 })
+      .alignSelf(ItemAlign.Center)
       .padding({
         left: EggClipSpacing.pagePadding,
         right: EggClipSpacing.pagePadding,

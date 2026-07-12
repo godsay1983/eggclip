@@ -52,7 +52,7 @@
 
 ## D6：自动化与 Windows 回归
 
-- [ ] 覆盖 clipboard、storage、protocol、crypto、sync、ConnectionManager 和 Svelte store 的完整自动化测试。
+- [x] 覆盖 clipboard、storage、protocol、crypto、sync、ConnectionManager 和 Svelte store 的完整自动化测试。
 - [ ] Windows 10/11、DPI、多显示器、防火墙、Wi-Fi/睡眠切换、快速连续复制的手动回归。
 - [ ] 记录双端 2 小时稳定运行和无回环风暴回归。
 
