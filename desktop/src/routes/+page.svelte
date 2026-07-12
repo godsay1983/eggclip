@@ -288,30 +288,32 @@
                         ? "凭据库"
                         : "待检查"}
                   </span>
-                  <button
-                    class="text-button"
-                    type="button"
-                    disabled={$shellSnapshot.syncSpace.state === "loading" ||
-                      $shellSnapshot.syncSpace.activeSpaceId === space.id}
-                    on:click={() => shellSnapshot.selectActiveSyncSpace(space.id)}
-                  >
-                    {$shellSnapshot.syncSpace.activeSpaceId === space.id ? "已选中" : "设为同步目标"}
-                  </button>
-                  <button
-                    class="text-button"
-                    type="button"
-                    disabled={$shellSnapshot.syncSpace.state === "inviting"}
-                    on:click={() => shellSnapshot.createPairingInvitation(space.id)}
-                  >
-                    生成邀请
-                  </button>
-                  <button
-                    class="text-button danger-action"
-                    type="button"
-                    disabled={$shellSnapshot.syncSpace.state === "loading" ||
-                      $shellSnapshot.syncSpace.spaces.length <= 1}
-                    on:click={() => (pendingSpaceDeletionId = space.id)}
-                  >删除空间</button>
+                  <div class="space-card-controls">
+                    <button
+                      class="text-button"
+                      type="button"
+                      disabled={$shellSnapshot.syncSpace.state === "loading" ||
+                        $shellSnapshot.syncSpace.activeSpaceId === space.id}
+                      on:click={() => shellSnapshot.selectActiveSyncSpace(space.id)}
+                    >
+                      {$shellSnapshot.syncSpace.activeSpaceId === space.id ? "已选中" : "设为目标"}
+                    </button>
+                    <button
+                      class="text-button"
+                      type="button"
+                      disabled={$shellSnapshot.syncSpace.state === "inviting"}
+                      on:click={() => shellSnapshot.createPairingInvitation(space.id)}
+                    >
+                      生成邀请
+                    </button>
+                    <button
+                      class="text-button danger-action"
+                      type="button"
+                      disabled={$shellSnapshot.syncSpace.state === "loading" ||
+                        $shellSnapshot.syncSpace.spaces.length <= 1}
+                      on:click={() => (pendingSpaceDeletionId = space.id)}
+                    >删除空间</button>
+                  </div>
                 </div>
                 {#if pendingSpaceDeletionId === space.id}
                   <div class="device-removal-confirmation space-deletion-confirmation" role="alert">

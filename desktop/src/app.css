@@ -658,11 +658,7 @@ footer {
 }
 
 .space-card {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
+  display: block;
   padding: 11px 12px;
 }
 
@@ -672,16 +668,29 @@ footer {
 
 .space-card-actions {
   display: flex;
-  flex: 0 0 auto;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 10px;
 }
 
-.space-card-actions .text-button {
-  min-height: 26px;
-  padding: 5px 9px;
+.space-card-controls {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.space-card-controls .text-button {
+  min-height: 25px;
+  padding: 4px 7px;
   font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .space-card strong,
@@ -702,7 +711,7 @@ footer {
 
 .space-card span {
   flex: 0 0 auto;
-  padding: 4px 8px;
+  padding: 4px 7px;
   border-radius: 999px;
   color: #1f6b42;
   background: rgba(78, 159, 109, 0.16);
