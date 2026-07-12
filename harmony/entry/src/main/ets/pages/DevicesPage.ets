@@ -44,6 +44,7 @@ export struct DevicesPage {
   };
   private readonly pairingSnapshotListener = (snapshot: PairingConnectionSnapshot): void => {
     this.pairingConnectionState = snapshot.state;
+    this.pairingAuthenticated = snapshot.authenticated;
     this.pairingTrustedDeviceId = snapshot.trustedDeviceId;
     this.loadTrustedDevices();
   };
@@ -68,6 +69,7 @@ export struct DevicesPage {
   @State private diagnosticsExpanded: boolean = false;
   @State private trustedDevices: TrustedDeviceSummary[] = [];
   @State private pairingConnectionState: PairingConnectionState = PairingConnectionState.IDLE;
+  @State private pairingAuthenticated: boolean = false;
   @State private pairingTrustedDeviceId: string = '';
   @State private editingDeviceId: string = '';
   @State private deviceNameDraft: string = '';
@@ -867,7 +869,7 @@ export struct DevicesPage {
 
   private trustedDeviceStateLabel(deviceId: string): string {
     if (deviceId !== this.pairingTrustedDeviceId) return '离线';
-    if (this.pairingConnectionState === PairingConnectionState.AUTHENTICATED) return '在线';
+    if (this.pairingAuthenticated || this.pairingConnectionState === PairingConnectionState.AUTHENTICATED) return '在线';
     if (this.pairingConnectionState === PairingConnectionState.PREPARING ||
       this.pairingConnectionState === PairingConnectionState.CONNECTING ||
       this.pairingConnectionState === PairingConnectionState.CLIENT_HELLO_SENT ||

@@ -76,14 +76,15 @@ export struct HomePage {
       this.lastPairingHistoryRevision = snapshot.historyRevision;
       this.loadHistorySummary();
     }
-    if (snapshot.state === PairingConnectionState.AUTHENTICATED) {
+    if (snapshot.authenticated || snapshot.state === PairingConnectionState.AUTHENTICATED) {
       this.connectionTitle = snapshot.title;
       this.connectionDescription = '安全连接已建立，可以同步纯文本。';
     } else if (snapshot.state === PairingConnectionState.FAILED) {
       this.connectionTitle = snapshot.title;
       this.connectionDescription = snapshot.description;
     }
-    if (snapshot.state === PairingConnectionState.AUTHENTICATED && this.trustedDeviceCount === 0) {
+    if ((snapshot.authenticated || snapshot.state === PairingConnectionState.AUTHENTICATED) &&
+      this.trustedDeviceCount === 0) {
       this.loadTrustedDeviceCount();
     }
     if (snapshot.outboundDeliveryState === OutboundDeliveryState.QUEUED) {

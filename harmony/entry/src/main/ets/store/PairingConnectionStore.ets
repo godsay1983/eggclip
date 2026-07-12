@@ -84,6 +84,7 @@ export enum PairingConnectionState {
 
 export interface PairingConnectionSnapshot {
   state: PairingConnectionState;
+  authenticated: boolean;
   trustedDeviceId: string;
   manualHost: string;
   manualPort: string;
@@ -247,6 +248,7 @@ class PairingConnectionStore {
   snapshot(): PairingConnectionSnapshot {
     return {
       state: this.state,
+      authenticated: this.hasAuthenticatedSession(),
       trustedDeviceId: this.reconnectTarget?.deviceId ?? this.pendingTrustServerHello?.deviceId ?? '',
       manualHost: this.manualHost,
       manualPort: this.manualPort,
@@ -557,6 +559,7 @@ class PairingConnectionStore {
       }
       this.authenticatedTransportSession = authenticated.transportSession;
       this.state = PairingConnectionState.AUTHENTICATED;
+      this.lastError = '';
       this.title = this.connectionPurpose === ConnectionHandshakePurpose.TRUSTED_RECONNECT
         ? '可信连接已认证'
         : '配对握手已认证';
@@ -583,6 +586,7 @@ class PairingConnectionStore {
         return this.snapshot();
       }
       this.state = PairingConnectionState.AUTHENTICATED;
+      this.lastError = '';
       this.title = isInitialPairing ? '配对已保存' : '空间密钥已更新';
       this.description = isInitialPairing
         ? '已保存桌面端可信设备和同步空间密钥引用。'
@@ -610,6 +614,7 @@ class PairingConnectionStore {
         return this.snapshot();
       }
       this.title = '同步状态已更新';
+      this.markAuthenticatedActivity();
       const requested = await this.requestMissingRanges(frameResult.decryptedPayload);
       this.description = requested
         ? '正在补齐本机缺失的最近记录。'
@@ -630,18 +635,21 @@ class PairingConnectionStore {
           this.latestReceivedByteLength = parsedItem.contentLength;
         }
         this.historyRevision += 1;
+        this.markAuthenticatedActivity();
         this.title = '已安全保存桌面端文本';
         this.description = '内容已使用同步空间密钥加密写入最近记录；请到首页查看并按需复制到本机。';
         this.emit();
         return this.snapshot();
       }
       if (received.status === InboundItemLiveStatus.DUPLICATE) {
+        this.markAuthenticatedActivity();
         this.title = '已忽略重复桌面端文本';
         this.description = '该实时事件已存在于本机历史，未重复写入。';
         this.emit();
         return this.snapshot();
       }
       if (received.status === InboundItemLiveStatus.IGNORED_BY_POLICY) {
+        this.markAuthenticatedActivity();
         this.title = '自动接收已暂停';
         this.description = '收到的桌面端实时文本已按当前同步策略忽略。';
         this.emit();
@@ -660,6 +668,7 @@ class PairingConnectionStore {
         return this.snapshot();
       }
       this.title = '历史补同步完成';
+      this.markAuthenticatedActivity();
       this.historyRevision += 1;
       this.description = `新增 ${batch.storedCount} 条 · 重复 ${batch.duplicateCount} 条 · retention gap ${batch.gapCount} 个`;
       this.emit();
@@ -682,6 +691,8 @@ class PairingConnectionStore {
       const batchPayload = JSON.parse(JSON.stringify(batch)) as JsonObject;
       if (!await this.sendAuthenticatedBusinessFrame(MessageType.ITEM_BATCH, batchPayload)) {
         this.fail('历史批次发送失败', '认证连接已失效，稍后重连会重新比较同步头。');
+      } else {
+        this.markAuthenticatedActivity();
       }
       return this.snapshot();
     }
@@ -693,6 +704,7 @@ class PairingConnectionStore {
         return this.snapshot();
       }
       await this.applyOutboundAcknowledgement(ack.payload?.itemIds ?? [], Date.now());
+      this.markAuthenticatedActivity();
       return this.snapshot();
     }
 
@@ -895,6 +907,16 @@ class PairingConnectionStore {
       this.state === PairingConnectionState.CONNECTING ||
       this.state === PairingConnectionState.CLIENT_HELLO_SENT ||
       this.state === PairingConnectionState.WAITING_AUTH_OK;
+  }
+
+  private hasAuthenticatedSession(): boolean {
+    return this.authenticatedTransportSession !== null && !this.authenticatedTransportSession.isClosed();
+  }
+
+  private markAuthenticatedActivity(): void {
+    if (!this.hasAuthenticatedSession()) return;
+    this.state = PairingConnectionState.AUTHENTICATED;
+    this.lastError = '';
   }
 
   private fail(title: string, description: string): void {

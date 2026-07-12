@@ -35,7 +35,7 @@ export struct PairingPage {
   private pairingHandshakeInFlight: boolean = false;
   private readonly connectionListener = (snapshot: PairingConnectionSnapshot): void => {
     this.connectionSnapshot = snapshot;
-    if (snapshot.state === PairingConnectionState.AUTHENTICATED &&
+    if ((snapshot.authenticated || snapshot.state === PairingConnectionState.AUTHENTICATED) &&
       this.pairingHandshakeInFlight && this.snapshot.state === PairingStoreState.PENDING) {
       this.pairingHandshakeInFlight = false;
       this.pairingCompleted = true;
@@ -474,7 +474,7 @@ export struct PairingPage {
   }
 
   private connectionBadgeText(): string {
-    if (this.connectionSnapshot.state === PairingConnectionState.AUTHENTICATED) {
+    if (this.isAuthenticatedConnection()) {
       return '已认证';
     }
     if (this.connectionSnapshot.state === PairingConnectionState.FAILED) {
@@ -492,7 +492,7 @@ export struct PairingPage {
   }
 
   private connectionButtonText(): string {
-    if (this.connectionSnapshot.state === PairingConnectionState.AUTHENTICATED) {
+    if (this.isAuthenticatedConnection()) {
       return '已认证连接';
     }
     if (this.snapshot.state !== PairingStoreState.PENDING) {
@@ -508,7 +508,7 @@ export struct PairingPage {
   }
 
   private invitationConfirmButtonText(): string {
-    if (this.connectionSnapshot.state === PairingConnectionState.AUTHENTICATED) {
+    if (this.isAuthenticatedConnection()) {
       return '已连接，无需重复配对';
     }
     if (this.snapshot.state === PairingStoreState.PENDING) {
@@ -519,11 +519,11 @@ export struct PairingPage {
 
   private canConfirmInvitation(): boolean {
     return this.snapshot.state === PairingStoreState.READY &&
-      this.connectionSnapshot.state !== PairingConnectionState.AUTHENTICATED;
+      !this.isAuthenticatedConnection();
   }
 
   private connectionDescriptionText(): string {
-    if (this.connectionSnapshot.state === PairingConnectionState.AUTHENTICATED) {
+    if (this.isAuthenticatedConnection()) {
       return '认证会话已建立，当前无需再次发送配对握手。';
     }
     if (this.snapshot.state !== PairingStoreState.PENDING) {
@@ -533,7 +533,7 @@ export struct PairingPage {
   }
 
   private connectionStatusColor(): ResourceColor {
-    if (this.connectionSnapshot.state === PairingConnectionState.AUTHENTICATED) {
+    if (this.isAuthenticatedConnection()) {
       return EggClipColors.statusOnline;
     }
     if (this.connectionSnapshot.state === PairingConnectionState.FAILED) {
@@ -550,6 +550,11 @@ export struct PairingPage {
       this.connectionSnapshot.state === PairingConnectionState.CONNECTING ||
       this.connectionSnapshot.state === PairingConnectionState.CLIENT_HELLO_SENT ||
       this.connectionSnapshot.state === PairingConnectionState.WAITING_AUTH_OK;
+  }
+
+  private isAuthenticatedConnection(): boolean {
+    return this.connectionSnapshot.authenticated ||
+      this.connectionSnapshot.state === PairingConnectionState.AUTHENTICATED;
   }
 
   private isSelectedEndpoint(host: string, port: number): boolean {
