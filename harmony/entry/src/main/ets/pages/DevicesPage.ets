@@ -64,6 +64,7 @@ export struct DevicesPage {
   @State private connectionState: ConnectionState = ConnectionState.OFFLINE;
   @State private connectionTitle: string = '等待桌面端';
   @State private connectionDescription: string = '正在等待 mDNS 候选，也可以使用手动 IP';
+  @State private pairingExpanded: boolean = false;
   @State private diagnosticsExpanded: boolean = false;
   @State private trustedDevices: TrustedDeviceSummary[] = [];
   @State private pairingConnectionState: PairingConnectionState = PairingConnectionState.IDLE;
@@ -95,8 +96,8 @@ export struct DevicesPage {
     Scroll() {
       Column({ space: EggClipSpacing.sectionGap }) {
         this.Header()
-        PairingPage()
         this.TrustedDevicesCard()
+        this.AddDeviceSection()
         this.ConnectionDiagnosticsSection()
       }
       .width('100%')
@@ -112,6 +113,47 @@ export struct DevicesPage {
     .width('100%')
     .height('100%')
     .backgroundColor(EggClipColors.pageBackground)
+  }
+
+  @Builder
+  private AddDeviceSection() {
+    Column({ space: 12 }) {
+      Row() {
+        Column({ space: 3 }) {
+          Text('添加设备')
+            .fontSize(EggClipTypography.bodySize)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(EggClipColors.textPrimary)
+
+          Text('扫描或粘贴桌面端邀请。')
+            .fontSize(EggClipTypography.captionSize)
+            .fontColor(EggClipColors.textSecondary)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+
+        Button(this.pairingExpanded ? '收起' : '开始配对')
+          .height(32)
+          .fontSize(12)
+          .fontColor(this.pairingExpanded ? EggClipColors.textSecondary : EggClipColors.onPrimary)
+          .backgroundColor(this.pairingExpanded ? EggClipColors.controlBackground : EggClipColors.primary)
+          .borderRadius(16)
+          .onClick(() => {
+            this.pairingExpanded = !this.pairingExpanded;
+          })
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Top)
+
+      if (this.pairingExpanded) {
+        PairingPage()
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(EggClipSpacing.cardPadding)
+    .backgroundColor(EggClipColors.cardBackground)
+    .borderRadius(EggClipSpacing.radiusLarge)
   }
 
   @Builder
@@ -140,7 +182,7 @@ export struct DevicesPage {
           StatusDot({ state: this.connectionState })
 
           Column({ space: 3 }) {
-            Text('连接诊断')
+            Text('连接问题')
               .fontSize(EggClipTypography.bodySize)
               .fontWeight(FontWeight.Bold)
               .fontColor(EggClipColors.textPrimary)
@@ -168,7 +210,7 @@ export struct DevicesPage {
       .width('100%')
       .alignItems(VerticalAlign.Top)
 
-      Text('这里是开发期和排障入口：自动发现、手动 IP 和运行时 WebSocket 只说明网络可达，不代表设备已经可信。')
+      Text('自动连接失败时，可在这里重新发现或手动输入地址。')
         .width('100%')
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
@@ -735,7 +777,7 @@ export struct DevicesPage {
             .fontWeight(FontWeight.Bold)
             .fontColor(EggClipColors.textPrimary)
 
-          Text('还没有完成安全配对的设备。正式配对完成后，这里会显示设备名称、在线状态、公钥短指纹、最后在线时间和移除入口。')
+          Text('还没有可信设备。点击下方“添加设备”完成配对。')
             .fontSize(EggClipTypography.captionSize)
             .fontColor(EggClipColors.textSecondary)
             .textAlign(TextAlign.Center)
@@ -744,10 +786,6 @@ export struct DevicesPage {
         .width('100%')
         .alignItems(HorizontalAlign.Center)
 
-        Text('请使用上方“设备配对”导入桌面端邀请；自动发现和手动 IP 仅放在下方连接诊断里。')
-          .fontSize(11)
-          .fontColor(EggClipColors.textSecondary)
-          .textAlign(TextAlign.Center)
       }
       .width('100%')
       .alignItems(HorizontalAlign.Center)

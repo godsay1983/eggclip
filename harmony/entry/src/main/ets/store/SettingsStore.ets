@@ -72,7 +72,11 @@ export class SettingsStore {
     this.currentErrorMessage = '';
     try {
       const loaded = await this.repository.loadAppSettings();
-      this.currentSettings = loaded === null ? defaultAppSettings() : cloneSettings(loaded);
+      const storedSettings = loaded === null ? defaultAppSettings() : loaded;
+      this.currentSettings = normalizeHarmonySettings(storedSettings);
+      if (loaded !== null && loaded.autoWriteEnabled) {
+        await this.repository.saveAppSettings(this.currentSettings, Date.now());
+      }
       this.currentState = SettingsStoreState.READY;
     } catch (_) {
       this.currentState = SettingsStoreState.ERROR;
@@ -82,7 +86,8 @@ export class SettingsStore {
   }
 
   async save(settings: AppSettings): Promise<SettingsStoreSnapshot> {
-    const validation = validateAppSettings(settings);
+    const normalizedSettings = normalizeHarmonySettings(settings);
+    const validation = validateAppSettings(normalizedSettings);
     if (!validation.ok) {
       this.currentState = SettingsStoreState.ERROR;
       this.currentErrorMessage = '设置参数无效';
@@ -90,7 +95,7 @@ export class SettingsStore {
     }
 
     this.currentState = SettingsStoreState.SAVING;
-    this.currentSettings = cloneSettings(settings);
+    this.currentSettings = normalizedSettings;
     this.currentErrorMessage = '';
     try {
       const nowMs = Date.now();
@@ -179,4 +184,12 @@ export function cloneSettings(settings: AppSettings): AppSettings {
     retentionDays: settings.retentionDays,
     themeMode: settings.themeMode
   };
+}
+
+// HarmonyOS v1 only writes received text after an explicit user copy action.
+// Persisting auto-write as disabled prevents stale settings from bypassing that boundary.
+export function normalizeHarmonySettings(settings: AppSettings): AppSettings {
+  const normalized = cloneSettings(settings);
+  normalized.autoWriteEnabled = false;
+  return normalized;
 }

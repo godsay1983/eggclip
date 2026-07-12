@@ -85,90 +85,103 @@ export struct PairingPage {
       .width('100%')
       .alignItems(VerticalAlign.Top)
 
-      TextInput({
-        text: this.invitationInputText,
-        placeholder: '粘贴 eggclip://pair?p=...'
-      })
+      if (this.snapshot.summary === null) {
+        TextInput({
+          text: this.invitationInputText,
+          placeholder: '粘贴 eggclip://pair?p=...'
+        })
+          .width('100%')
+          .backgroundColor(EggClipColors.controlBackground)
+          .height(44)
+          .borderRadius(16)
+          .onChange((value: string) => {
+            this.handleInvitationInputChange(value);
+          })
+
+        Column({ space: 6 }) {
+          Button('扫码导入桌面端二维码')
+            .width('100%')
+            .height(42)
+            .fontColor(EggClipColors.textPrimary)
+            .backgroundColor(EggClipColors.controlBackground)
+            .borderRadius(21)
+            .onClick(() => {
+              this.importInvitationFromScan();
+            })
+
+          PasteButton({
+            text: PasteDescription.PASTE,
+            buttonType: ButtonType.Capsule
+          })
+            .width('100%')
+            .height(42)
+            .fontColor(EggClipColors.onPrimary)
+            .backgroundColor(EggClipColors.primary)
+            .borderRadius(21)
+            .onClick((_event: ClickEvent, result: PasteButtonOnClickResult) => {
+              if (result !== PasteButtonOnClickResult.SUCCESS) {
+                this.pasteImportStatus = 'PasteButton 临时授权失败，未读取系统剪贴板';
+                return;
+              }
+              this.pasteImportStatus = 'PasteButton 已授权，正在读取邀请文本';
+              this.clipboardBridge.readPlainTextAfterPasteButton()
+                .then((readResult) => {
+                  if (!readResult.ok) {
+                    this.pasteImportStatus = readResult.message;
+                    return;
+                  }
+                  this.importInvitationText(readResult.text, '已从剪贴板读取并校验邀请');
+                })
+                .catch(() => {
+                  this.pasteImportStatus = '读取剪贴板失败，请确认当前内容是纯文本邀请';
+                });
+            })
+
+          Text(this.pasteImportStatus)
+            .width('100%')
+            .fontSize(11)
+            .fontColor(EggClipColors.textSecondary)
+            .lineHeight(18)
+        }
         .width('100%')
-        .height(44)
-        .backgroundColor(EggClipColors.controlBackground)
-        .borderRadius(16)
-        .onChange((value: string) => {
-          this.handleInvitationInputChange(value);
-        })
+        .alignItems(HorizontalAlign.Start)
 
-      Column({ space: 6 }) {
-        Button('扫码导入桌面端二维码')
+        Row({ space: 8 }) {
+          Button('校验邀请')
+            .layoutWeight(1)
+            .height(42)
+            .fontColor(EggClipColors.onPrimary)
+            .backgroundColor(EggClipColors.primary)
+            .borderRadius(21)
+            .onClick(() => {
+              this.snapshot = this.pairingStore.updateInvitationText(this.invitationInputText);
+              this.snapshot = this.pairingStore.parseCurrent();
+            })
+
+          Button('清空')
+            .width(84)
+            .height(42)
+            .fontColor(EggClipColors.textSecondary)
+            .backgroundColor(EggClipColors.controlBackground)
+            .borderRadius(21)
+            .onClick(() => {
+              this.snapshot = this.pairingStore.clear();
+              this.updateVisibleInvitationInput('');
+            })
+        }
+        .width('100%')
+      } else {
+        Button('重新导入邀请')
           .width('100%')
-          .height(42)
-          .fontColor(EggClipColors.textPrimary)
-          .backgroundColor(EggClipColors.controlBackground)
-          .borderRadius(21)
-          .onClick(() => {
-            this.importInvitationFromScan();
-          })
-
-        PasteButton({
-          text: PasteDescription.PASTE,
-          buttonType: ButtonType.Capsule
-        })
-          .width('100%')
-          .height(42)
-          .fontColor(EggClipColors.onPrimary)
-          .backgroundColor(EggClipColors.primary)
-          .borderRadius(21)
-          .onClick((_event: ClickEvent, result: PasteButtonOnClickResult) => {
-            if (result !== PasteButtonOnClickResult.SUCCESS) {
-              this.pasteImportStatus = 'PasteButton 临时授权失败，未读取系统剪贴板';
-              return;
-            }
-            this.pasteImportStatus = 'PasteButton 已授权，正在读取邀请文本';
-            this.clipboardBridge.readPlainTextAfterPasteButton()
-              .then((readResult) => {
-                if (!readResult.ok) {
-                  this.pasteImportStatus = readResult.message;
-                  return;
-                }
-                this.importInvitationText(readResult.text, '已从剪贴板读取并校验邀请');
-              })
-              .catch(() => {
-                this.pasteImportStatus = '读取剪贴板失败，请确认当前内容是纯文本邀请';
-              });
-          })
-
-        Text(this.pasteImportStatus)
-          .width('100%')
-          .fontSize(11)
-          .fontColor(EggClipColors.textSecondary)
-          .lineHeight(18)
-      }
-      .width('100%')
-      .alignItems(HorizontalAlign.Start)
-
-      Row({ space: 8 }) {
-        Button('校验邀请')
-          .layoutWeight(1)
-          .height(42)
-          .fontColor(EggClipColors.onPrimary)
-          .backgroundColor(EggClipColors.primary)
-          .borderRadius(21)
-          .onClick(() => {
-            this.snapshot = this.pairingStore.updateInvitationText(this.invitationInputText);
-            this.snapshot = this.pairingStore.parseCurrent();
-          })
-
-        Button('清空')
-          .width(84)
-          .height(42)
+          .height(36)
           .fontColor(EggClipColors.textSecondary)
           .backgroundColor(EggClipColors.controlBackground)
-          .borderRadius(21)
+          .borderRadius(18)
           .onClick(() => {
             this.snapshot = this.pairingStore.clear();
             this.updateVisibleInvitationInput('');
           })
       }
-      .width('100%')
 
       Text(this.snapshot.statusText)
         .width('100%')

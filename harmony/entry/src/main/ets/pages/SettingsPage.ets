@@ -1,10 +1,5 @@
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { AppSettings, ThemeMode, defaultAppSettings } from '../models/DomainModels';
-import { PocLifecycleState } from '../models/PocModels';
-import {
-  PocConnectionSnapshot,
-  pocConnectionStore
-} from '../store/PocConnectionStore';
 import {
   SettingsStore,
   SettingsStoreSnapshot,
@@ -26,16 +21,6 @@ import { EggClipTypography } from '../theme/Typography';
 @Component
 export struct SettingsPage {
   private settingsStore: SettingsStore | null = null;
-  private readonly connectionSnapshotListener = (snapshot: PocConnectionSnapshot): void => {
-    this.discoveryState = snapshot.discoveryState;
-    this.discoveryStatus = snapshot.discoveryStatus;
-    this.discoveryCandidateCount = snapshot.discoveryCandidates.length;
-    this.transportState = snapshot.transportState;
-    this.transportStatus = snapshot.transportStatus;
-    this.transportDiagnostics = snapshot.transportDiagnostics;
-    this.connectionTitle = snapshot.connectionTitle;
-    this.connectionDescription = snapshot.connectionDescription;
-  };
   @State private storeState: SettingsStoreState = SettingsStoreState.IDLE;
   @State private statusText: string = '设置尚未加载';
   @State private syncEnabled: boolean = true;
@@ -46,14 +31,6 @@ export struct SettingsPage {
   @State private retentionDays: number = 7;
   @State private themeMode: ThemeMode = ThemeMode.SYSTEM;
   @State private historyActionStatus: string = '清空历史只影响本机历史，不会修改系统剪贴板';
-  @State private discoveryState: PocLifecycleState = PocLifecycleState.IDLE;
-  @State private discoveryStatus: string = '等待开始局域网发现';
-  @State private discoveryCandidateCount: number = 0;
-  @State private transportState: PocLifecycleState = PocLifecycleState.IDLE;
-  @State private transportStatus: string = '输入桌面端 IP 和端口后手动连接';
-  @State private transportDiagnostics: string = '帧诊断：接收 0 · 接受 0 · 拒绝 0';
-  @State private connectionTitle: string = '等待桌面端';
-  @State private connectionDescription: string = '正在等待 mDNS 候选，也可以使用手动 IP';
   @State private spaceKeyDiagnosticRunning: boolean = false;
   @State private spaceKeyDiagnosticStatus: string = '配对成功后可运行 HUKS 空间密钥与摘要自检';
   @State private spaceKeyDiagnosticDetail: string = '自检只使用固定测试文本，不读取或显示剪贴板内容。';
@@ -70,14 +47,8 @@ export struct SettingsPage {
         return;
       }
       this.settingsStore = new SettingsStore(hostContext as common.UIAbilityContext);
-      pocConnectionStore.initialize(hostContext as common.UIAbilityContext);
     }
-    pocConnectionStore.subscribe(this.connectionSnapshotListener);
     this.loadSettings();
-  }
-
-  aboutToDisappear(): void {
-    pocConnectionStore.unsubscribe(this.connectionSnapshotListener);
   }
 
   build() {
@@ -88,7 +59,7 @@ export struct SettingsPage {
         this.HistoryPolicyCard()
         this.AppearanceCard()
         this.PrivacyCard()
-        this.DiagnosticsCard()
+        this.SecurityRecoveryCard()
       }
       .width('100%')
       .constraintSize({ maxWidth: 960 })
@@ -136,7 +107,6 @@ export struct SettingsPage {
 
       this.SyncEnabledRow()
       this.AutoReceiveEnabledRow()
-      this.AutoWriteEnabledRow()
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -273,31 +243,14 @@ export struct SettingsPage {
   }
 
   @Builder
-  private DiagnosticsCard() {
+  private SecurityRecoveryCard() {
     Column({ space: 10 }) {
-      Row() {
-        Text('高级诊断')
-          .fontSize(EggClipTypography.bodySize)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(EggClipColors.textPrimary)
-          .layoutWeight(1)
-
-        Text(this.transportState)
-          .fontSize(EggClipTypography.captionSize)
-          .fontColor(this.transportState === PocLifecycleState.FAILED ? Color.Red : EggClipColors.textSecondary)
-      }
-      .width('100%')
-
-      Text(`${this.connectionTitle}：${this.connectionDescription}`)
+      Text('安全与恢复')
+        .fontSize(EggClipTypography.bodySize)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(EggClipColors.textPrimary)
         .width('100%')
-        .fontSize(EggClipTypography.captionSize)
-        .fontColor(EggClipColors.textSecondary)
-        .lineHeight(20)
 
-      this.DiagnosticsRow('mDNS', `${this.discoveryState} · ${this.discoveryStatus}`)
-      this.DiagnosticsRow('候选地址', `${this.discoveryCandidateCount} 个`)
-      this.DiagnosticsRow('WebSocket', `${this.transportState} · ${this.transportStatus}`)
-      this.DiagnosticsRow('帧统计', this.transportDiagnostics)
       this.SpaceKeyDiagnosticResult()
 
       Button(this.spaceKeyDiagnosticRunning ? '自检中' : '自检空间密钥与摘要')
@@ -322,7 +275,7 @@ export struct SettingsPage {
           this.confirmSpaceKeyRecovery();
         })
 
-      Text('自检不显示正文、完整摘要或密钥。重新初始化只用于密钥缺失/损坏，会清除本机配对、同步空间及历史，保留应用设置和本机长期身份，随后必须重新配对。')
+      Text('仅在密钥异常时使用。重新初始化会清除本机配对、同步空间和历史，之后需要重新配对。')
         .width('100%')
         .fontSize(11)
         .fontColor(EggClipColors.textSecondary)
@@ -376,23 +329,6 @@ export struct SettingsPage {
   }
 
   @Builder
-  private DiagnosticsRow(label: string, value: string) {
-    Row({ space: 10 }) {
-      Text(label)
-        .width(78)
-        .fontSize(EggClipTypography.captionSize)
-        .fontColor(EggClipColors.textPrimary)
-
-      Text(value)
-        .layoutWeight(1)
-        .fontSize(EggClipTypography.captionSize)
-        .fontColor(EggClipColors.textSecondary)
-        .lineHeight(18)
-    }
-    .width('100%')
-  }
-
-  @Builder
   private SyncEnabledRow() {
     Row({ space: 10 }) {
       Column({ space: 2 }) {
@@ -442,34 +378,6 @@ export struct SettingsPage {
         .borderRadius(17)
         .onClick(() => {
           this.autoReceiveEnabled = !this.autoReceiveEnabled;
-          this.saveCurrentSettings();
-        })
-    }
-    .width('100%')
-  }
-
-  @Builder
-  private AutoWriteEnabledRow() {
-    Row({ space: 10 }) {
-      Column({ space: 2 }) {
-        Text('自动写入剪贴板')
-          .fontSize(EggClipTypography.bodySize)
-          .fontColor(EggClipColors.textPrimary)
-        Text('收到文本后写入系统剪贴板')
-          .fontSize(EggClipTypography.captionSize)
-          .fontColor(EggClipColors.textSecondary)
-      }
-      .alignItems(HorizontalAlign.Start)
-      .layoutWeight(1)
-
-      Button(this.autoWriteEnabled ? '已开启' : '已关闭')
-        .height(34)
-        .enabled(this.storeState !== SettingsStoreState.SAVING)
-        .fontColor(this.autoWriteEnabled ? EggClipColors.textSecondary : EggClipColors.onPrimary)
-        .backgroundColor(this.autoWriteEnabled ? EggClipColors.controlBackground : EggClipColors.primary)
-        .borderRadius(17)
-        .onClick(() => {
-          this.autoWriteEnabled = !this.autoWriteEnabled;
           this.saveCurrentSettings();
         })
     }

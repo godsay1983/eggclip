@@ -1,6 +1,7 @@
 <script lang="ts">
   import ClipboardCard from "$lib/components/clipboard/ClipboardCard.svelte";
   import HistoryList from "$lib/components/clipboard/HistoryList.svelte";
+  import HmacDiagnosticCard from "$lib/components/devices/HmacDiagnosticCard.svelte";
   import DeviceChips from "$lib/components/devices/DeviceChips.svelte";
   import NetworkDiagnosticsCard from "$lib/components/devices/NetworkDiagnosticsCard.svelte";
   import NetworkTroubleshootingCard from "$lib/components/devices/NetworkTroubleshootingCard.svelte";
@@ -14,7 +15,9 @@
   import { onMount } from "svelte";
 
   let settingsVisible = false;
+  let settingsSection: "general" | "devices" | "advanced" = "general";
   let pendingSpaceDeletionId = "";
+  let expandedSpaceActionsId = "";
 
   async function deleteSyncSpace(spaceId: string): Promise<void> {
     try {
@@ -38,6 +41,7 @@
     const traySettingsListener = listen("settings://changed", () => settingsSnapshot.load());
     const trayDevicesListener = listen("tray://open-devices", () => {
       settingsVisible = true;
+      settingsSection = "devices";
       requestAnimationFrame(() => {
         document.getElementById("trusted-devices")?.scrollIntoView({ behavior: "smooth", block: "start" });
       });
@@ -149,7 +153,14 @@
         </div>
       </div>
 
-      <div class="setting-grid">
+      <nav class="settings-tabs" aria-label="设置分类">
+        <button class:active={settingsSection === "general"} type="button" on:click={() => (settingsSection = "general")}>常规</button>
+        <button class:active={settingsSection === "devices"} type="button" on:click={() => (settingsSection = "devices")}>设备</button>
+        <button class:active={settingsSection === "advanced"} type="button" on:click={() => (settingsSection = "advanced")}>高级</button>
+      </nav>
+
+      {#if settingsSection === "general"}
+        <div class="setting-grid">
         <label>
           <span>自动同步</span>
           <input
@@ -229,9 +240,9 @@
             <option value="dark">深色</option>
           </select>
         </label>
-      </div>
-
-      <div class="settings-divider"></div>
+        </div>
+        <p class="settings-footnote">只在局域网同步纯文本；设置和历史保存在本机。</p>
+      {:else if settingsSection === "devices"}
 
       <section class="space-summary" aria-label="同步空间">
         <div class="section-heading compact">
@@ -255,7 +266,7 @@
         {#if $shellSnapshot.syncSpace.spaces.length === 0}
           <div class="space-empty">
             <strong>尚未创建正式同步空间</strong>
-            <p>当前 POC 连接仍可手动验证收发；正式配对前需要先创建本地空间和 256-bit spaceKey。</p>
+            <p>添加设备前，请先创建一个同步空间。</p>
           </div>
         {:else}
           <div class="space-list">
@@ -263,34 +274,45 @@
               <article class="space-card">
                 <div>
                   <strong>{space.displayName}</strong>
-                  <p>空间 #{space.shortId} · key v{space.keyVersion} · {space.createdAt}</p>
+                  <p>
+                    #{space.shortId} ·
+                    {$shellSnapshot.devices.filter((device) =>
+                      device.trustKind === "trusted" && device.spaceId === space.id).length}
+                    台可信设备
+                  </p>
                 </div>
                 <div class="space-card-actions">
                   <span>
                     {$shellSnapshot.syncSpace.activeSpaceId === space.id
-                      ? "当前目标"
-                      : space.keyRefKind === "credential"
-                        ? "凭据库"
-                        : "待检查"}
+                      ? "当前"
+                      : "可用"}
                   </span>
                   <div class="space-card-controls">
-                    <button
-                      class="text-button"
-                      type="button"
-                      disabled={$shellSnapshot.syncSpace.state === "loading" ||
-                        $shellSnapshot.syncSpace.activeSpaceId === space.id}
-                      on:click={() => shellSnapshot.selectActiveSyncSpace(space.id)}
-                    >
-                      {$shellSnapshot.syncSpace.activeSpaceId === space.id ? "已选中" : "设为目标"}
-                    </button>
                     <button
                       class="text-button"
                       type="button"
                       disabled={$shellSnapshot.syncSpace.state === "inviting"}
                       on:click={() => shellSnapshot.createPairingInvitation(space.id)}
                     >
-                      生成邀请
+                      添加设备
                     </button>
+                    <button
+                      class="text-button"
+                      type="button"
+                      aria-expanded={expandedSpaceActionsId === space.id}
+                      on:click={() => (expandedSpaceActionsId = expandedSpaceActionsId === space.id ? "" : space.id)}
+                    >更多</button>
+                  </div>
+                </div>
+                {#if expandedSpaceActionsId === space.id}
+                  <div class="space-card-more">
+                    <button
+                      class="text-button"
+                      type="button"
+                      disabled={$shellSnapshot.syncSpace.state === "loading" ||
+                        $shellSnapshot.syncSpace.activeSpaceId === space.id}
+                      on:click={() => shellSnapshot.selectActiveSyncSpace(space.id)}
+                    >{$shellSnapshot.syncSpace.activeSpaceId === space.id ? "当前空间" : "设为当前"}</button>
                     <button
                       class="text-button danger-action"
                       type="button"
@@ -299,7 +321,7 @@
                       on:click={() => (pendingSpaceDeletionId = space.id)}
                     >删除空间</button>
                   </div>
-                </div>
+                {/if}
                 {#if pendingSpaceDeletionId === space.id}
                   <div class="device-removal-confirmation space-deletion-confirmation" role="alert">
                     <strong>确认删除“{space.displayName}”？</strong>
@@ -323,26 +345,6 @@
               </article>
             {/each}
           </div>
-          <div class="invitation-card">
-            <strong>跨端 HMAC 确认</strong>
-            <p>使用当前同步空间密钥计算固定诊断文本；只显示六位确认码，不显示密钥或完整摘要。</p>
-            {#if $shellSnapshot.syncSpace.hmacDiagnostic}
-              <div class="confirmation-code">
-                <span>HMAC 确认码（不是配对码）</span>
-                <strong>{$shellSnapshot.syncSpace.hmacDiagnostic.confirmationCode}</strong>
-              </div>
-              <p>同步空间：{$shellSnapshot.syncSpace.hmacDiagnostic.spaceDisplayName}</p>
-              <p>在鸿蒙端运行“自检空间密钥与摘要”，两端确认码一致即表示 HUKS HMAC 互通。</p>
-            {/if}
-            <button
-              class="secondary-action"
-              type="button"
-              disabled={$shellSnapshot.syncSpace.state === "loading"}
-              on:click={() => shellSnapshot.runSpaceHmacDiagnostic()}
-            >
-              {$shellSnapshot.syncSpace.state === "loading" ? "诊断中…" : "生成桌面端确认码"}
-            </button>
-          </div>
           {#if $shellSnapshot.syncSpace.invitation}
             <div class="invitation-card">
               <strong>配对邀请已生成</strong>
@@ -352,7 +354,7 @@
                 到期 {$shellSnapshot.syncSpace.invitation.expiresAt}
               </p>
               <div class="confirmation-code">
-                <span>配对人工确认码（不是 HMAC 码）</span>
+                <span>配对确认码</span>
                 <strong>{$shellSnapshot.syncSpace.invitation.confirmationCode}</strong>
               </div>
               <div class="invitation-qr" aria-label="配对二维码">
@@ -390,23 +392,6 @@
         {/if}
       </section>
 
-      <div class="settings-divider"></div>
-
-      <StatusCard
-        state={$shellSnapshot.connection.state}
-        title={$shellSnapshot.connection.title}
-        description={$shellSnapshot.connection.description}
-      />
-
-      <PocConnectCard />
-
-      <NetworkDiagnosticsCard
-        transport={$shellSnapshot.pocTransport}
-        onRefresh={() => shellSnapshot.refreshPocTransportStatus()}
-      />
-
-      <NetworkTroubleshootingCard transport={$shellSnapshot.pocTransport} />
-
       <div id="trusted-devices" class="settings-anchor">
         <DeviceChips
           devices={$shellSnapshot.devices}
@@ -414,6 +399,30 @@
           onRemove={(deviceId) => shellSnapshot.removeTrustedDevice(deviceId)}
         />
       </div>
+      {:else}
+        <p class="advanced-intro">仅在连接或密钥异常时使用。诊断信息不包含剪贴板正文或密钥。</p>
+
+        <HmacDiagnosticCard
+          state={$shellSnapshot.syncSpace.state}
+          diagnostic={$shellSnapshot.syncSpace.hmacDiagnostic}
+          onRun={() => shellSnapshot.runSpaceHmacDiagnostic()}
+        />
+
+        <StatusCard
+          state={$shellSnapshot.connection.state}
+          title={$shellSnapshot.connection.title}
+          description={$shellSnapshot.connection.description}
+        />
+
+        <PocConnectCard />
+
+        <NetworkDiagnosticsCard
+          transport={$shellSnapshot.pocTransport}
+          onRefresh={() => shellSnapshot.refreshPocTransportStatus()}
+        />
+
+        <NetworkTroubleshootingCard transport={$shellSnapshot.pocTransport} />
+      {/if}
     </section>
   {/if}
 

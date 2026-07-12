@@ -29,7 +29,8 @@ import {
 import {
   SettingsStoreState,
   cloneSettings,
-  createInitialSettingsSnapshot
+  createInitialSettingsSnapshot,
+  normalizeHarmonySettings
 } from '../main/ets/store/SettingsStore';
 import {
   CryptoVectorErrorCode,
@@ -487,6 +488,16 @@ export default function localUnitTest() {
       expect(snapshot.settings.historyLimit).assertEqual(50);
       expect(cloned.syncEnabled).assertEqual(false);
       expect(cloned.historyLimit).assertEqual(20);
+    });
+
+    it('keepsHarmonyClipboardWritesBehindAnExplicitUserAction', 0, () => {
+      const staleSettings = cloneSettings(createInitialSettingsSnapshot().settings);
+      staleSettings.autoWriteEnabled = true;
+
+      const normalized = normalizeHarmonySettings(staleSettings);
+
+      expect(normalized.autoWriteEnabled).assertEqual(false);
+      expect(staleSettings.autoWriteEnabled).assertEqual(true);
     });
 
     it('deduplicatesDomainClipboardItemsByItemIdOriginSeqAndDigest', 0, () => {
