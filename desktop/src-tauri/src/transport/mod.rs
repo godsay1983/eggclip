@@ -1638,15 +1638,21 @@ fn dispatch_authenticated_payload(
         &settings,
     )
     .map_err(|_| ())?;
+    let mut should_ack = false;
     if policy.update_history {
         let received_at = now_ms().map_err(|_| ())?;
-        let _ = persist_authenticated_remote_history_if_possible(
-            app,
-            &protocol_item,
-            received_at,
-            &settings,
+        should_ack = matches!(
+            persist_authenticated_remote_history_if_possible(
+                app,
+                &protocol_item,
+                received_at,
+                &settings,
+            )?,
+            AuthenticatedRemoteHistoryOutcome::Inserted
+                | AuthenticatedRemoteHistoryOutcome::Duplicate
         );
     }
+    let acked_item_id = protocol_item.item_id.clone();
     let _ = app.emit(
         "transport://authenticated-clipboard-text",
         AuthenticatedClipboardTextEvent {
@@ -1657,7 +1663,15 @@ fn dispatch_authenticated_payload(
             item: clipboard_item,
         },
     );
-    Ok(())
+    if !should_ack {
+        return Ok(());
+    }
+    let ack = ItemAckPayload {
+        item_ids: vec![acked_item_id],
+    };
+    ack.validate().map_err(|_| ())?;
+    let value = serde_json::to_value(ack).map_err(|_| ())?;
+    send_authenticated_business_payload(app, peer, MessageType::ItemAck, &value)
 }
 
 fn authenticated_peer_context(app: &AppHandle, peer: &str) -> Result<(Uuid, Uuid), ()> {

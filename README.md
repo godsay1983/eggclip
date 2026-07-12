@@ -2,9 +2,9 @@
 
 EggClip 是纯局域网剪贴板同步工具。Windows 桌面端负责自动监听和同步，HarmonyOS 端在前台连接，并通过系统授权操作发送或复制文本。
 
-当前已完成 D1/H1 技术 POC 的主要自动化、代码链路和人工真机回归：Windows 剪贴板监听、双向 WebSocket 文本传输、桌面端手动 IP/端口出站连接、最小 mDNS 服务发布、局域网候选地址诊断和 POC peer 状态已接通；HarmonyOS 已接入真实 PasteButton、严格 IPv4 手动连接、前台 mDNS 搜索和动态连接状态。两端统一限制正文最大 256 KiB，外层 POC 帧最大 1 MiB，并显示不含正文的接收/接受/拒绝诊断计数。桌面端尊重 Windows 剪贴板的监控/跨设备同步排除标记，EggClip 写入不会被 Windows 云剪贴板上传。当前 POC 尚未认证，因此远端文本只进入预览，必须由用户点击复制。当前已开始共享协议开发，配对、端到端加密、历史存储和正式同步实现尚未完成。
+当前已完成局域网邀请配对、应用层认证加密、可信自动重连、纯文本实时同步、历史加密存储和断线补同步。桌面端托盘显示在线设备数并支持暂停/恢复同步；HarmonyOS 使用 PasteButton 发送，网络失败时记录进入待同步状态，连接恢复后自动补发并等待桌面端 `ITEM_ACK`。未认证 POC 仅保留为诊断入口。
 
-最后核对：2026-06-27。
+最后核对：2026-07-12。
 
 ## v1 范围
 
@@ -84,8 +84,8 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 
 ## 当前验证结果
 
-- 桌面：Svelte 类型检查、Vitest、前端构建、Rust fmt/check/test 通过；Rust 共 30 个测试通过。
-- 桌面：Tauri dev 进程、Vite 服务和 `eggclip.exe` 已成功启动；托盘交互仍需人工回归。
+- 桌面：Svelte 类型检查、Vitest、前端构建、Rust fmt/check/test 通过；Rust 共 127 个测试通过。
+- 桌面：托盘菜单已接入在线数、暂停/恢复、设备管理入口和动态 tooltip，完整交互仍需 Windows 人工回归。
 - HarmonyOS：mDNS 搜索代码、WebSocket/PasteButton POC、协议解析模型以及 H1/D3 边界单测已通过 `hvigorw test`，当前产物未签名。
 - 桌面 POC server 启动时会发布 `_eggclip._tcp.local.` 临时服务；mDNS 只提供候选地址，不代表设备可信。
 - 当前手动回归清单包含 Windows 剪贴板隐私标记样本工具和 POC WebSocket 帧探针脚本，D1/H1 手动验收已通过。

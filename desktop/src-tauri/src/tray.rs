@@ -1,18 +1,25 @@
 use std::{
     sync::Mutex,
+    thread,
     time::{Duration, Instant},
 };
 
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, Monitor, PhysicalPosition,
+    AppHandle, Emitter, Manager, Monitor, PhysicalPosition,
 };
 
 use crate::panel_position::{self, Rect, Size};
 
 const TRAY_ID: &str = "eggclip-tray";
 const RECENT_BLUR_DURATION: Duration = Duration::from_millis(350);
+const TRAY_STATUS_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
+
+pub struct TrayStatusState {
+    status_item: MenuItem<tauri::Wry>,
+    toggle_sync_item: MenuItem<tauri::Wry>,
+}
 
 #[derive(Default)]
 struct PanelStateInner {
@@ -66,24 +73,44 @@ impl PanelState {
     }
 }
 
-pub fn create_tray(app: &AppHandle) -> tauri::Result<TrayIcon> {
+pub fn create_tray(app: &AppHandle) -> tauri::Result<(TrayIcon, TrayStatusState)> {
     let open_item = MenuItem::with_id(app, "open", "打开 EggClip", true, None::<&str>)?;
+    let status_item = MenuItem::with_id(app, "status", "0 台可信设备在线", false, None::<&str>)?;
+    let toggle_sync_item = MenuItem::with_id(app, "toggle-sync", "暂停同步", true, None::<&str>)?;
+    let manage_devices_item =
+        MenuItem::with_id(app, "manage-devices", "管理设备", true, None::<&str>)?;
     let about_item = MenuItem::with_id(app, "about", "关于 EggClip", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
     let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open_item, &about_item, &separator, &quit_item])?;
+    let menu = Menu::with_items(
+        app,
+        &[
+            &open_item,
+            &status_item,
+            &toggle_sync_item,
+            &manage_devices_item,
+            &separator,
+            &about_item,
+            &quit_item,
+        ],
+    )?;
     let icon = app
         .default_window_icon()
         .cloned()
         .expect("EggClip application icon is missing");
 
-    TrayIconBuilder::with_id(TRAY_ID)
+    let tray = TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
         .tooltip("蛋定 Clip · 等待配对")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "open" | "about" => show_panel(app, None),
+            "toggle-sync" => toggle_sync(app),
+            "manage-devices" => {
+                show_panel(app, None);
+                let _ = app.emit("tray://open-devices", ());
+            }
             "quit" => app.exit(0),
             _ => {}
         })
@@ -113,7 +140,59 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<TrayIcon> {
             }
             _ => {}
         })
-        .build(app)
+        .build(app)?;
+    Ok((
+        tray,
+        TrayStatusState {
+            status_item,
+            toggle_sync_item,
+        },
+    ))
+}
+
+pub fn start_status_task(app: AppHandle) {
+    let _ = thread::Builder::new()
+        .name("eggclip-tray-status".to_owned())
+        .spawn(move || loop {
+            refresh_status(&app);
+            thread::sleep(TRAY_STATUS_REFRESH_INTERVAL);
+        });
+}
+
+pub fn refresh_status(app: &AppHandle) {
+    let settings = crate::settings::load_app_settings(app.clone()).unwrap_or_default();
+    let online_count = crate::transport::authenticated_device_peers(app).len();
+    let state = app.state::<TrayStatusState>();
+    let _ = state
+        .status_item
+        .set_text(format!("{online_count} 台可信设备在线"));
+    let _ = state.toggle_sync_item.set_text(if settings.sync_enabled {
+        "暂停同步"
+    } else {
+        "恢复同步"
+    });
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        let sync_label = if settings.sync_enabled {
+            "同步已开启"
+        } else {
+            "同步已暂停"
+        };
+        let _ = tray.set_tooltip(Some(format!(
+            "蛋定 Clip · {sync_label} · {online_count} 台设备在线"
+        )));
+    }
+}
+
+fn toggle_sync(app: &AppHandle) {
+    let Ok(mut settings) = crate::settings::load_app_settings(app.clone()) else {
+        return;
+    };
+    settings.sync_enabled = !settings.sync_enabled;
+    let Ok(saved) = crate::settings::save_app_settings(app.clone(), settings) else {
+        return;
+    };
+    let _ = app.emit("settings://changed", saved);
+    refresh_status(app);
 }
 
 fn toggle_panel(app: &AppHandle, anchor: Option<Rect>) {

@@ -98,10 +98,23 @@ export interface PairingConnectionSnapshot {
   latestReceivedAt: string;
   latestReceivedByteLength: number;
   historyRevision: number;
+  pendingOutboundCount: number;
+  outboundDeliveryState: OutboundDeliveryState;
+  outboundDeliveryDescription: string;
+}
+
+export enum OutboundDeliveryState {
+  IDLE = 'idle',
+  QUEUED = 'queued',
+  SENDING = 'sending',
+  SENT = 'sent',
+  FAILED = 'failed'
 }
 
 export enum AuthenticatedLocalSendStatus {
   SENT = 'sent',
+  QUEUED = 'queued',
+  SENDING = 'sending',
   PAUSED = 'paused',
   NOT_READY = 'notReady',
   FAILED = 'failed'
@@ -157,6 +170,9 @@ class PairingConnectionStore {
   private latestReceivedAt: string = '';
   private latestReceivedByteLength: number = 0;
   private historyRevision: number = 0;
+  private pendingOutboundCount: number = 0;
+  private outboundDeliveryState: OutboundDeliveryState = OutboundDeliveryState.IDLE;
+  private outboundDeliveryDescription: string = '没有等待发送的本机记录';
 
   constructor(
     transport: WebSocketTransportService = new WebSocketTransportService(),
@@ -210,7 +226,10 @@ class PairingConnectionStore {
       latestReceivedSource: this.latestReceivedSource,
       latestReceivedAt: this.latestReceivedAt,
       latestReceivedByteLength: this.latestReceivedByteLength,
-      historyRevision: this.historyRevision
+      historyRevision: this.historyRevision,
+      pendingOutboundCount: this.pendingOutboundCount,
+      outboundDeliveryState: this.outboundDeliveryState,
+      outboundDeliveryDescription: this.outboundDeliveryDescription
     };
   }
 
@@ -406,6 +425,7 @@ class PairingConnectionStore {
           this.state = PairingConnectionState.IDLE;
           this.title = '可信连接已断开';
           this.description = `${this.describeCloseReason(reason)}；正在尝试恢复已配对设备连接。`;
+          this.queuePendingAfterDisconnect();
           this.emit();
           this.scheduleTrustedReconnect();
           return;
@@ -423,6 +443,7 @@ class PairingConnectionStore {
           this.state = PairingConnectionState.IDLE;
           this.title = '可信连接失败';
           this.description = `${this.describeTransportError(reason)}；正在尝试恢复已配对设备连接。`;
+          this.queuePendingAfterDisconnect();
           this.emit();
           this.scheduleTrustedReconnect();
           return;
@@ -495,6 +516,7 @@ class PairingConnectionStore {
       this.emit();
       if (this.connectionPurpose === ConnectionHandshakePurpose.TRUSTED_RECONNECT) {
         this.rememberTrustedEndpoint();
+        await this.refreshPendingOutboundState();
         await this.sendLocalSyncHeads();
       }
       return this.snapshot();
@@ -524,6 +546,7 @@ class PairingConnectionStore {
           identityPublicKey: this.pendingTrustServerHello.identityPublicKey
         };
         this.rememberTrustedEndpoint();
+        await this.refreshPendingOutboundState();
         await this.sendLocalSyncHeads();
       }
       this.connectionPurpose = ConnectionHandshakePurpose.TRUSTED_RECONNECT;
@@ -617,7 +640,9 @@ class PairingConnectionStore {
       const ack = new ProtocolParser().parseItemAckPayload(frameResult.decryptedPayload);
       if (!ack.ok) {
         this.fail('历史确认帧被拒绝', 'ITEM_ACK 格式无效。');
+        return this.snapshot();
       }
+      await this.applyOutboundAcknowledgement(ack.payload?.itemIds ?? [], Date.now());
       return this.snapshot();
     }
 
@@ -683,13 +708,12 @@ class PairingConnectionStore {
   }
 
   async persistAndSendAuthenticatedLocalText(text: string): Promise<AuthenticatedLocalSendResult> {
-    if (this.context === null || this.pendingTrustDraft === null ||
-      this.state !== PairingConnectionState.AUTHENTICATED ||
-      this.authenticatedTransportSession === null || this.authenticatedTransportSession.isClosed()) {
+    const spaceId = this.pendingTrustDraft?.spaceId ?? this.reconnectTarget?.spaceId ?? '';
+    if (this.context === null || spaceId.length === 0) {
       return { status: AuthenticatedLocalSendStatus.NOT_READY };
     }
     const prepared = await new OutboundItemLiveService(this.context).persist(
-      this.pendingTrustDraft.spaceId,
+      spaceId,
       text,
       Date.now()
     );
@@ -699,9 +723,21 @@ class PairingConnectionStore {
     if (prepared.status !== OutboundItemLiveStatus.READY || prepared.payload === undefined) {
       return { status: AuthenticatedLocalSendStatus.FAILED, field: prepared.field };
     }
-    return await this.sendAuthenticatedItemLive(prepared.payload) ?
-      { status: AuthenticatedLocalSendStatus.SENT } :
-      { status: AuthenticatedLocalSendStatus.FAILED, field: 'transport' };
+    this.pendingOutboundCount += 1;
+    if (this.state !== PairingConnectionState.AUTHENTICATED ||
+      this.authenticatedTransportSession === null || this.authenticatedTransportSession.isClosed()) {
+      this.setOutboundDelivery(OutboundDeliveryState.QUEUED,
+        `${this.pendingOutboundCount} 条本机记录等待可信连接恢复后发送`);
+      return { status: AuthenticatedLocalSendStatus.QUEUED };
+    }
+    if (await this.sendAuthenticatedItemLive(prepared.payload)) {
+      this.setOutboundDelivery(OutboundDeliveryState.SENDING,
+        `${this.pendingOutboundCount} 条本机记录已提交，正在等待桌面端确认`);
+      return { status: AuthenticatedLocalSendStatus.SENDING };
+    }
+    this.setOutboundDelivery(OutboundDeliveryState.QUEUED,
+      `${this.pendingOutboundCount} 条本机记录发送失败，连接恢复后将自动补发`);
+    return { status: AuthenticatedLocalSendStatus.QUEUED, field: 'transport' };
   }
 
   private sendClientHello(frame: string): void {
@@ -756,6 +792,8 @@ class PairingConnectionStore {
           this.manualPort = `${endpoint.port}`;
           this.endpointLabel = `${endpoint.host}:${endpoint.port}`;
           this.emit();
+          this.refreshPendingOutboundState().catch(() => {
+          });
           if (this.foreground) this.scheduleTrustedReconnect(0);
         }).catch(() => {
         });
@@ -1005,6 +1043,7 @@ class PairingConnectionStore {
         };
         await repository.upsert(record);
       }
+      await this.refreshPendingOutboundState();
       return true;
     } catch (_) {
       return false;
@@ -1053,6 +1092,83 @@ class PairingConnectionStore {
     const syncHeads: SyncHeadsPayload = { heads: latest, minimumAvailable };
     const payload = JSON.parse(JSON.stringify(syncHeads)) as JsonObject;
     return await this.sendAuthenticatedBusinessFrame(MessageType.SYNC_HEADS, payload);
+  }
+
+  private async applyOutboundAcknowledgement(itemIds: string[], nowMs: number): Promise<void> {
+    if (this.context === null || this.pendingTrustDraft === null || this.pendingTrustServerHello === null) return;
+    const clipboard = new ClipboardRdbRepository(this.context);
+    const localDeviceId = await new LocalIdentityRdbRepository(this.context).getOrCreateDeviceId(nowMs);
+    let acknowledgedSeq = 0;
+    for (let index = 0; index < itemIds.length; index += 1) {
+      const record = await clipboard.get(itemIds[index]);
+      if (record !== null && record.item.spaceId === this.pendingTrustDraft.spaceId &&
+        record.item.originDeviceId === localDeviceId) {
+        acknowledgedSeq = Math.max(acknowledgedSeq, record.item.originSeq);
+      }
+    }
+    if (acknowledgedSeq === 0) return;
+    const repository = new SyncHeadRdbRepository(this.context);
+    const existing = await repository.listForPeer(
+      this.pendingTrustDraft.spaceId,
+      this.pendingTrustServerHello.deviceId
+    );
+    const current = existing.find((record: SyncHeadRecord) => record.head.originDeviceId === localDeviceId);
+    await repository.upsert({
+      head: {
+        spaceId: this.pendingTrustDraft.spaceId,
+        originDeviceId: localDeviceId,
+        latestOriginSeq: Math.max(current?.head.latestOriginSeq ?? 0, acknowledgedSeq),
+        minimumAvailable: current?.head.minimumAvailable ?? 1,
+        updatedAt: nowMs
+      },
+      peerDeviceId: this.pendingTrustServerHello.deviceId
+    });
+    await this.refreshPendingOutboundState();
+  }
+
+  private async refreshPendingOutboundState(): Promise<void> {
+    if (this.context === null) return;
+    const spaceId = this.pendingTrustDraft?.spaceId ?? this.reconnectTarget?.spaceId ?? '';
+    const peerDeviceId = this.pendingTrustServerHello?.deviceId ?? this.reconnectTarget?.deviceId ?? '';
+    if (spaceId.length === 0 || peerDeviceId.length === 0) return;
+    try {
+      const localDeviceId = await new LocalIdentityRdbRepository(this.context).getOrCreateDeviceId(Date.now());
+      const localHeads = await new ClipboardRdbRepository(this.context)
+        .summarizeAvailableSequences(spaceId, Date.now());
+      const local = localHeads.find((head) => head.originDeviceId === localDeviceId);
+      const remoteHeads = await new SyncHeadRdbRepository(this.context).listForPeer(spaceId, peerDeviceId);
+      const remote = remoteHeads.find((record: SyncHeadRecord) => record.head.originDeviceId === localDeviceId);
+      this.pendingOutboundCount = calculatePendingOutboundCount(
+        local?.latestOriginSeq ?? 0,
+        remote?.head.latestOriginSeq ?? 0
+      );
+      if (this.pendingOutboundCount === 0) {
+        this.outboundDeliveryState = OutboundDeliveryState.SENT;
+        this.outboundDeliveryDescription = '本机同步记录均已收到桌面端确认';
+      } else if (this.state === PairingConnectionState.AUTHENTICATED) {
+        this.outboundDeliveryState = OutboundDeliveryState.SENDING;
+        this.outboundDeliveryDescription = `${this.pendingOutboundCount} 条本机记录正在等待桌面端确认`;
+      } else {
+        this.queuePendingAfterDisconnect();
+      }
+      this.emit();
+    } catch (_) {
+      this.outboundDeliveryState = OutboundDeliveryState.FAILED;
+      this.outboundDeliveryDescription = '无法读取待同步记录状态，本机历史仍保留';
+      this.emit();
+    }
+  }
+
+  private queuePendingAfterDisconnect(): void {
+    if (this.pendingOutboundCount <= 0) return;
+    this.outboundDeliveryState = OutboundDeliveryState.QUEUED;
+    this.outboundDeliveryDescription = `${this.pendingOutboundCount} 条本机记录等待连接恢复后自动补发`;
+  }
+
+  private setOutboundDelivery(state: OutboundDeliveryState, description: string): void {
+    this.outboundDeliveryState = state;
+    this.outboundDeliveryDescription = description;
+    this.emit();
   }
 
   private emit(): void {
@@ -1254,4 +1370,10 @@ function pairingAuthErrorCode(payload: JsonObject | undefined): string {
   if (payload === undefined) return '';
   const code = payload['code'];
   return typeof code === 'string' ? code : '';
+}
+
+export function calculatePendingOutboundCount(localLatest: number, acknowledgedLatest: number): number {
+  if (!Number.isSafeInteger(localLatest) || !Number.isSafeInteger(acknowledgedLatest) ||
+    localLatest < 0 || acknowledgedLatest < 0) return 0;
+  return Math.max(0, localLatest - acknowledgedLatest);
 }

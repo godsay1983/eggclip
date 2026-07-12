@@ -138,6 +138,7 @@ import {
 import {
   PairingConnectionState,
   PairingConnectionStore,
+  calculatePendingOutboundCount,
   describePairingAuthError,
   trustedDiscoveryEndpoint
 } from '../main/ets/store/PairingConnectionStore';
@@ -235,6 +236,12 @@ import { MAX_TEXT_BYTES } from '../main/ets/utils/TextLimits';
 
 export default function localUnitTest() {
   describe('EggClipH1Boundaries', () => {
+    it('countsOnlyUnacknowledgedLocalSequencesAsPending', 0, () => {
+      expect(calculatePendingOutboundCount(8, 5)).assertEqual(3);
+      expect(calculatePendingOutboundCount(5, 8)).assertEqual(0);
+      expect(calculatePendingOutboundCount(-1, 0)).assertEqual(0);
+    });
+
     it('normalizesTrustedDeviceNamesForSafeDisplay', 0, () => {
       expect(normalizeTrustedDeviceName('  我的   桌面端  ')).assertEqual('我的 桌面端');
       expect(normalizeTrustedDeviceName('   ')).assertEqual('');

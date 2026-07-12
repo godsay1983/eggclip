@@ -650,6 +650,11 @@ footer {
   gap: 8px;
 }
 
+.settings-anchor {
+  width: 100%;
+  scroll-margin-top: 12px;
+}
+
 .space-card,
 .space-empty {
   border: 1px solid var(--line);

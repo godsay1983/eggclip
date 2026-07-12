@@ -10,6 +10,7 @@
   import { settingsSnapshot } from "$lib/stores/settings";
   import { shellSnapshot } from "$lib/stores/shell";
   import type { AppSettings, ThemeMode } from "$lib/types/settings";
+  import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
 
   let settingsVisible = false;
@@ -34,6 +35,17 @@
     void shellSnapshot.loadRecentPocEndpoint();
     void shellSnapshot.ensureDefaultSyncSpace();
     void settingsSnapshot.load();
+    const traySettingsListener = listen("settings://changed", () => settingsSnapshot.load());
+    const trayDevicesListener = listen("tray://open-devices", () => {
+      settingsVisible = true;
+      requestAnimationFrame(() => {
+        document.getElementById("trusted-devices")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    });
+    return () => {
+      void traySettingsListener.then((unlisten) => unlisten());
+      void trayDevicesListener.then((unlisten) => unlisten());
+    };
   });
 
   async function saveSetting<K extends keyof AppSettings>(
@@ -422,11 +434,13 @@
 
       <NetworkTroubleshootingCard transport={$shellSnapshot.pocTransport} />
 
-      <DeviceChips
-        devices={$shellSnapshot.devices}
-        onRename={(deviceId, name) => shellSnapshot.renameTrustedDevice(deviceId, name)}
-        onRemove={(deviceId) => shellSnapshot.removeTrustedDevice(deviceId)}
-      />
+      <div id="trusted-devices" class="settings-anchor">
+        <DeviceChips
+          devices={$shellSnapshot.devices}
+          onRename={(deviceId, name) => shellSnapshot.renameTrustedDevice(deviceId, name)}
+          onRemove={(deviceId) => shellSnapshot.removeTrustedDevice(deviceId)}
+        />
+      </div>
     </section>
   {/if}
 

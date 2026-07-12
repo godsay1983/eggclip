@@ -12,6 +12,7 @@ import {
 } from '../store/PocConnectionStore';
 import {
   AuthenticatedLocalSendStatus,
+  OutboundDeliveryState,
   PairingConnectionSnapshot,
   PairingConnectionState,
   pairingConnectionStore
@@ -72,11 +73,20 @@ export struct HomePage {
     if (snapshot.state === PairingConnectionState.AUTHENTICATED) {
       this.connectionTitle = snapshot.title;
       this.connectionDescription = '正式认证会话在线；PasteButton 会优先通过加密 ITEM_LIVE 发送。';
-      return;
-    }
-    if (snapshot.state === PairingConnectionState.FAILED) {
+    } else if (snapshot.state === PairingConnectionState.FAILED) {
       this.connectionTitle = snapshot.title;
       this.connectionDescription = snapshot.description;
+    }
+    if (snapshot.outboundDeliveryState === OutboundDeliveryState.QUEUED) {
+      this.setOutboundStatus(OutboundSendState.WAITING,
+        `${snapshot.pendingOutboundCount} 条等待发送`, snapshot.outboundDeliveryDescription);
+    } else if (snapshot.outboundDeliveryState === OutboundDeliveryState.SENDING) {
+      this.setOutboundStatus(OutboundSendState.PENDING,
+        `${snapshot.pendingOutboundCount} 条等待确认`, snapshot.outboundDeliveryDescription);
+    } else if (snapshot.outboundDeliveryState === OutboundDeliveryState.SENT) {
+      this.setOutboundStatus(OutboundSendState.SENT, '同步记录已确认', snapshot.outboundDeliveryDescription);
+    } else if (snapshot.outboundDeliveryState === OutboundDeliveryState.FAILED) {
+      this.setOutboundStatus(OutboundSendState.FAILED, '待同步状态读取失败', snapshot.outboundDeliveryDescription);
     }
   };
   @State private pasteStatus: string = '等待点击 PasteButton 触发一次性授权';
@@ -583,6 +593,26 @@ export struct HomePage {
             OutboundSendState.SENT,
             '已发送到桌面端',
             '本机事务已确认，并已通过正式加密 ITEM_LIVE 会话发送。'
+          );
+          this.loadHistorySummary();
+          return;
+        }
+        if (result.status === AuthenticatedLocalSendStatus.SENDING) {
+          this.pasteStatus = '已提交到认证会话，正在等待桌面端确认';
+          this.setOutboundStatus(
+            OutboundSendState.PENDING,
+            '等待桌面端确认',
+            '本机记录已持久化并通过加密 ITEM_LIVE 发出；收到确认后才标记完成。'
+          );
+          this.loadHistorySummary();
+          return;
+        }
+        if (result.status === AuthenticatedLocalSendStatus.QUEUED) {
+          this.pasteStatus = '网络不可用，文本已进入待同步队列';
+          this.setOutboundStatus(
+            OutboundSendState.WAITING,
+            '等待连接后自动发送',
+            '本机记录已安全保存；可信连接恢复后会通过同步头和范围补齐自动重发。'
           );
           this.loadHistorySummary();
           return;

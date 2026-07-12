@@ -51,8 +51,11 @@ pub fn run() {
         .setup(|app| {
             pairing::reset_trusted_device_connection_states(app.handle())
                 .map_err(std::io::Error::other)?;
-            let tray_icon = tray::create_tray(app.handle())?;
+            let (tray_icon, tray_status) = tray::create_tray(app.handle())?;
             app.manage(tray_icon);
+            app.manage(tray_status);
+            tray::refresh_status(app.handle());
+            tray::start_status_task(app.handle().clone());
             clipboard::start_clipboard_monitor(app.handle().clone());
             pairing::start_pairing_invitation_expiry_task(app.handle().clone());
             Ok(())
