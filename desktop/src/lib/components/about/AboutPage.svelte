@@ -45,5 +45,5 @@
     </article>
   </div>
 
-  <p class="about-footer">EggClip 1.0 · 为 Windows 与 HarmonyOS 设计</p>
+  <p class="about-footer">EggClip · 为 Windows 与 HarmonyOS 设计</p>
 </section>
