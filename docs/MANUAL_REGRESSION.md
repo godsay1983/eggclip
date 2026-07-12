@@ -11,6 +11,8 @@
 
 ## Desktop ↔ HarmonyOS POC
 
+- [ ] 在“设置 → 常规”开启开机自动启动，重新登录 Windows 后确认 EggClip 仅进入托盘且不弹出主面板；关闭后再次登录，确认不再自动启动。
+
 - [x] 桌面端启动后从托盘打开面板，确认 POC server 显示监听端口。
 - [x] 桌面状态卡列出 WLAN/以太网 IPv4；TUN/VPN 地址有“隧道”标记，不把该标记当成真机首选地址。
 - [x] HarmonyOS 输入 Windows 局域网 IPv4 和端口后连接成功。

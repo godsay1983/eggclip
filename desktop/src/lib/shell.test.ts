@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createInitialShellSnapshot } from "$lib/api/shell";
 import { defaultAppSettings, validateAppSettings } from "$lib/api/settings";
+import { createAutostartStore } from "$lib/stores/autostart";
+import type { AutostartSnapshot } from "$lib/types/autostart";
 import type { AppSettings } from "$lib/types/settings";
 import { countOnlineDevices, mergeRuntimeDevices } from "$lib/stores/shell-state";
 import type { DeviceSummary } from "$lib/types/shell";
@@ -39,6 +41,42 @@ describe("desktop shell", () => {
         historyLimit: 10 as AppSettings["historyLimit"],
       }),
     ).not.toBeNull();
+  });
+
+  it("reads and updates the actual Windows autostart state", async () => {
+    let systemEnabled = false;
+    const store = createAutostartStore({
+      async isEnabled() {
+        return systemEnabled;
+      },
+      async enable() {
+        systemEnabled = true;
+      },
+      async disable() {
+        systemEnabled = false;
+      },
+    });
+    let current: AutostartSnapshot = {
+      state: "idle",
+      enabled: false,
+      errorMessage: null,
+    };
+    const unsubscribe = store.subscribe((snapshot) => {
+      current = snapshot;
+    });
+
+    await store.load();
+    expect(current.state).toBe("ready");
+    expect(current.enabled).toBe(false);
+
+    await store.setEnabled(true);
+    expect(systemEnabled).toBe(true);
+    expect(current.enabled).toBe(true);
+
+    await store.setEnabled(false);
+    expect(systemEnabled).toBe(false);
+    expect(current.enabled).toBe(false);
+    unsubscribe();
   });
 
   it("keeps authenticated endpoints out of the POC device list", () => {

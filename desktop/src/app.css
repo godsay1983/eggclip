@@ -972,6 +972,29 @@ footer {
   font-size: 13px;
 }
 
+.setting-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.setting-copy strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.setting-copy small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.setting-inline-error {
+  margin: -2px 4px 2px;
+  color: #a33d31;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .setting-grid input[type="checkbox"] {
   width: 18px;
   height: 18px;

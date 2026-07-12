@@ -10,6 +10,7 @@
   import StatusCard from "$lib/components/common/StatusCard.svelte";
   import StatusDot from "$lib/components/common/StatusDot.svelte";
   import { settingsSnapshot } from "$lib/stores/settings";
+  import { autostartSnapshot } from "$lib/stores/autostart";
   import { shellSnapshot } from "$lib/stores/shell";
   import type { AppSettings, ThemeMode } from "$lib/types/settings";
   import { listen } from "@tauri-apps/api/event";
@@ -41,6 +42,7 @@
     void shellSnapshot.loadRecentPocEndpoint();
     void shellSnapshot.ensureDefaultSyncSpace();
     void settingsSnapshot.load();
+    void autostartSnapshot.load();
     const traySettingsListener = listen("settings://changed", () => settingsSnapshot.load());
     const trayDevicesListener = listen("tray://open-devices", () => {
       aboutVisible = false;
@@ -175,6 +177,23 @@
 
       {#if settingsSection === "general"}
         <div class="setting-grid">
+        <label>
+          <span class="setting-copy">
+            <strong>开机自动启动</strong>
+            <small>登录 Windows 后在托盘运行</small>
+          </span>
+          <input
+            type="checkbox"
+            aria-label="开机自动启动"
+            checked={$autostartSnapshot.enabled}
+            disabled={$autostartSnapshot.state === "loading" || $autostartSnapshot.state === "saving"}
+            on:change={(event) =>
+              autostartSnapshot.setEnabled(event.currentTarget.checked)}
+          />
+        </label>
+        {#if $autostartSnapshot.errorMessage}
+          <p class="setting-inline-error" role="status">{$autostartSnapshot.errorMessage}</p>
+        {/if}
         <label>
           <span>自动同步</span>
           <input
