@@ -1,6 +1,6 @@
 [package]
 name = "eggclip"
-version = "1.0.1"
+version = "1.0.2"
 description = "EggClip LAN clipboard desktop application"
 authors = ["EggClip Contributors"]
 edition = "2021"
