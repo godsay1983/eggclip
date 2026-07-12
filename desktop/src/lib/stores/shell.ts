@@ -20,6 +20,7 @@ import {
   loadActiveSyncSpaceId,
   loadPocRecentEndpoint,
   onAuthenticatedLocalBroadcast,
+  onAuthenticatedClipboardText,
   onAuthenticatedConnection,
   onLocalClipboardText,
   onPocClipboardText,
@@ -243,6 +244,26 @@ export const shellSnapshot = {
             authenticatedDeviceIds.delete(event.deviceId);
           }
           void refreshTrustedDeviceState();
+        }),
+        onAuthenticatedClipboardText((current, event) => {
+          if (!pocReceiveEnabled) {
+            snapshot.update((state) => ({
+              ...state,
+              connection: {
+                state: "paused",
+                title: "自动接收已暂停",
+                description: "已忽略可信设备发来的实时预览；重新开启自动接收后才会显示。",
+              },
+            }));
+            return;
+          }
+          const deviceLabel = event.originDeviceId.slice(0, 8) || "未知设备";
+          setCurrentClipboard(
+            current,
+            "已收到 Harmony 文本",
+            `来自可信设备 ${deviceLabel}；已通过认证加密会话接收。`,
+          );
+          void refreshHistorySummaryState();
         }),
         onPocClipboardText((current, peer) => {
           if (!pocReceiveEnabled) {

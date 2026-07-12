@@ -84,6 +84,14 @@ interface AuthenticatedLocalBroadcastEvent {
   sentPeers: number;
 }
 
+export interface AuthenticatedClipboardTextEvent {
+  peer: string;
+  itemId: string;
+  originDeviceId: string;
+  originSeq: number;
+  item: ClipboardTextItem;
+}
+
 interface HistoryItemSummaryDto {
   id: string;
   title: string;
@@ -384,6 +392,17 @@ export async function onAuthenticatedConnection(
   );
 }
 
+export async function onAuthenticatedClipboardText(
+  handler: (preview: ClipboardPreview, event: AuthenticatedClipboardTextEvent) => void,
+): Promise<() => void> {
+  return listen<AuthenticatedClipboardTextEvent>(
+    "transport://authenticated-clipboard-text",
+    (event) => {
+      handler(toAuthenticatedClipboardPreview(event.payload), event.payload);
+    },
+  );
+}
+
 export async function onPocClipboardText(
   handler: (preview: ClipboardPreview, peer: string) => void,
 ): Promise<() => void> {
@@ -573,6 +592,16 @@ function toClipboardPreview(
       second: "2-digit",
     }),
     canCopy: true,
+  };
+}
+
+export function toAuthenticatedClipboardPreview(
+  event: AuthenticatedClipboardTextEvent,
+): ClipboardPreview {
+  const deviceLabel = event.originDeviceId.slice(0, 8) || "未知设备";
+  return {
+    ...toClipboardPreview(event.item, `可信设备 · ${deviceLabel}`),
+    id: event.itemId,
   };
 }
 

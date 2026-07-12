@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createInitialShellSnapshot } from "$lib/api/shell";
+import {
+  createInitialShellSnapshot,
+  toAuthenticatedClipboardPreview,
+} from "$lib/api/shell";
 import { defaultAppSettings, validateAppSettings } from "$lib/api/settings";
 import { createAutostartStore } from "$lib/stores/autostart";
 import type { AutostartSnapshot } from "$lib/types/autostart";
@@ -24,6 +27,24 @@ describe("desktop shell", () => {
     expect(snapshot.history.items).toEqual([]);
     expect(snapshot.devices).toHaveLength(1);
     expect(snapshot.devices[0].id).toBe("placeholder");
+  });
+
+  it("maps authenticated Harmony text directly into the desktop preview", () => {
+    const preview = toAuthenticatedClipboardPreview({
+      peer: "192.168.1.9:4567",
+      itemId: "item-1",
+      originDeviceId: "15a91e5a-1234-5678-9012-123456789012",
+      originSeq: 7,
+      item: {
+        text: "来自 Harmony 的文本",
+        byteLen: 24,
+        digest: 42,
+      },
+    });
+
+    expect(preview.id).toBe("item-1");
+    expect(preview.text).toBe("来自 Harmony 的文本");
+    expect(preview.source).toBe("可信设备 · 15a91e5a");
   });
 
   it("keeps desktop settings defaults and local validation aligned with v1 policy", () => {
