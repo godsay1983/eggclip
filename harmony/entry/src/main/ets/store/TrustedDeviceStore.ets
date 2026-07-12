@@ -1,5 +1,5 @@
 import { common } from '@kit.AbilityKit';
-import { DeviceTrustState } from '../models/DomainModels';
+import { DeviceConnectionState, DeviceTrustState } from '../models/DomainModels';
 import { DeviceRdbRepository, SpaceRdbRepository } from '../data/repositories/RdbRepositories';
 
 export interface TrustedDeviceSummary {
@@ -52,6 +52,15 @@ export class TrustedDeviceStore {
       deviceId: record.device.deviceId,
       identityPublicKey: record.device.identityPublicKeyRef
     };
+  }
+
+  async markRevoked(deviceId: string, revokedAt: number): Promise<void> {
+    const record = await this.devices.get(deviceId);
+    if (record === null) return;
+    record.device.trustState = DeviceTrustState.REVOKED;
+    record.device.connectionState = DeviceConnectionState.OFFLINE;
+    record.revokedAt = revokedAt;
+    await this.devices.upsert(record);
   }
 }
 

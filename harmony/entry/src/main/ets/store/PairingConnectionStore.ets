@@ -393,6 +393,10 @@ class PairingConnectionStore {
       },
       onClose: (reason: string) => {
         if (this.closingByUserOrLifecycle || !this.foreground) return;
+        if (reason.includes('deviceRevoked')) {
+          this.handleDeviceRevoked();
+          return;
+        }
         if (this.connectionPurpose === ConnectionHandshakePurpose.TRUSTED_RECONNECT &&
           this.reconnectTarget !== null) {
           this.authenticatedTransportSession?.close();
@@ -617,6 +621,12 @@ class PairingConnectionStore {
 
     if (frameResult.envelope.messageType === MessageType.AUTH_ERROR ||
       frameResult.envelope.messageType === MessageType.ERROR) {
+      const errorCode = pairingAuthErrorCode(frameResult.envelope.payload);
+      if (this.connectionPurpose === ConnectionHandshakePurpose.TRUSTED_RECONNECT &&
+        (errorCode === 'identityOrSpaceMismatch' || errorCode === 'deviceRevoked')) {
+        this.handleDeviceRevoked();
+        return this.snapshot();
+      }
       this.fail('桌面端拒绝配对', describePairingAuthError(frameResult.envelope.payload));
       return this.snapshot();
     }
@@ -771,6 +781,23 @@ class PairingConnectionStore {
       this.reconnectTimerId = -1;
     }
     this.reconnectAttempt = 0;
+  }
+
+  private handleDeviceRevoked(): void {
+    const revokedDeviceId = this.reconnectTarget?.deviceId ?? this.pendingTrustServerHello?.deviceId ?? '';
+    this.clearReconnectTimer();
+    this.reconnectTarget = null;
+    this.authenticatedTransportSession?.close();
+    this.authenticatedTransportSession = null;
+    this.state = PairingConnectionState.FAILED;
+    this.title = '此设备已被桌面端移除';
+    this.description = '可信关系已撤销，自动重连已停止；如需继续同步，请在桌面端生成新邀请后重新配对。';
+    this.lastError = this.description;
+    this.emit();
+    if (this.context !== null && revokedDeviceId.length > 0) {
+      new TrustedDeviceStore(this.context).markRevoked(revokedDeviceId, Date.now()).catch(() => {
+      });
+    }
   }
 
   private isConnectionBusy(): boolean {
@@ -1219,4 +1246,10 @@ export function describePairingAuthError(payload: JsonObject | undefined): strin
     return '设备身份签名校验失败，未创建可信设备。';
   }
   return '桌面端返回认证错误，未创建可信设备。';
+}
+
+function pairingAuthErrorCode(payload: JsonObject | undefined): string {
+  if (payload === undefined) return '';
+  const code = payload['code'];
+  return typeof code === 'string' ? code : '';
 }

@@ -44,7 +44,14 @@ use tokio::{
     sync::{mpsc, oneshot},
     time::{interval, timeout, MissedTickBehavior},
 };
-use tokio_tungstenite::{connect_async, tungstenite::Message, WebSocketStream};
+use tokio_tungstenite::{
+    connect_async,
+    tungstenite::{
+        protocol::{frame::coding::CloseCode, CloseFrame},
+        Message,
+    },
+    WebSocketStream,
+};
 use uuid::Uuid;
 
 pub use session::{
@@ -2194,7 +2201,10 @@ fn close_authenticated_session_with_reason(
     if notify_peer {
         if let Ok(peers) = runtime.peers.lock() {
             if let Some(sender) = peers.get(peer) {
-                let _ = sender.send(Message::Close(None));
+                let _ = sender.send(Message::Close(Some(CloseFrame {
+                    code: CloseCode::Policy,
+                    reason: reason.into(),
+                })));
             }
         }
     }

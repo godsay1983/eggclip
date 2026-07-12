@@ -245,7 +245,7 @@ export class WebSocketTransportService {
     const socket = webSocket.createWebSocket();
     this.socket = socket;
     this.connectTimeoutId = setTimeout(() => {
-      if (this.state === PocLifecycleState.STARTING) {
+      if (this.socket === socket && this.state === PocLifecycleState.STARTING) {
         this.state = PocLifecycleState.FAILED;
         this.connected = false;
         callbacks.onError(callbacks.timeoutMessage);
@@ -254,12 +254,14 @@ export class WebSocketTransportService {
     }, CONNECT_TIMEOUT_MS);
 
     socket.on('open', () => {
+      if (this.socket !== socket) return;
       this.clearConnectTimeout();
       this.state = PocLifecycleState.RUNNING;
       this.connected = true;
       callbacks.onOpen();
     });
     socket.on('message', (_error, data: string | ArrayBuffer) => {
+      if (this.socket !== socket) return;
       if (typeof data === 'string') {
         callbacks.onTextMessage(data);
       } else {
@@ -267,16 +269,19 @@ export class WebSocketTransportService {
       }
     });
     socket.on('close', (_error, closeResult: webSocket.CloseResult) => {
+      if (this.socket !== socket) return;
       this.clearConnectTimeout();
       this.state = PocLifecycleState.IDLE;
       this.connected = false;
       callbacks.onClose(`${closeResult.code}: ${closeResult.reason}`);
     });
-    socket.on('error', (error) => {
-      this.clearConnectTimeout();
-      this.state = PocLifecycleState.FAILED;
-      this.connected = false;
-      callbacks.onError(`WebSocket 错误：${error.message}`);
+    socket.on('error', () => {
+      if (this.socket !== socket) return;
+      // HarmonyOS may emit a recoverable error without closing the WebSocket.
+      // The connect result/timeout handles startup failures, and `close` is the
+      // authoritative signal after open. Do not turn a live session into a
+      // false UI failure from this advisory event alone.
+      this.diagnostics.lastRejection = 'WebSocket 报告了可恢复的传输异常，连接仍在观察中';
     });
 
     try {
