@@ -78,7 +78,10 @@ export class PairingHandshakeDraftService {
       !hasBase64UrlLength(input.localEphemeralPublicKey, EPHEMERAL_PUBLIC_KEY_BYTES)) {
       return invalidField('identityOrKey');
     }
-    const pairingContext = `trusted-device:${input.spaceId}`;
+    // The key version is covered by the signed authentication transcript. The
+    // desktop can therefore distinguish a normal reconnect from a device that
+    // genuinely missed a space-key rotation without trusting mutable metadata.
+    const pairingContext = `trusted-device:${input.spaceId}:key-v${input.spaceKeyVersion}`;
     return {
       ok: true,
       draft: {

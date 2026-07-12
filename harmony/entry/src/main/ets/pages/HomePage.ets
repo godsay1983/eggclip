@@ -78,7 +78,9 @@ export struct HomePage {
     }
     if (snapshot.authenticated || snapshot.state === PairingConnectionState.AUTHENTICATED) {
       this.connectionTitle = snapshot.title;
-      this.connectionDescription = '安全连接已建立，可以同步纯文本。';
+      this.connectionDescription = snapshot.syncReady
+        ? '安全连接已建立，可以同步纯文本。'
+        : '身份认证已完成，正在初始化同步，请稍候。';
     } else if (snapshot.state === PairingConnectionState.FAILED) {
       this.connectionTitle = snapshot.title;
       this.connectionDescription = snapshot.description;
@@ -702,6 +704,16 @@ export struct HomePage {
             OutboundSendState.WAITING,
             '等待连接后自动发送',
             '本机记录已安全保存；可信连接恢复后会通过同步头和范围补齐自动重发。'
+          );
+          this.loadHistorySummary();
+          return;
+        }
+        if (result.status === AuthenticatedLocalSendStatus.INITIALIZING) {
+          this.pasteStatus = '同步正在初始化，文本会在就绪后自动发送';
+          this.setOutboundStatus(
+            OutboundSendState.WAITING,
+            '等待同步初始化',
+            '文本已安全保存；初始化完成后会自动发送，无需由电脑先发送。'
           );
           this.loadHistorySummary();
           return;

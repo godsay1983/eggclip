@@ -1796,6 +1796,13 @@ export default function localUnitTest() {
       expect(signer.privateKeyRef).assertEqual('huks://eggclip/local-identity/ed25519/v1');
       expect(connection.snapshot().state).assertEqual(PairingConnectionState.WAITING_AUTH_OK);
       expect(connection.snapshot().authProofSent).assertEqual(true);
+
+      const authOk = handshakeSession.acceptTextFrame(AUTH_OK_FIXTURE);
+      await connection.handleHandshakeTextFrame(AUTH_OK_FIXTURE, authOk);
+      expect(connection.snapshot().state).assertEqual(PairingConnectionState.AUTHENTICATED);
+      expect(connection.snapshot().authenticated).assertEqual(true);
+      expect(connection.snapshot().syncReady).assertEqual(false);
+      expect(connection.snapshot().description.indexOf('初始化') >= 0).assertEqual(true);
     });
 
     it('buildsClientHelloFrameFromPairingDraftForHandshakeTransport', 0, () => {
@@ -1919,9 +1926,9 @@ export default function localUnitTest() {
         return;
       }
       expect(draft.draft.pairingContext)
-        .assertEqual('trusted-device:018ff6ef-c394-7d08-8b99-4b7d10f2767a');
+        .assertEqual('trusted-device:018ff6ef-c394-7d08-8b99-4b7d10f2767a:key-v1');
       expect(draft.draft.clientHelloPayload.pairingContext)
-        .assertEqual('trusted-device:018ff6ef-c394-7d08-8b99-4b7d10f2767a');
+        .assertEqual('trusted-device:018ff6ef-c394-7d08-8b99-4b7d10f2767a:key-v1');
 
       const transcript = service.buildClientAuthTranscriptDraft(draft.draft, {
         spaceId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
@@ -1933,7 +1940,7 @@ export default function localUnitTest() {
       expect(transcript.ok).assertEqual(true);
       if (transcript.transcript !== undefined) {
         expect(transcript.transcript.canonicalTranscript.indexOf(
-          'pairingContext=trusted-device:018ff6ef-c394-7d08-8b99-4b7d10f2767a'
+          'pairingContext=trusted-device:018ff6ef-c394-7d08-8b99-4b7d10f2767a:key-v1'
         ) >= 0).assertEqual(true);
       }
 

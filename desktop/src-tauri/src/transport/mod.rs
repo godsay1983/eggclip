@@ -126,6 +126,7 @@ struct PairingServerHandshakeRuntimeState {
     server_identity_public_key: String,
     server_ephemeral_public_key: String,
     pairing_context: String,
+    peer_space_key_version: Option<u32>,
     server_ephemeral_secret: X25519Secret,
 }
 
@@ -1346,6 +1347,7 @@ fn try_accept_pairing_auth_proof(app: &AppHandle, peer: &str, text: &str) -> Pai
         return PairingAuthProofRoute::Rejected(PocRejectionReason::PairingServerStateMissing);
     };
     let is_trusted_reconnect = is_trusted_device_pairing_context(&handshake.pairing_context);
+    let peer_space_key_version = handshake.peer_space_key_version;
     let message_id = Uuid::now_v7().to_string();
     let input = PairingServerAuthProofInput {
         invitation_id: handshake.invitation_id,
@@ -1371,26 +1373,62 @@ fn try_accept_pairing_auth_proof(app: &AppHandle, peer: &str, text: &str) -> Pai
                 }
             };
             if is_trusted_reconnect {
+                let Some(peer_space_key_version) = peer_space_key_version else {
+                    return PairingAuthProofRoute::Rejected(
+                        PocRejectionReason::PairingClientHelloRejected,
+                    );
+                };
+                let current_space_key_version = match current_space_key_version(app, &accepted) {
+                    Ok(version) => version,
+                    Err(_) => {
+                        return PairingAuthProofRoute::Rejected(
+                            PocRejectionReason::PairingInternalError,
+                        )
+                    }
+                };
+                let should_deliver_space_key = match trusted_reconnect_needs_space_key(
+                    peer_space_key_version,
+                    current_space_key_version,
+                ) {
+                    Ok(value) => value,
+                    Err(()) => {
+                        return PairingAuthProofRoute::Rejected(
+                            PocRejectionReason::PairingClientHelloRejected,
+                        )
+                    }
+                };
                 if mark_trusted_device_connected(app, &accepted, accepted_at).is_err() {
                     return PairingAuthProofRoute::Rejected(
                         PocRejectionReason::PairingInternalError,
                     );
                 }
-                let space_key_frame =
-                    match build_space_key_delivery_frame(app, &accepted, 4, "rotation-v1") {
-                        Ok(frame) => frame,
-                        Err(_) => {
-                            return PairingAuthProofRoute::Rejected(
-                                PocRejectionReason::PairingInternalError,
-                            )
-                        }
-                    };
+                let space_key_frame = if should_deliver_space_key {
+                    Some(
+                        match build_space_key_delivery_frame(app, &accepted, 4, "rotation-v1") {
+                            Ok(frame) => frame,
+                            Err(_) => {
+                                return PairingAuthProofRoute::Rejected(
+                                    PocRejectionReason::PairingInternalError,
+                                )
+                            }
+                        },
+                    )
+                } else {
+                    // Replaying the same key version as a rotation is correctly
+                    // rejected by Harmony. SYNC_HEADS is the readiness signal for
+                    // a normal reconnect; only a genuinely newer key is delivered.
+                    None
+                };
                 if remember_authenticated_session(app, peer, accepted).is_err() {
                     return PairingAuthProofRoute::Rejected(
                         PocRejectionReason::PairingInternalError,
                     );
                 }
-                PairingAuthProofRoute::Handled(vec![auth_ok_frame, space_key_frame])
+                if let Some(space_key_frame) = space_key_frame {
+                    PairingAuthProofRoute::Handled(vec![auth_ok_frame, space_key_frame])
+                } else {
+                    PairingAuthProofRoute::Handled(vec![auth_ok_frame])
+                }
             } else {
                 if persist_trusted_pairing_device(app, &accepted, accepted_at).is_err() {
                     return PairingAuthProofRoute::Rejected(
@@ -1503,6 +1541,30 @@ fn build_space_key_delivery_frame(
             &payload,
         )
         .map_err(|_| ())
+}
+
+fn current_space_key_version(
+    app: &AppHandle,
+    accepted: &crate::pairing::PairingServerAuthProofAccepted,
+) -> Result<u32, ()> {
+    let space_id = Uuid::parse_str(&accepted.space_id).map_err(|_| ())?;
+    let path = database_path(app).map_err(|_| ())?;
+    let connection = open_database(path).map_err(|_| ())?;
+    SpaceRepository::new(&connection)
+        .get(space_id)
+        .map_err(|_| ())?
+        .map(|record| record.space.key_version)
+        .ok_or(())
+}
+
+fn trusted_reconnect_needs_space_key(
+    peer_space_key_version: u32,
+    current_space_key_version: u32,
+) -> Result<bool, ()> {
+    if peer_space_key_version == 0 || peer_space_key_version > current_space_key_version {
+        return Err(());
+    }
+    Ok(peer_space_key_version < current_space_key_version)
 }
 
 fn persist_trusted_pairing_device_in_connection(
@@ -2058,6 +2120,7 @@ fn remember_pairing_handshake(
             server_identity_public_key: draft.server_identity_public_key.clone(),
             server_ephemeral_public_key: draft.server_ephemeral_public_key.clone(),
             pairing_context: draft.pairing_context.clone(),
+            peer_space_key_version: draft.peer_space_key_version,
             server_ephemeral_secret,
         },
     );
@@ -2674,5 +2737,13 @@ mod tests {
         assert_eq!(envelope["version"], 1);
         assert!(envelope.get("body").is_some());
         assert!(envelope.get("tag").is_some());
+    }
+
+    #[test]
+    fn trusted_reconnect_delivers_only_a_missing_newer_space_key() {
+        assert_eq!(trusted_reconnect_needs_space_key(3, 3), Ok(false));
+        assert_eq!(trusted_reconnect_needs_space_key(2, 3), Ok(true));
+        assert_eq!(trusted_reconnect_needs_space_key(4, 3), Err(()));
+        assert_eq!(trusted_reconnect_needs_space_key(0, 3), Err(()));
     }
 }

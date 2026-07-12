@@ -119,6 +119,7 @@ pub struct PairingServerHelloDraft {
     pub server_identity_public_key: String,
     pub server_ephemeral_public_key: String,
     pub pairing_context: String,
+    pub peer_space_key_version: Option<u32>,
     pub server_hello_frame: String,
 }
 
@@ -1201,6 +1202,7 @@ pub fn accept_pairing_client_hello<S: SecretBytesStore>(
         server_identity_public_key: server_hello.identity_public_key,
         server_ephemeral_public_key: server_ephemeral_public_key.to_string(),
         pairing_context,
+        peer_space_key_version: None,
         server_hello_frame,
     })
 }
@@ -1209,7 +1211,8 @@ pub fn accept_pairing_client_hello<S: SecretBytesStore>(
 ///
 /// This deliberately has a separate context from invitation pairing.  It proves possession
 /// of the saved device identity key, but it must never consume an invitation or deliver a
-/// space key again.
+/// space key again unless the authenticated client reports that it missed a
+/// real rotation.
 pub fn accept_trusted_device_client_hello<S: SecretBytesStore>(
     connection: &mut Connection,
     secret_store: &mut S,
@@ -1235,7 +1238,8 @@ pub fn accept_trusted_device_client_hello<S: SecretBytesStore>(
         .pairing_context
         .clone()
         .ok_or(PairingError::InvalidClientHello)?;
-    let context_space_id = parse_trusted_device_context(&pairing_context)?;
+    let (context_space_id, peer_space_key_version) =
+        parse_trusted_device_context(&pairing_context)?;
     let client_space_id =
         Uuid::parse_str(&client_hello.space_id).map_err(|_| PairingError::InvalidClientHello)?;
     let client_device_id =
@@ -1249,6 +1253,9 @@ pub fn accept_trusted_device_client_hello<S: SecretBytesStore>(
         .map_err(|error| PairingError::Database(error.to_string()))?
         .ok_or(PairingError::MissingSpace)?;
     if space.space.state != SpaceState::Active {
+        return Err(PairingError::InvalidClientHello);
+    }
+    if peer_space_key_version > space.space.key_version {
         return Err(PairingError::InvalidClientHello);
     }
     let device = DeviceRepository::new(connection)
@@ -1302,6 +1309,7 @@ pub fn accept_trusted_device_client_hello<S: SecretBytesStore>(
         server_identity_public_key: server_hello.identity_public_key,
         server_ephemeral_public_key: server_ephemeral_public_key.to_string(),
         pairing_context,
+        peer_space_key_version: Some(peer_space_key_version),
         server_hello_frame,
     })
 }
@@ -1417,11 +1425,21 @@ fn parse_pairing_invitation_context(value: &str) -> Result<Uuid, PairingError> {
     Uuid::parse_str(invitation_id).map_err(|_| PairingError::InvalidClientHello)
 }
 
-fn parse_trusted_device_context(value: &str) -> Result<Uuid, PairingError> {
-    let space_id = value
+fn parse_trusted_device_context(value: &str) -> Result<(Uuid, u32), PairingError> {
+    let context = value
         .strip_prefix("trusted-device:")
         .ok_or(PairingError::InvalidClientHello)?;
-    Uuid::parse_str(space_id).map_err(|_| PairingError::InvalidClientHello)
+    let (space_id, key_version) = context
+        .split_once(":key-v")
+        .ok_or(PairingError::InvalidClientHello)?;
+    let space_id = Uuid::parse_str(space_id).map_err(|_| PairingError::InvalidClientHello)?;
+    let key_version = key_version
+        .parse::<u32>()
+        .map_err(|_| PairingError::InvalidClientHello)?;
+    if key_version == 0 {
+        return Err(PairingError::InvalidClientHello);
+    }
+    Ok((space_id, key_version))
 }
 
 fn random_space_key() -> Result<[u8; SPACE_KEY_BYTES], PairingError> {
@@ -2146,7 +2164,7 @@ mod tests {
             identity_public_key: client_identity_public_key,
             ephemeral_public_key: encode_base64url(&client_x25519.public_key()),
             capabilities: vec![Capability::TextPlain, Capability::SyncHeads],
-            pairing_context: Some(format!("trusted-device:{}", space.space_id)),
+            pairing_context: Some(format!("trusted-device:{}:key-v1", space.space_id)),
         };
         let client_hello_frame = serialize_pre_auth_envelope(&PreAuthEnvelope {
             message_type: MessageType::ClientHello,
@@ -2167,8 +2185,9 @@ mod tests {
         .expect("saved trusted device should be accepted");
         assert_eq!(
             server_hello.pairing_context,
-            format!("trusted-device:{}", space.space_id)
+            format!("trusted-device:{}:key-v1", space.space_id)
         );
+        assert_eq!(server_hello.peer_space_key_version, Some(1));
 
         let transcript_input = AuthTranscriptInput {
             role: AuthRole::Client,
@@ -2223,13 +2242,36 @@ mod tests {
             client_x25519.shared_secret(server_x25519.public_key())
         );
 
+        let future_key_hello = HelloPayload {
+            pairing_context: Some(format!("trusted-device:{}:key-v2", space.space_id)),
+            ..client_hello.clone()
+        };
+        let future_key_frame = serialize_pre_auth_envelope(&PreAuthEnvelope {
+            message_type: MessageType::ClientHello,
+            message_id: "018ff6f1-0000-7000-8000-000000000005".to_string(),
+            session_counter: 0,
+            payload: serde_json::to_value(&future_key_hello).expect("hello should serialize"),
+        })
+        .expect("client hello should serialize");
+        assert_eq!(
+            accept_trusted_device_client_hello(
+                &mut connection,
+                &mut store,
+                &future_key_frame,
+                &encode_base64url(&server_x25519.public_key()),
+                "018ff6f1-0000-7000-8000-000000000006",
+                1_700_000_001_000,
+            ),
+            Err(PairingError::InvalidClientHello)
+        );
+
         let wrong_identity_hello = HelloPayload {
             identity_public_key: encode_base64url(&[7u8; 32]),
             ..client_hello
         };
         let wrong_identity_frame = serialize_pre_auth_envelope(&PreAuthEnvelope {
             message_type: MessageType::ClientHello,
-            message_id: "018ff6f1-0000-7000-8000-000000000005".to_string(),
+            message_id: "018ff6f1-0000-7000-8000-000000000007".to_string(),
             session_counter: 0,
             payload: serde_json::to_value(&wrong_identity_hello).expect("hello should serialize"),
         })
@@ -2240,7 +2282,7 @@ mod tests {
                 &mut store,
                 &wrong_identity_frame,
                 &encode_base64url(&server_x25519.public_key()),
-                "018ff6f1-0000-7000-8000-000000000006",
+                "018ff6f1-0000-7000-8000-000000000008",
                 1_700_000_001_000,
             ),
             Err(PairingError::InvalidClientHello)

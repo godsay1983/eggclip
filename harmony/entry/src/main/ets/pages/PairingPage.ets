@@ -477,7 +477,7 @@ export struct PairingPage {
 
   private connectionBadgeText(): string {
     if (this.isAuthenticatedConnection()) {
-      return '已认证';
+      return this.connectionSnapshot.syncReady ? '已就绪' : '初始化中';
     }
     if (this.connectionSnapshot.state === PairingConnectionState.FAILED) {
       return '失败';

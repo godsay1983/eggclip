@@ -115,9 +115,12 @@ Connection:
 }
 ```
 
-`pairingContext` is optional for an already trusted-device reconnect, but required for
-invitation-based pairing. It is a public routing and transcript-binding value; it
-must not contain the `pairingSecret`.
+`pairingContext` is required for invitation pairing and trusted-device reconnect.
+Invitation pairing uses `pairing-invitation:v1:<invitationId>`. A trusted reconnect
+uses `trusted-device:<spaceId>:key-v<spaceKeyVersion>`. It is a public routing and
+transcript-binding value; it must not contain the `pairingSecret`. The signed key
+version lets the server omit a same-version key replay while still delivering a
+newer key to a trusted device that missed a real rotation.
 
 `AUTH_PROOF` signs the canonical handshake transcript with the Ed25519 identity key and binds:
 

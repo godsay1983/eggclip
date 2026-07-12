@@ -85,6 +85,7 @@ export enum PairingConnectionState {
 export interface PairingConnectionSnapshot {
   state: PairingConnectionState;
   authenticated: boolean;
+  syncReady: boolean;
   trustedDeviceId: string;
   manualHost: string;
   manualPort: string;
@@ -150,6 +151,7 @@ export enum AuthenticatedLocalSendStatus {
   SENT = 'sent',
   QUEUED = 'queued',
   SENDING = 'sending',
+  INITIALIZING = 'initializing',
   PAUSED = 'paused',
   NOT_READY = 'notReady',
   FAILED = 'failed'
@@ -183,6 +185,12 @@ class PairingConnectionStore {
   private networkHandshake: PairingClientNetworkHandshakeService = new PairingClientNetworkHandshakeService();
   private localIdentityPrivateKeyRef: string = '';
   private authenticatedTransportSession: ProtocolTransportSession | null = null;
+  // AUTH_OK proves identity but does not make clipboard traffic ready: the
+  // space key and initial sync heads still have to finish in wire order.
+  private syncReady: boolean = false;
+  // The durable record is encrypted before this short-lived live-send queue is
+  // populated. The payload itself contains clipboard text, so never log it.
+  private pendingInitializationPayloads: JsonObject[] = [];
   private pendingTrustDraft: PairingHandshakeDraft | null = null;
   private pendingTrustServerHello: HelloPayload | null = null;
   private connectionPurpose: ConnectionHandshakePurpose = ConnectionHandshakePurpose.PAIRING;
@@ -249,6 +257,7 @@ class PairingConnectionStore {
     return {
       state: this.state,
       authenticated: this.hasAuthenticatedSession(),
+      syncReady: this.syncReady,
       trustedDeviceId: this.reconnectTarget?.deviceId ?? this.pendingTrustServerHello?.deviceId ?? '',
       manualHost: this.manualHost,
       manualPort: this.manualPort,
@@ -390,9 +399,11 @@ class PairingConnectionStore {
       this.closingByUserOrLifecycle = true;
       this.clearReconnectTimer();
       this.transport.close();
-      if (this.state === PairingConnectionState.AUTHENTICATED) {
-        this.authenticatedTransportSession?.close();
-        this.authenticatedTransportSession = null;
+      const hadAuthenticatedSession = this.hasAuthenticatedSession();
+      this.authenticatedTransportSession?.close();
+      this.authenticatedTransportSession = null;
+      this.syncReady = false;
+      if (this.state === PairingConnectionState.AUTHENTICATED || hadAuthenticatedSession) {
         this.state = PairingConnectionState.IDLE;
         this.title = '已暂停可信连接';
         this.description = '应用位于后台；返回前台后会恢复已配对设备连接。';
@@ -438,7 +449,11 @@ class PairingConnectionStore {
     this.endpointLabel = `${endpoint.host}:${endpoint.port}`;
     this.localIdentityPrivateKeyRef = material.localIdentityPrivateKeyRef;
     this.connectionPurpose = purpose;
+    if (this.pendingTrustDraft !== null && this.pendingTrustDraft.spaceId !== material.draft.spaceId) {
+      this.pendingInitializationPayloads = [];
+    }
     this.pendingTrustDraft = material.draft;
+    this.syncReady = false;
     this.pendingTrustServerHello = null;
     this.networkHandshake.reset();
     const started = this.networkHandshake.start(
@@ -474,6 +489,7 @@ class PairingConnectionStore {
           this.reconnectTarget !== null) {
           this.authenticatedTransportSession?.close();
           this.authenticatedTransportSession = null;
+          this.syncReady = false;
           this.state = PairingConnectionState.IDLE;
           this.title = '可信连接已断开';
           this.description = `${this.describeCloseReason(reason)}；正在尝试恢复已配对设备连接。`;
@@ -492,6 +508,7 @@ class PairingConnectionStore {
           this.reconnectTarget !== null) {
           this.authenticatedTransportSession?.close();
           this.authenticatedTransportSession = null;
+          this.syncReady = false;
           this.state = PairingConnectionState.IDLE;
           this.title = '可信连接失败';
           this.description = `${this.describeTransportError(reason)}；正在尝试恢复已配对设备连接。`;
@@ -558,20 +575,16 @@ class PairingConnectionStore {
         return this.snapshot();
       }
       this.authenticatedTransportSession = authenticated.transportSession;
+      this.syncReady = false;
       this.state = PairingConnectionState.AUTHENTICATED;
       this.lastError = '';
       this.title = this.connectionPurpose === ConnectionHandshakePurpose.TRUSTED_RECONNECT
         ? '可信连接已认证'
         : '配对握手已认证';
       this.description = this.connectionPurpose === ConnectionHandshakePurpose.TRUSTED_RECONNECT
-        ? '已恢复正式协议会话，无需重新配对或下发空间密钥。'
-        : '已创建正式协议会话，正在等待桌面端下发加密空间密钥。';
+        ? '身份认证已完成，正在初始化空间密钥和同步状态。'
+        : '身份认证已完成，正在等待桌面端下发加密空间密钥。';
       this.emit();
-      if (this.connectionPurpose === ConnectionHandshakePurpose.TRUSTED_RECONNECT) {
-        this.rememberTrustedEndpoint();
-        await this.refreshPendingOutboundState();
-        await this.sendLocalSyncHeads();
-      }
       return this.snapshot();
     }
 
@@ -600,8 +613,7 @@ class PairingConnectionStore {
           identityPublicKey: this.pendingTrustServerHello.identityPublicKey
         };
         this.rememberTrustedEndpoint();
-        await this.refreshPendingOutboundState();
-        await this.sendLocalSyncHeads();
+        await this.completeSyncInitialization(isInitialPairing);
       }
       this.connectionPurpose = ConnectionHandshakePurpose.TRUSTED_RECONNECT;
       return this.snapshot();
@@ -610,8 +622,23 @@ class PairingConnectionStore {
     if (frameResult.envelope.messageType === MessageType.SYNC_HEADS) {
       const stored = await this.persistRemoteSyncHeads(frameResult.decryptedPayload, Date.now());
       if (!stored) {
-        this.fail('桌面端同步头被拒绝', '收到的 SYNC_HEADS 不符合协议，或本机可信设备上下文已失效。');
+        if (!this.syncReady && this.connectionPurpose === ConnectionHandshakePurpose.TRUSTED_RECONNECT) {
+          this.rememberTrustedEndpoint();
+          await this.completeSyncInitialization(false);
+          if (!this.syncReady) return this.snapshot();
+        }
+        this.state = PairingConnectionState.AUTHENTICATED;
+        this.title = '实时同步在线，历史初始化异常';
+        this.description = '可信连接仍可收发实时文本；稍后重连会重新尝试历史补同步。';
+        this.lastError = '收到的 SYNC_HEADS 不符合协议，或本机可信设备上下文已失效。';
+        this.syncReady = true;
+        this.emit();
         return this.snapshot();
+      }
+      if (!this.syncReady && this.connectionPurpose === ConnectionHandshakePurpose.TRUSTED_RECONNECT) {
+        this.rememberTrustedEndpoint();
+        await this.completeSyncInitialization(false);
+        if (!this.syncReady) return this.snapshot();
       }
       this.title = '同步状态已更新';
       this.markAuthenticatedActivity();
@@ -729,6 +756,8 @@ class PairingConnectionStore {
     this.transport.close();
     this.localIdentityPrivateKeyRef = '';
     this.authenticatedTransportSession = null;
+    this.syncReady = false;
+    this.pendingInitializationPayloads = [];
     this.pendingTrustDraft = null;
     this.pendingTrustServerHello = null;
     this.connectionPurpose = ConnectionHandshakePurpose.PAIRING;
@@ -765,6 +794,7 @@ class PairingConnectionStore {
     const sent = await this.transport.sendTextFrame(encoded.frame);
     if (!sent) {
       this.authenticatedTransportSession.close();
+      this.syncReady = false;
     }
     return sent;
   }
@@ -786,6 +816,14 @@ class PairingConnectionStore {
       return { status: AuthenticatedLocalSendStatus.FAILED, field: prepared.field };
     }
     this.pendingOutboundCount += 1;
+    if (!this.syncReady) {
+      if (this.pendingInitializationPayloads.length < 20) {
+        this.pendingInitializationPayloads.push(prepared.payload);
+      }
+      this.setOutboundDelivery(OutboundDeliveryState.QUEUED,
+        `${this.pendingOutboundCount} 条本机记录等待同步初始化完成后自动发送`);
+      return { status: AuthenticatedLocalSendStatus.INITIALIZING };
+    }
     if (this.state !== PairingConnectionState.AUTHENTICATED ||
       this.authenticatedTransportSession === null || this.authenticatedTransportSession.isClosed()) {
       this.setOutboundDelivery(OutboundDeliveryState.QUEUED,
@@ -891,6 +929,7 @@ class PairingConnectionStore {
     this.reconnectTarget = null;
     this.authenticatedTransportSession?.close();
     this.authenticatedTransportSession = null;
+    this.syncReady = false;
     this.state = PairingConnectionState.FAILED;
     this.title = '此设备已被桌面端移除';
     this.description = '可信关系已撤销，自动重连已停止；如需继续同步，请在桌面端生成新邀请后重新配对。';
@@ -917,6 +956,35 @@ class PairingConnectionStore {
     if (!this.hasAuthenticatedSession()) return;
     this.state = PairingConnectionState.AUTHENTICATED;
     this.lastError = '';
+  }
+
+  private async completeSyncInitialization(isInitialPairing: boolean): Promise<void> {
+    await this.refreshPendingOutboundState();
+    const headsSent = await this.sendLocalSyncHeads();
+    if (!headsSent) {
+      this.syncReady = false;
+      this.title = '同步初始化尚未完成';
+      this.description = '认证连接已建立，但同步状态发送失败；连接恢复后会自动重试。';
+      this.emit();
+      return;
+    }
+    this.syncReady = true;
+    this.state = PairingConnectionState.AUTHENTICATED;
+    this.lastError = '';
+    this.title = isInitialPairing ? '配对完成，同步已就绪' : '可信连接已就绪';
+    this.description = '安全连接和同步状态均已初始化，可以双向同步纯文本。';
+    this.emit();
+
+    const queuedPayloads = this.pendingInitializationPayloads.splice(0);
+    let submittedCount = 0;
+    for (let index = 0; index < queuedPayloads.length; index += 1) {
+      if (!await this.sendAuthenticatedItemLive(queuedPayloads[index])) break;
+      submittedCount += 1;
+    }
+    if (submittedCount > 0) {
+      this.setOutboundDelivery(OutboundDeliveryState.SENDING,
+        `${this.pendingOutboundCount} 条本机记录已在初始化完成后自动提交`);
+    }
   }
 
   private fail(title: string, description: string): void {
