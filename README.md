@@ -115,7 +115,9 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 
 - [开发约定](AGENTS.md)
 - [最佳实现方案](docs/EggClip最佳实现方案.md)
-- [隐私说明](docs/PRIVACY.md)
+- [隐私政策](docs/PRIVACY.md)
+- [隐私数据清单](docs/PRIVACY_DATA_INVENTORY.md)
+- [AppGallery 隐私政策发布页](docs/privacy/index.html)
 - [局域网连接排障](docs/LAN_TROUBLESHOOTING.md)
 - [发布、升级与回滚清单](docs/RELEASE.md)
 - [双端 UI 精简改造 Roadmap](docs/UI_REFINEMENT_ROADMAP.md)

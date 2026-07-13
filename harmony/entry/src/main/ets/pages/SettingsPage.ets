@@ -218,20 +218,29 @@ export struct SettingsPage {
   @Builder
   private PrivacyCard() {
     Column({ space: 10 }) {
-      Text('隐私说明')
+      Text('隐私与安全')
         .fontSize(EggClipTypography.bodySize)
         .fontWeight(FontWeight.Bold)
         .fontColor(EggClipColors.textPrimary)
         .width('100%')
 
-      Text('仅在局域网同步纯文本，不使用账号或云端。')
+      Text('不使用账号、中心服务器、公网中继、广告或统计服务。')
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
         .lineHeight(20)
         .width('100%')
 
-      this.PrivacyPoint('剪贴板', '只有点击系统“粘贴”后才读取一次，收到的文本由你手动复制。')
-      this.PrivacyPoint('本机数据', '历史和设置保存在本机，可随时关闭或清空。')
+      this.PrivacyPoint('剪贴板', '只有点击系统“粘贴”后才读取一次；收到的文本由你手动复制。')
+      this.PrivacyPoint('本机保存', '加密历史、设置、设备标识、可信状态和最近连接地址保存在本机。')
+      this.PrivacyPoint('局域网', '文本只发送给你已配对的设备，传输过程使用应用层加密。')
+      this.PrivacyPoint('密钥', '设备私钥和同步空间密钥由系统安全存储保护，数据库只保存引用。')
+      this.PrivacyPoint('用户控制', '可以关闭或清空历史、移除可信设备，或重新初始化配对安全状态。')
+
+      Text('完整隐私政策可在 AppGallery 应用详情页查看。')
+        .fontSize(11)
+        .fontColor(EggClipColors.textSecondary)
+        .lineHeight(18)
+        .width('100%')
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)

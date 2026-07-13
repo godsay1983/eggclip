@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#fff8e7">
+  <title>EggClip 隐私政策</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --background: #fff8e7;
+      --surface: #ffffff;
+      --text: #29251f;
+      --secondary: #686157;
+      --accent: #f4c430;
+      --border: #eadfca;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --background: #191713;
+        --surface: #24211c;
+        --text: #fff8e7;
+        --secondary: #c9c0b3;
+        --accent: #ffd75a;
+        --border: #403a31;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--background);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.75;
+    }
+
+    main {
+      width: min(880px, calc(100% - 32px));
+      margin: 40px auto;
+      padding: clamp(24px, 5vw, 56px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      box-shadow: 0 16px 48px rgb(64 48 20 / 8%);
+    }
+
+    h1, h2, h3 {
+      line-height: 1.3;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(30px, 5vw, 44px);
+    }
+
+    h2 {
+      margin-top: 40px;
+      padding-top: 8px;
+      border-top: 3px solid var(--accent);
+      font-size: 24px;
+    }
+
+    h3 {
+      margin-top: 24px;
+      font-size: 19px;
+    }
+
+    p, li {
+      color: var(--secondary);
+    }
+
+    .meta {
+      margin: 0 0 28px;
+      color: var(--secondary);
+      font-size: 14px;
+    }
+
+    .summary {
+      padding: 18px 20px;
+      background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+      border-radius: 18px;
+      color: var(--text);
+    }
+
+    code {
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: color-mix(in srgb, var(--accent) 15%, var(--surface));
+      color: var(--text);
+    }
+
+    footer {
+      margin-top: 44px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      color: var(--secondary);
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>EggClip 隐私政策</h1>
+    <p class="meta">更新日期：2026 年 7 月 13 日 · 生效日期：2026 年 7 月 13 日</p>
+
+    <p class="summary">
+      EggClip（蛋定 Clip）是纯局域网剪贴板同步工具，不要求注册账号，不连接开发者中心服务器，
+      不使用公网中继，也不集成广告、营销、跨应用跟踪、统计分析或崩溃上报服务。
+    </p>
+
+    <p>
+      本政策说明 EggClip Windows 桌面端和 HarmonyOS 端在提供设备配对、局域网连接、文本同步
+      及本机历史功能时如何处理数据。用户选择的已配对设备是剪贴板文本的接收方，开发者不会
+      接收这些内容。
+    </p>
+
+    <h2>1. 处理的数据及用途</h2>
+
+    <h3>1.1 剪贴板文本</h3>
+    <ul>
+      <li>只处理 <code>text/plain</code>，单条明文最大 256 KiB。</li>
+      <li>Windows 桌面端根据用户设置监听本机新复制的文本并向已配对设备同步。</li>
+      <li>HarmonyOS 端只有在用户点击系统安全粘贴按钮并获得一次性授权后，才读取当前剪贴板文本。</li>
+      <li>HarmonyOS 收到远端文本后不会静默写入系统剪贴板，必须由用户点击复制。</li>
+      <li>文本用于剪贴板同步和本机历史，不用于广告、画像、营销或训练模型。</li>
+    </ul>
+
+    <h3>1.2 设备和安全信息</h3>
+    <p>
+      为完成配对、身份认证和可信重连，应用会生成或保存设备 ID、设备显示名称、身份公钥、
+      同步空间 ID、可信状态、密钥版本、同步序号和必要的时间信息。设备 ID、公钥和必要同步
+      状态会在已配对设备之间交换；设备私钥不会离开本机安全存储。
+    </p>
+
+    <h3>1.3 局域网连接信息</h3>
+    <p>
+      应用会在前台处理局域网发现结果、IPv4 地址、端口、协议版本和最近可信连接地址，用于
+      发现桌面端、建立连接、自动重连和排查连接问题。这些信息保存在本机或仅在当前前台会话
+      中使用，不会发送到开发者服务器。
+    </p>
+
+    <h3>1.4 本机历史和设置</h3>
+    <p>
+      两端默认保存最近 50 条、最长 7 天的加密文本历史。应用还会在本机保存同步开关、历史数量、
+      保留天数、主题等设置。用户可以关闭历史、调整保留策略或清空本机历史。
+    </p>
+
+    <h3>1.5 密钥和密钥引用</h3>
+    <p>
+      Windows 端使用系统凭据库保护设备私钥和同步空间密钥；HarmonyOS 端使用 HUKS 保护设备
+      私钥、同步空间 AES 密钥和 HMAC 密钥。本机数据库只保存密钥引用和必要索引，不保存设备
+      私钥、邀请秘密或原始同步空间密钥。
+    </p>
+
+    <h2>2. 权限说明</h2>
+    <p>HarmonyOS 端只声明以下权限：</p>
+    <ul>
+      <li><code>INTERNET</code>：用于同一局域网内的设备发现、WebSocket 连接和加密文本同步。</li>
+      <li><code>GET_NETWORK_INFO</code>：用于判断当前网络状态并辅助局域网连接。</li>
+    </ul>
+    <p>
+      HarmonyOS 端不申请后台或静默读取剪贴板的常规权限。读取剪贴板时由系统安全粘贴按钮向
+      用户展示操作，并只为该次点击提供临时授权。
+    </p>
+
+    <h2>3. 存放、传输和共享</h2>
+    <ul>
+      <li>剪贴板正文和历史保存在用户自己的设备上，历史正文使用同步空间密钥加密。</li>
+      <li>正文只在同一局域网内、已完成身份认证的设备之间传输，业务消息使用 AES-256-GCM 加密。</li>
+      <li>mDNS 只用于地址发现，不承担身份认证，也不广播剪贴板内容、密钥或长期公钥。</li>
+      <li>EggClip 不向开发者服务器上传数据，不出售数据，也不向广告或数据分析机构共享数据。</li>
+      <li>Windows 端写入系统剪贴板时设置云剪贴板排除标记，避免内容由 Windows 云剪贴板上传。</li>
+    </ul>
+
+    <h2>4. 保存期限</h2>
+    <p>
+      本机历史默认最多保留 50 条且最长 7 天，以先达到的条件为准。删除或过期的记录会按照本机
+      保留策略清理。可信设备、同步空间、最近连接地址和密钥引用会保存到用户移除设备、重新初始
+      化配对安全状态或清除应用数据为止。
+    </p>
+
+    <h2>5. 用户控制</h2>
+    <ul>
+      <li>暂停同步或关闭自动同步、自动接收。</li>
+      <li>关闭历史、调整历史数量和保留天数，或清空本机历史。</li>
+      <li>重命名或移除可信设备；移除设备会撤销信任并触发同步空间密钥轮换。</li>
+      <li>重新初始化配对安全状态，删除可信设备、同步空间、历史和相关 HUKS 空间密钥。</li>
+      <li>通过系统设置清除应用数据或卸载应用，删除应用可访问的本机数据。</li>
+    </ul>
+
+    <h2>6. 日志与诊断</h2>
+    <p>
+      普通日志和诊断界面不记录或展示剪贴板正文、邀请秘密、密钥、完整内容摘要或完整网络帧。
+      日志只用于记录生命周期、错误类型和不包含正文的运行状态。EggClip 不集成第三方崩溃上报
+      或遥测 SDK。
+    </p>
+
+    <h2>7. 政策更新与联系</h2>
+    <p>
+      如果功能、权限或数据处理方式发生变化，我们会同步更新本政策和应用内说明。涉及处理目的、
+      范围或共享对象的重大变化时，将在新版本发布前提供醒目说明。隐私相关问题可通过 AppGallery
+      应用详情页展示的开发者联系渠道反馈。
+    </p>
+
+    <footer>EggClip · 纯局域网剪贴板同步</footer>
+  </main>
+</body>
+</html>
