@@ -75,6 +75,7 @@ export struct DevicesPage {
   @State private deviceNameDraft: string = '';
   @State private busyDeviceId: string = '';
   @State private deviceActionStatus: string = '';
+  @State private gettingStartedDetail: string = '';
 
   aboutToAppear(): void {
     const hostContext = this.getUIContext().getHostContext();
@@ -98,6 +99,9 @@ export struct DevicesPage {
     Scroll() {
       Column({ space: EggClipSpacing.sectionGap }) {
         this.Header()
+        if (this.trustedDevices.length === 0) {
+          this.GettingStartedSection()
+        }
         GridRow({
           columns: { sm: 12, md: 12, lg: 12 },
           gutter: { x: EggClipSpacing.sectionGap, y: EggClipSpacing.sectionGap }
@@ -129,6 +133,209 @@ export struct DevicesPage {
     .width('100%')
     .height('100%')
     .backgroundColor(EggClipColors.pageBackground)
+  }
+
+  @Builder
+  private GettingStartedSection() {
+    Column({ space: 14 }) {
+      Column({ space: 5 }) {
+        Text('使用前准备')
+          .fontSize(20)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(EggClipColors.textPrimary)
+          .width('100%')
+
+        Text('EggClip 需要 Windows 桌面端配合使用，首次连接约需 2 分钟。')
+          .fontSize(EggClipTypography.captionSize)
+          .fontColor(EggClipColors.textSecondary)
+          .lineHeight(20)
+          .width('100%')
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+
+      GridRow({
+        columns: 12,
+        gutter: { x: 8, y: 8 }
+      }) {
+        GridCol({ span: { sm: 6, md: 3, lg: 3 } }) {
+          Button('开始配对')
+            .width('100%')
+            .height(40)
+            .fontSize(12)
+            .fontColor(EggClipColors.onPrimary)
+            .backgroundColor(EggClipColors.primary)
+            .borderRadius(18)
+            .onClick(() => {
+              this.pairingExpanded = true;
+            })
+        }
+
+        GridCol({ span: { sm: 6, md: 3, lg: 3 } }) {
+          Button('功能演示')
+            .width('100%')
+            .height(40)
+            .fontSize(12)
+            .fontColor(EggClipColors.textPrimary)
+            .backgroundColor(EggClipColors.controlBackground)
+            .borderRadius(18)
+            .onClick(() => {
+              this.gettingStartedDetail = this.gettingStartedDetail === 'features' ? '' : 'features';
+            })
+        }
+
+        GridCol({ span: { sm: 6, md: 3, lg: 3 } }) {
+          Button('隐私说明')
+            .width('100%')
+            .height(40)
+            .fontSize(12)
+            .fontColor(EggClipColors.textPrimary)
+            .backgroundColor(EggClipColors.controlBackground)
+            .borderRadius(18)
+            .onClick(() => {
+              this.gettingStartedDetail = this.gettingStartedDetail === 'privacy' ? '' : 'privacy';
+            })
+        }
+
+        GridCol({ span: { sm: 6, md: 3, lg: 3 } }) {
+          Button('连接诊断')
+            .width('100%')
+            .height(40)
+            .fontSize(12)
+            .fontColor(EggClipColors.textPrimary)
+            .backgroundColor(EggClipColors.controlBackground)
+            .borderRadius(18)
+            .onClick(() => {
+              this.diagnosticsExpanded = true;
+              this.gettingStartedDetail = 'diagnostics';
+            })
+        }
+      }
+      .width('100%')
+
+      Column({ space: 10 }) {
+        this.GettingStartedStep('1', '启动 Windows 客户端', '在电脑上打开 EggClip，保持桌面端运行。')
+        this.GettingStartedStep('2', '连接同一局域网', '电脑和 HarmonyOS 设备连接同一 Wi-Fi 或可互通的局域网。')
+        this.GettingStartedStep('3', '生成一次性邀请', '在桌面端“设备”页生成邀请二维码或邀请文本。')
+        this.GettingStartedStep('4', '扫码或粘贴配对', '点“开始配对”，导入邀请并核对两端显示的确认码。')
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+
+      if (this.gettingStartedDetail === 'features') {
+        this.FeatureGuideCard()
+      } else if (this.gettingStartedDetail === 'privacy') {
+        this.PrivacyGuideCard()
+      } else if (this.gettingStartedDetail === 'diagnostics') {
+        Text('连接诊断已在下方“连接问题”中展开。自动发现失败时可检查防火墙，或手动输入桌面端地址。')
+          .width('100%')
+          .fontSize(EggClipTypography.captionSize)
+          .fontColor(EggClipColors.textSecondary)
+          .lineHeight(20)
+          .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+          .backgroundColor(EggClipColors.controlBackground)
+          .borderRadius(14)
+      }
+
+      Text('邀请 5 分钟后失效且只能使用一次；只有完成确认码核对和安全认证的设备才能同步。')
+        .width('100%')
+        .fontSize(11)
+        .fontColor(EggClipColors.textSecondary)
+        .lineHeight(18)
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(EggClipSpacing.cardPadding)
+    .backgroundColor(EggClipColors.cardBackground)
+    .borderRadius(EggClipSpacing.radiusLarge)
+  }
+
+  @Builder
+  private GettingStartedStep(number: string, title: string, description: string) {
+    Row({ space: 12 }) {
+      Text(number)
+        .width(26)
+        .height(26)
+        .fontSize(12)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(EggClipColors.onPrimary)
+        .textAlign(TextAlign.Center)
+        .backgroundColor(EggClipColors.primary)
+        .borderRadius(13)
+
+      Column({ space: 3 }) {
+        Text(title)
+          .fontSize(EggClipTypography.captionSize)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(EggClipColors.textPrimary)
+
+        Text(description)
+          .fontSize(EggClipTypography.captionSize)
+          .fontColor(EggClipColors.textSecondary)
+          .lineHeight(18)
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Top)
+  }
+
+  @Builder
+  private FeatureGuideCard() {
+    Column({ space: 8 }) {
+      Text('核心功能')
+        .fontSize(EggClipTypography.captionSize)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(EggClipColors.textPrimary)
+        .width('100%')
+
+      this.HelpPoint('Windows → HarmonyOS', '电脑复制文本后，已认证连接会把内容实时显示到 HarmonyOS 首页。')
+      this.HelpPoint('HarmonyOS → Windows', '在首页通过系统 PasteButton 授权读取一次文本，发送后可直接在电脑粘贴。')
+      this.HelpPoint('自动重连', '桌面端运行且应用回到前台时，会使用已保存的可信设备信息自动连接。')
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(12)
+    .backgroundColor(EggClipColors.controlBackground)
+    .borderRadius(14)
+  }
+
+  @Builder
+  private PrivacyGuideCard() {
+    Column({ space: 8 }) {
+      Text('隐私与安全')
+        .fontSize(EggClipTypography.captionSize)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(EggClipColors.textPrimary)
+        .width('100%')
+
+      this.HelpPoint('纯局域网', '不需要账号，不使用中心服务器或公网中继，文本只发给已配对设备。')
+      this.HelpPoint('本机保存', '历史记录保存在本机，可在底部“设置”页关闭历史或清空记录。')
+      this.HelpPoint('系统保护', '设备私钥和同步空间密钥由系统安全存储保护，普通日志不记录剪贴板正文。')
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(12)
+    .backgroundColor(EggClipColors.controlBackground)
+    .borderRadius(14)
+  }
+
+  @Builder
+  private HelpPoint(title: string, description: string) {
+    Row({ space: 8 }) {
+      Text('•')
+        .fontSize(16)
+        .fontColor(EggClipColors.accentForeground)
+
+      Text(`${title}：${description}`)
+        .layoutWeight(1)
+        .fontSize(EggClipTypography.captionSize)
+        .fontColor(EggClipColors.textSecondary)
+        .lineHeight(18)
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Top)
   }
 
   @Builder
