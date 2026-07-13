@@ -152,11 +152,25 @@
       "minimumRatio": 3.0
     },
     {
+      "name": "selected navigation label",
+      "kind": "text",
+      "foreground": "eggclip_text_primary",
+      "background": "eggclip_card_background",
+      "minimumRatio": 4.5
+    },
+    {
       "name": "default navigation icon",
       "kind": "icon",
       "foreground": "eggclip_text_primary",
       "background": "eggclip_card_background",
       "minimumRatio": 3.0
+    },
+    {
+      "name": "default navigation label",
+      "kind": "text",
+      "foreground": "eggclip_text_primary",
+      "background": "eggclip_card_background",
+      "minimumRatio": 4.5
     },
     {
       "name": "online status icon",

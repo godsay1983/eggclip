@@ -4,6 +4,7 @@ Set-StrictMode -Version Latest
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $harmonyRoot = Join-Path $repoRoot 'harmony'
 $manifestPath = Join-Path $harmonyRoot 'accessibility/color-contrast.json'
+$navigationSourcePath = Join-Path $harmonyRoot 'entry/src/main/ets/pages/Index.ets'
 
 function ConvertTo-Rgb {
   param([Parameter(Mandatory = $true)][string]$HexColor)
@@ -97,9 +98,28 @@ foreach ($theme in $manifest.themes) {
   }
 }
 
+if (-not (Test-Path -LiteralPath $navigationSourcePath -PathType Leaf)) {
+  $failures.Add("Navigation source is missing: $navigationSourcePath")
+} else {
+  $navigationSource = Get-Content -LiteralPath $navigationSourcePath -Raw -Encoding UTF8
+  if ($navigationSource -match 'fontColor\([^\r\n]*EggClipColors\.primary') {
+    $failures.Add('Navigation labels must not use the brand primary color as foreground.')
+  }
+  if ($navigationSource -match 'color:\s*selected\s*\?\s*EggClipColors\.primary') {
+    $failures.Add('Selected navigation glyphs must use onPrimary over the primary fill.')
+  }
+  $selectedFillCount = ([regex]::Matches(
+      $navigationSource,
+      'backgroundColor\(selected\s*\?\s*EggClipColors\.primary\s*:\s*Color\.Transparent\)'
+    )).Count
+  if ($selectedFillCount -ne 1) {
+    $failures.Add("Navigation must define exactly one selected primary fill; found $selectedFillCount.")
+  }
+}
+
 if ($failures.Count -gt 0) {
   Write-Error ("Harmony color contrast check failed:`n - " + ($failures -join "`n - "))
   exit 1
 }
 
-Write-Output "Harmony color contrast check passed: $checkedCount theme/pair combinations inspected."
+Write-Output "Harmony color contrast check passed: $checkedCount theme/pair combinations and the navigation source contract inspected."

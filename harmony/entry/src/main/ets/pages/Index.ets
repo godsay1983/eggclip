@@ -95,7 +95,7 @@ struct Index {
       Text(label)
         .fontSize(11)
         .fontWeight(this.selectedIndex === index ? FontWeight.Medium : FontWeight.Regular)
-        .fontColor(this.selectedIndex === index ? EggClipColors.primary : EggClipColors.textPrimary)
+        .fontColor(EggClipColors.textPrimary)
         .lineHeight(14)
     }
     .width(64)
@@ -114,9 +114,11 @@ struct Index {
         this.SettingsGlyph(selected)
       }
     }
-    .width(24)
-    .height(24)
+    .width(32)
+    .height(26)
     .alignContent(Alignment.Center)
+    .backgroundColor(selected ? EggClipColors.primary : Color.Transparent)
+    .borderRadius(13)
   }
 
   @Builder
@@ -125,7 +127,7 @@ struct Index {
       Row() {}
         .width(10)
         .height(3)
-        .backgroundColor(selected ? EggClipColors.primary : EggClipColors.textPrimary)
+        .backgroundColor(selected ? EggClipColors.onPrimary : EggClipColors.textPrimary)
         .borderRadius(2)
         .rotate({ angle: -38 })
         .offset({ x: -4, y: -5 })
@@ -133,7 +135,7 @@ struct Index {
       Row() {}
         .width(10)
         .height(3)
-        .backgroundColor(selected ? EggClipColors.primary : EggClipColors.textPrimary)
+        .backgroundColor(selected ? EggClipColors.onPrimary : EggClipColors.textPrimary)
         .borderRadius(2)
         .rotate({ angle: 38 })
         .offset({ x: 4, y: -5 })
@@ -142,7 +144,7 @@ struct Index {
         Row() {}
           .width(4)
           .height(7)
-          .backgroundColor(selected ? EggClipColors.primary : EggClipColors.textPrimary)
+          .backgroundColor(selected ? EggClipColors.onPrimary : EggClipColors.textPrimary)
           .borderRadius(2)
           .margin({ top: 7 })
       }
@@ -151,7 +153,7 @@ struct Index {
       .justifyContent(FlexAlign.Center)
       .border({
         width: 2,
-        color: selected ? EggClipColors.primary : EggClipColors.textPrimary
+        color: selected ? EggClipColors.onPrimary : EggClipColors.textPrimary
       })
       .borderRadius(5)
       .offset({ x: 0, y: 4 })
@@ -169,7 +171,7 @@ struct Index {
         .height(17)
         .border({
           width: 2,
-          color: selected ? EggClipColors.primary : EggClipColors.textPrimary
+          color: selected ? EggClipColors.onPrimary : EggClipColors.textPrimary
         })
         .borderRadius(5)
         .offset({ x: -4, y: -3 })
@@ -180,7 +182,7 @@ struct Index {
         .backgroundColor(Color.Transparent)
         .border({
           width: 2,
-          color: selected ? EggClipColors.primary : EggClipColors.textPrimary
+          color: selected ? EggClipColors.onPrimary : EggClipColors.textPrimary
         })
         .borderRadius(5)
         .offset({ x: 5, y: 4 })
@@ -188,7 +190,7 @@ struct Index {
       Row() {}
         .width(5)
         .height(2)
-        .backgroundColor(selected ? EggClipColors.primary : EggClipColors.textPrimary)
+        .backgroundColor(selected ? EggClipColors.onPrimary : EggClipColors.textPrimary)
         .borderRadius(1)
         .offset({ x: 5, y: 10 })
     }
@@ -214,7 +216,7 @@ struct Index {
         .height(17)
         .border({
           width: 2,
-          color: selected ? EggClipColors.primary : EggClipColors.textPrimary
+          color: selected ? EggClipColors.onPrimary : EggClipColors.textPrimary
         })
         .borderRadius(9)
 
@@ -223,7 +225,7 @@ struct Index {
         .height(6)
         .border({
           width: 2,
-          color: selected ? EggClipColors.primary : EggClipColors.textPrimary
+          color: selected ? EggClipColors.onPrimary : EggClipColors.textPrimary
         })
         .borderRadius(3)
     }
@@ -237,7 +239,7 @@ struct Index {
     Row() {}
       .width(width)
       .height(height)
-      .backgroundColor(selected ? EggClipColors.primary : EggClipColors.textPrimary)
+      .backgroundColor(selected ? EggClipColors.onPrimary : EggClipColors.textPrimary)
       .borderRadius(2)
       .rotate({ angle })
       .offset({ x, y })
