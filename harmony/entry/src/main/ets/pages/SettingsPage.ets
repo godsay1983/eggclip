@@ -105,7 +105,7 @@ export struct SettingsPage {
       if (this.storeState === SettingsStoreState.ERROR) {
         Text(this.statusText)
           .fontSize(EggClipTypography.captionSize)
-          .fontColor(Color.Red)
+          .fontColor(EggClipColors.statusError)
           .width('100%')
       }
     }
@@ -285,7 +285,7 @@ export struct SettingsPage {
         .width('100%')
         .height(40)
         .enabled(!this.spaceKeyDiagnosticRunning && !this.spaceKeyRecoveryRunning)
-        .fontColor(Color.Red)
+        .fontColor(EggClipColors.statusError)
         .backgroundColor(EggClipColors.controlBackground)
         .borderRadius(19)
         .onClick(() => {
@@ -584,7 +584,7 @@ export struct SettingsPage {
       },
       secondaryButton: {
         value: '确认重新初始化',
-        fontColor: Color.Red,
+        fontColor: EggClipColors.statusError,
         action: () => {
           this.reinitializePairingSecurityState();
         }
@@ -694,13 +694,13 @@ export struct SettingsPage {
 
   private spaceKeyDiagnosticColor(): ResourceColor {
     if (this.spaceKeyDiagnosticTone === 1) {
-      return EggClipColors.primary;
+      return EggClipColors.statusPending;
     }
     if (this.spaceKeyDiagnosticTone === 2) {
       return EggClipColors.statusOnline;
     }
     if (this.spaceKeyDiagnosticTone === 3) {
-      return Color.Red;
+      return EggClipColors.statusError;
     }
     return EggClipColors.textSecondary;
   }

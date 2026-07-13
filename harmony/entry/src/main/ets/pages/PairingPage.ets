@@ -238,8 +238,8 @@ export struct PairingPage {
         .width('100%')
         .height(42)
         .enabled(this.canConfirmInvitation())
-        .fontColor(EggClipColors.onPrimary)
-        .backgroundColor(this.canConfirmInvitation() ? EggClipColors.primary : EggClipColors.textSecondary)
+        .fontColor(this.canConfirmInvitation() ? EggClipColors.onPrimary : EggClipColors.textSecondary)
+        .backgroundColor(this.canConfirmInvitation() ? EggClipColors.primary : EggClipColors.controlBackground)
         .borderRadius(21)
         .onClick(() => {
           this.confirmCodeAndPrepareConnection();
@@ -376,8 +376,8 @@ export struct PairingPage {
           .layoutWeight(1)
           .height(42)
           .enabled(this.canStartPairingConnection())
-          .fontColor(EggClipColors.onPrimary)
-          .backgroundColor(this.canStartPairingConnection() ? EggClipColors.primary : EggClipColors.textSecondary)
+          .fontColor(this.canStartPairingConnection() ? EggClipColors.onPrimary : EggClipColors.textSecondary)
+          .backgroundColor(this.canStartPairingConnection() ? EggClipColors.primary : EggClipColors.controlBackground)
           .borderRadius(21)
           .onClick(() => {
             this.startPairingConnection();
@@ -400,7 +400,7 @@ export struct PairingPage {
         .height(42)
         .enabled(!this.isPairingConnectionBusy() &&
           this.connectionSnapshot.state !== PairingConnectionState.AUTHENTICATED)
-        .fontColor(EggClipColors.primary)
+        .fontColor(EggClipColors.accentForeground)
         .backgroundColor(EggClipColors.cardBackground)
         .borderRadius(21)
         .onClick(() => {
@@ -467,10 +467,10 @@ export struct PairingPage {
       return EggClipColors.statusOnline;
     }
     if (this.snapshot.state === PairingStoreState.PENDING) {
-      return EggClipColors.primary;
+      return EggClipColors.statusPending;
     }
     if (this.snapshot.state === PairingStoreState.ERROR) {
-      return Color.Red;
+      return EggClipColors.statusError;
     }
     return EggClipColors.textSecondary;
   }
@@ -539,12 +539,12 @@ export struct PairingPage {
       return EggClipColors.statusOnline;
     }
     if (this.connectionSnapshot.state === PairingConnectionState.FAILED) {
-      return Color.Red;
+      return EggClipColors.statusError;
     }
     if (this.connectionSnapshot.state === PairingConnectionState.IDLE) {
       return EggClipColors.textSecondary;
     }
-    return EggClipColors.primary;
+    return EggClipColors.statusPending;
   }
 
   private isPairingConnectionBusy(): boolean {

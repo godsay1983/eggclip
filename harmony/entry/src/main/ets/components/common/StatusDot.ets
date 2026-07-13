@@ -11,15 +11,15 @@ export struct StatusDot {
     }
 
     if (this.state === ConnectionState.CONNECTING) {
-      return EggClipColors.primary;
+      return EggClipColors.statusPending;
     }
 
     if (this.state === ConnectionState.AUTH_FAILED) {
-      return Color.Red;
+      return EggClipColors.statusError;
     }
 
     if (this.state === ConnectionState.PAUSED) {
-      return Color.Gray;
+      return EggClipColors.textSecondary;
     }
 
     return EggClipColors.textSecondary;

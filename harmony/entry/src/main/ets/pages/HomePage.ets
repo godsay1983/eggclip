@@ -211,8 +211,10 @@ export struct HomePage {
               .height(40)
               .enabled(this.currentConnectionExperience().retryEnabled)
               .fontSize(12)
-              .fontColor(EggClipColors.onPrimary)
-              .backgroundColor(EggClipColors.primary)
+              .fontColor(this.currentConnectionExperience().retryEnabled ?
+                EggClipColors.onPrimary : EggClipColors.textSecondary)
+              .backgroundColor(this.currentConnectionExperience().retryEnabled ?
+                EggClipColors.primary : EggClipColors.controlBackground)
               .borderRadius(17)
               .onClick(() => {
                 this.retryTrustedConnection();
@@ -409,7 +411,7 @@ export struct HomePage {
     Row({ space: 12 }) {
       Text('☰')
         .fontSize(22)
-        .fontColor(EggClipColors.primary)
+        .fontColor(EggClipColors.accentForeground)
 
       Column({ space: 6 }) {
         Row({ space: 8 }) {
@@ -554,7 +556,7 @@ export struct HomePage {
           .height(40)
           .enabled(this.deletingHistoryItemId.length === 0 && !this.clearingHistory)
           .fontSize(11)
-          .fontColor(Color.Red)
+          .fontColor(EggClipColors.statusError)
           .backgroundColor(Color.Transparent)
           .borderRadius(14)
           .onClick(() => {
@@ -576,7 +578,7 @@ export struct HomePage {
       primaryButton: { value: '取消', action: () => {} },
       secondaryButton: {
         value: '删除',
-        fontColor: Color.Red,
+        fontColor: EggClipColors.statusError,
         action: () => { this.deleteHistoryItem(itemId); }
       }
     });
@@ -589,7 +591,7 @@ export struct HomePage {
       primaryButton: { value: '取消', action: () => {} },
       secondaryButton: {
         value: '清空',
-        fontColor: Color.Red,
+        fontColor: EggClipColors.statusError,
         action: () => { this.clearHistory(); }
       }
     });
@@ -942,10 +944,10 @@ export struct HomePage {
       return EggClipColors.statusOnline;
     }
     if (this.outboundState === OutboundSendState.FAILED) {
-      return Color.Red;
+      return EggClipColors.statusError;
     }
     if (this.outboundState === OutboundSendState.PENDING || this.outboundState === OutboundSendState.WAITING) {
-      return EggClipColors.primary;
+      return EggClipColors.statusPending;
     }
     return EggClipColors.textSecondary;
   }

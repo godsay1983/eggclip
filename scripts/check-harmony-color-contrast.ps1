@@ -5,6 +5,13 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $harmonyRoot = Join-Path $repoRoot 'harmony'
 $manifestPath = Join-Path $harmonyRoot 'accessibility/color-contrast.json'
 $navigationSourcePath = Join-Path $harmonyRoot 'entry/src/main/ets/pages/Index.ets'
+$statusSourcePaths = @(
+  'entry/src/main/ets/pages/HomePage.ets',
+  'entry/src/main/ets/pages/DevicesPage.ets',
+  'entry/src/main/ets/pages/PairingPage.ets',
+  'entry/src/main/ets/pages/SettingsPage.ets',
+  'entry/src/main/ets/components/common/StatusDot.ets'
+)
 
 function ConvertTo-Rgb {
   param([Parameter(Mandatory = $true)][string]$HexColor)
@@ -117,9 +124,31 @@ if (-not (Test-Path -LiteralPath $navigationSourcePath -PathType Leaf)) {
   }
 }
 
+$forbiddenStatusForegrounds = @(
+  @{ Name = 'primary font foreground'; Pattern = 'fontColor\([^\r\n]*EggClipColors\.primary' },
+  @{ Name = 'primary dialog foreground'; Pattern = 'fontColor:\s*EggClipColors\.primary' },
+  @{ Name = 'primary state return'; Pattern = 'return\s+EggClipColors\.primary\s*;' },
+  @{ Name = 'primary direct glyph color'; Pattern = 'color:\s*EggClipColors\.primary' },
+  @{ Name = 'primary direct fill'; Pattern = '\.fill\(EggClipColors\.primary\)' },
+  @{ Name = 'raw red foreground'; Pattern = 'Color\.Red' }
+)
+foreach ($relativeSourcePath in $statusSourcePaths) {
+  $sourcePath = Join-Path $harmonyRoot $relativeSourcePath
+  if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+    $failures.Add("Status source is missing: $relativeSourcePath")
+    continue
+  }
+  $source = Get-Content -LiteralPath $sourcePath -Raw -Encoding UTF8
+  foreach ($forbidden in $forbiddenStatusForegrounds) {
+    if ($source -match $forbidden.Pattern) {
+      $failures.Add("$relativeSourcePath uses forbidden $($forbidden.Name).")
+    }
+  }
+}
+
 if ($failures.Count -gt 0) {
   Write-Error ("Harmony color contrast check failed:`n - " + ($failures -join "`n - "))
   exit 1
 }
 
-Write-Output "Harmony color contrast check passed: $checkedCount theme/pair combinations and the navigation source contract inspected."
+Write-Output "Harmony color contrast check passed: $checkedCount theme/pair combinations plus navigation and status source contracts inspected."

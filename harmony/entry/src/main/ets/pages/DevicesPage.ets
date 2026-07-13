@@ -394,7 +394,8 @@ export struct DevicesPage {
 
         Text(this.discoveryState)
           .fontSize(EggClipTypography.captionSize)
-          .fontColor(this.discoveryState === PocLifecycleState.FAILED ? Color.Red : EggClipColors.textSecondary)
+          .fontColor(this.discoveryState === PocLifecycleState.FAILED ?
+            EggClipColors.statusError : EggClipColors.textSecondary)
       }
       .width('100%')
 
@@ -449,7 +450,7 @@ export struct DevicesPage {
 
             Button('连接')
               .height(40)
-              .fontColor(EggClipColors.primary)
+              .fontColor(EggClipColors.accentForeground)
               .backgroundColor(EggClipColors.cardBackground)
               .borderRadius(17)
               .onClick(() => {
@@ -596,7 +597,7 @@ export struct DevicesPage {
       Button('连接上次地址')
         .width('100%')
         .height(40)
-        .fontColor(EggClipColors.primary)
+        .fontColor(EggClipColors.accentForeground)
         .backgroundColor(EggClipColors.cardBackground)
         .borderRadius(19)
         .onClick(() => {
@@ -644,7 +645,7 @@ export struct DevicesPage {
     Row({ space: 10 }) {
       Text('·')
         .fontSize(20)
-        .fontColor(EggClipColors.primary)
+        .fontColor(EggClipColors.accentForeground)
 
       Column({ space: 3 }) {
         Text(title)
@@ -712,8 +713,10 @@ export struct DevicesPage {
                 Button('保存')
                   .height(40)
                   .fontSize(12)
-                  .fontColor(EggClipColors.onPrimary)
-                  .backgroundColor(EggClipColors.primary)
+                  .fontColor(this.busyDeviceId.length === 0 ?
+                    EggClipColors.onPrimary : EggClipColors.textSecondary)
+                  .backgroundColor(this.busyDeviceId.length === 0 ?
+                    EggClipColors.primary : EggClipColors.controlBackground)
                   .borderRadius(17)
                   .enabled(this.busyDeviceId.length === 0)
                   .onClick(() => {
@@ -750,7 +753,7 @@ export struct DevicesPage {
                 Button(this.busyDeviceId === device.deviceId ? '正在移除' : '移除设备')
                   .height(40)
                   .fontSize(12)
-                  .fontColor(Color.Red)
+                  .fontColor(EggClipColors.statusError)
                   .backgroundColor(EggClipColors.cardBackground)
                   .borderRadius(16)
                   .enabled(this.busyDeviceId.length === 0)
@@ -785,7 +788,7 @@ export struct DevicesPage {
       Column({ space: 14 }) {
         Text('◌')
           .fontSize(42)
-          .fontColor(EggClipColors.primary)
+          .fontColor(EggClipColors.accentForeground)
 
         Column({ space: 6 }) {
           Text('可信设备')
@@ -850,7 +853,7 @@ export struct DevicesPage {
       },
       secondaryButton: {
         value: '确认移除',
-        fontColor: Color.Red,
+        fontColor: EggClipColors.statusError,
         action: () => {
           this.removeDevice(device.deviceId);
         }
@@ -895,8 +898,8 @@ export struct DevicesPage {
   private trustedDeviceStateColor(deviceId: string): ResourceColor {
     const label = this.trustedDeviceStateLabel(deviceId);
     if (label === '在线') return EggClipColors.statusOnline;
-    if (label === '连接中') return EggClipColors.primary;
-    if (label === '连接失败') return Color.Red;
+    if (label === '连接中') return EggClipColors.statusPending;
+    if (label === '连接失败') return EggClipColors.statusError;
     return EggClipColors.textSecondary;
   }
 
@@ -925,7 +928,7 @@ export struct DevicesPage {
     Row({ space: 10 }) {
       Text('•')
         .fontSize(20)
-        .fontColor(EggClipColors.primary)
+        .fontColor(EggClipColors.accentForeground)
 
       Column({ space: 3 }) {
         Text(title)
@@ -968,10 +971,10 @@ export struct DevicesPage {
       return EggClipColors.statusOnline;
     }
     if (this.connectionState === ConnectionState.CONNECTING) {
-      return EggClipColors.primary;
+      return EggClipColors.statusPending;
     }
     if (this.connectionState === ConnectionState.AUTH_FAILED) {
-      return Color.Red;
+      return EggClipColors.statusError;
     }
     return EggClipColors.textSecondary;
   }
