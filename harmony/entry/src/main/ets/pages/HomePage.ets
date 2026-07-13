@@ -169,7 +169,7 @@ export struct HomePage {
         left: EggClipSpacing.pagePadding,
         right: EggClipSpacing.pagePadding,
         top: EggClipSpacing.pagePadding,
-        bottom: 112
+        bottom: EggClipSpacing.floatingNavigationContentInset
       })
     }
     .width('100%')

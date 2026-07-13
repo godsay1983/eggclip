@@ -13,6 +13,7 @@ import { SettingsPage } from './SettingsPage';
 import { ThemeMode } from '../models/DomainModels';
 import { SettingsStore } from '../store/SettingsStore';
 import { EggClipColors } from '../theme/Colors';
+import { EggClipSpacing } from '../theme/Spacing';
 
 @Entry
 @Component
@@ -72,10 +73,10 @@ struct Index {
         mediumWidth: 216,
         largeWidth: 228
       },
-      barBottomMargin: 14,
+      barBottomMargin: EggClipSpacing.floatingNavigationBottomMargin,
       gradientMask: {
         maskColor: EggClipColors.pageBackground,
-        maskHeight: 96
+        maskHeight: EggClipSpacing.floatingNavigationMaskHeight
       },
       systemMaterialEffect: {
         materialType: hdsMaterial.MaterialType.ADAPTIVE,
@@ -99,7 +100,7 @@ struct Index {
         .lineHeight(14)
     }
     .width(64)
-    .height(54)
+    .height(EggClipSpacing.floatingNavigationItemHeight)
     .justifyContent(FlexAlign.Center)
   }
 
