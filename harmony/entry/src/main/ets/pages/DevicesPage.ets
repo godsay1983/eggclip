@@ -441,7 +441,9 @@ export struct DevicesPage {
 
       if (this.diagnosticsExpanded) {
         this.ConnectionCard()
-        this.RuntimeDeviceCard()
+        if (this.hasRuntimeConnection()) {
+          this.RuntimeDeviceCard()
+        }
         this.DiscoveryCard()
         this.ManualTransportCard()
         this.TroubleshootingCard()
@@ -486,28 +488,6 @@ export struct DevicesPage {
       }
       .width('100%')
 
-      Row({ space: 8 }) {
-        Button(this.discoveryState === PocLifecycleState.RUNNING ? '重新发现' : '开始发现')
-          .layoutWeight(1)
-          .height(42)
-          .fontColor(EggClipColors.onPrimary)
-          .backgroundColor(EggClipColors.primary)
-          .borderRadius(21)
-          .onClick(() => {
-            pocConnectionStore.startDiscovery();
-          })
-
-        Button('断开')
-          .width(92)
-          .height(42)
-          .fontColor(EggClipColors.textSecondary)
-          .backgroundColor(EggClipColors.controlBackground)
-          .borderRadius(21)
-          .onClick(() => {
-            pocConnectionStore.disconnectManualEndpoint();
-          })
-      }
-      .width('100%')
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -559,7 +539,7 @@ export struct DevicesPage {
       this.DeviceInfoRow('最后在线', this.runtimeLastSeenText())
       this.DeviceInfoRow('端点', this.runtimeEndpointText())
 
-      Text('当前 POC 连接只表示 WebSocket 已连接，不代表设备身份可信。正式 trusted device 会在配对和认证完成后显示公钥短指纹、重命名和移除入口。')
+      Text('临时连接只表示网络通道可用，不代表设备身份可信。完成配对和认证后，设备才会进入可信设备列表。')
         .width('100%')
         .fontSize(11)
         .fontColor(EggClipColors.textSecondary)
@@ -599,7 +579,7 @@ export struct DevicesPage {
           .fontColor(EggClipColors.textPrimary)
           .layoutWeight(1)
 
-        Text(this.discoveryState)
+        Text(this.lifecycleStateLabel(this.discoveryState))
           .fontSize(EggClipTypography.captionSize)
           .fontColor(this.discoveryState === PocLifecycleState.FAILED ?
             EggClipColors.statusError : EggClipColors.textSecondary)
@@ -612,28 +592,15 @@ export struct DevicesPage {
         .fontColor(EggClipColors.textSecondary)
         .lineHeight(20)
 
-      Row({ space: 8 }) {
-        Button('开始发现')
-          .layoutWeight(1)
-          .height(40)
-          .fontColor(EggClipColors.onPrimary)
-          .backgroundColor(EggClipColors.primary)
-          .borderRadius(19)
-          .onClick(() => {
-            pocConnectionStore.startDiscovery();
-          })
-
-        Button('停止发现')
-          .layoutWeight(1)
-          .height(40)
-          .fontColor(EggClipColors.textSecondary)
-          .backgroundColor(EggClipColors.controlBackground)
-          .borderRadius(19)
-          .onClick(() => {
-            pocConnectionStore.stopDiscovery();
-          })
-      }
-      .width('100%')
+      Button(this.discoveryActionLabel())
+        .width('100%')
+        .height(40)
+        .fontColor(this.isDiscoveryActive() ? EggClipColors.textSecondary : EggClipColors.onPrimary)
+        .backgroundColor(this.isDiscoveryActive() ? EggClipColors.controlBackground : EggClipColors.primary)
+        .borderRadius(19)
+        .onClick(() => {
+          this.toggleDiscovery();
+        })
 
       if (this.discoveryCandidates.length === 0) {
         Text('暂未发现桌面端。模拟器网络受 VPN/TUN、桥接和防火墙影响时，可以使用下方手动连接。')
@@ -671,7 +638,7 @@ export struct DevicesPage {
         }, (candidate: MdnsServiceCandidate) => candidate.instanceId)
       }
 
-      Text(`服务 ${EGGCLIP_MDNS_SERVICE_TYPE} · WebSocket ${this.transportState}`)
+      Text(`服务 ${EGGCLIP_MDNS_SERVICE_TYPE} · WebSocket ${this.lifecycleStateLabel(this.transportState)}`)
         .width('100%')
         .fontSize(11)
         .fontColor(EggClipColors.textSecondary)
@@ -693,7 +660,7 @@ export struct DevicesPage {
           .fontColor(EggClipColors.textPrimary)
           .layoutWeight(1)
 
-        Text(this.transportState)
+        Text(this.lifecycleStateLabel(this.transportState))
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
       }
@@ -779,7 +746,7 @@ export struct DevicesPage {
             .fontWeight(FontWeight.Medium)
             .fontColor(EggClipColors.textPrimary)
 
-          Text(`${this.lastSuccessfulEndpointLabel} · ${this.lastSuccessfulAt} · 仅代表 POC 地址，不代表设备可信`)
+          Text(`${this.lastSuccessfulEndpointLabel} · ${this.lastSuccessfulAt} · 仅代表网络地址，不代表设备可信`)
             .fontSize(11)
             .fontColor(EggClipColors.textSecondary)
             .lineHeight(18)
@@ -1188,14 +1155,14 @@ export struct DevicesPage {
 
   private runtimeDeviceKind(): string {
     if (this.transportState === PocLifecycleState.RUNNING) {
-      return '实验连接';
+      return '诊断连接';
     }
-    return '待配对';
+    return '连接记录';
   }
 
   private runtimeDeviceName(): string {
     if (this.transportState === PocLifecycleState.RUNNING) {
-      return '桌面端 POC 连接';
+      return '桌面端临时连接';
     }
     if (this.transportState === PocLifecycleState.FAILED) {
       return '桌面端连接失败';
@@ -1205,7 +1172,7 @@ export struct DevicesPage {
 
   private runtimeDeviceDescription(): string {
     if (this.transportState === PocLifecycleState.RUNNING) {
-      return '已建立临时 WebSocket，可回到首页用 PasteButton 手动发送文本。';
+      return '网络通道已建立，可回到首页使用系统粘贴按钮发送文本。';
     }
     if (this.transportState === PocLifecycleState.FAILED) {
       return '当前没有可信设备记录；可根据排障提示重试手动连接。';
@@ -1228,6 +1195,49 @@ export struct DevicesPage {
     return `${this.manualHost}:${port}`;
   }
 
+  private hasRuntimeConnection(): boolean {
+    return this.transportState !== PocLifecycleState.IDLE &&
+      this.manualHost.trim().length > 0 &&
+      this.manualPort.length > 0 &&
+      this.manualPort !== '0';
+  }
+
+  private lifecycleStateLabel(state: PocLifecycleState): string {
+    if (state === PocLifecycleState.STARTING) {
+      return '启动中';
+    }
+    if (state === PocLifecycleState.RUNNING) {
+      return '运行中';
+    }
+    if (state === PocLifecycleState.FAILED) {
+      return '失败';
+    }
+    return '未启动';
+  }
+
+  private isDiscoveryActive(): boolean {
+    return this.discoveryState === PocLifecycleState.STARTING ||
+      this.discoveryState === PocLifecycleState.RUNNING;
+  }
+
+  private discoveryActionLabel(): string {
+    if (this.isDiscoveryActive()) {
+      return '停止发现';
+    }
+    if (this.discoveryState === PocLifecycleState.FAILED) {
+      return '重新发现';
+    }
+    return '开始发现';
+  }
+
+  private toggleDiscovery(): void {
+    if (this.isDiscoveryActive()) {
+      pocConnectionStore.stopDiscovery();
+      return;
+    }
+    pocConnectionStore.startDiscovery();
+  }
+
   private troubleshootingHint(): string {
     if (this.transportState === PocLifecycleState.RUNNING) {
       return 'WebSocket 已连接。现在可以回到首页，通过 PasteButton 发送本机剪贴板文本。';
@@ -1246,14 +1256,14 @@ export struct DevicesPage {
 
   private diagnosticsSummary(): string {
     if (this.transportState === PocLifecycleState.RUNNING) {
-      return `调试连接在线 · ${this.runtimeEndpointText()}`;
+      return '桌面端连接正常';
     }
     if (this.discoveryCandidates.length > 0) {
-      return `发现 ${this.discoveryCandidates.length} 个候选，需展开后选择连接`;
+      return `发现 ${this.discoveryCandidates.length} 个桌面端，可展开选择`;
     }
     if (this.transportState === PocLifecycleState.FAILED || this.discoveryState === PocLifecycleState.FAILED) {
-      return '发现或连接失败，可展开查看手动 IP 和排障建议';
+      return '发现或连接失败，可展开查看排障建议';
     }
-    return '默认收起；mDNS 或模拟器网络异常时再展开使用';
+    return '自动连接异常时可展开检查';
   }
 }
