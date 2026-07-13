@@ -11,6 +11,12 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 if (-not $?) { exit 1 }
 & (Join-Path $PSScriptRoot 'check-harmony-color-contrast.ps1')
 if (-not $?) { exit 1 }
+& (Join-Path $PSScriptRoot 'check-harmony-market-icon.ps1')
+if (-not $?) { exit 1 }
+& (Join-Path $PSScriptRoot 'check-harmony-navigation-layout.ps1')
+if (-not $?) { exit 1 }
+& (Join-Path $PSScriptRoot 'check-harmony-log-privacy.ps1')
+if (-not $?) { exit 1 }
 
 Push-Location $harmonyRoot
 try {
