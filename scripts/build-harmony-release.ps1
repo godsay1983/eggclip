@@ -9,6 +9,8 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 
 & (Join-Path $PSScriptRoot 'verify-release-metadata.ps1')
 if (-not $?) { exit 1 }
+& (Join-Path $PSScriptRoot 'check-harmony-color-contrast.ps1')
+if (-not $?) { exit 1 }
 
 Push-Location $harmonyRoot
 try {

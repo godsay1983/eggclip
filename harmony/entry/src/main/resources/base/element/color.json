@@ -25,6 +25,10 @@
       "value": "#3D2D00"
     },
     {
+      "name": "eggclip_accent_foreground",
+      "value": "#6B4700"
+    },
+    {
       "name": "eggclip_text_primary",
       "value": "#29251E"
     },
@@ -34,7 +38,15 @@
     },
     {
       "name": "eggclip_status_online",
-      "value": "#4E9F6D"
+      "value": "#287548"
+    },
+    {
+      "name": "eggclip_status_pending",
+      "value": "#6B4700"
+    },
+    {
+      "name": "eggclip_status_error",
+      "value": "#B3261E"
     }
   ]
 }

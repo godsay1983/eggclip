@@ -1,0 +1,169 @@
+{
+  "schemaVersion": 1,
+  "themes": [
+    {
+      "name": "light",
+      "resourceFile": "entry/src/main/resources/base/element/color.json"
+    },
+    {
+      "name": "dark",
+      "resourceFile": "entry/src/main/resources/dark/element/color.json"
+    }
+  ],
+  "pairs": [
+    {
+      "name": "primary text on page",
+      "kind": "text",
+      "foreground": "eggclip_text_primary",
+      "background": "eggclip_page_background",
+      "minimumRatio": 4.5
+    },
+    {
+      "name": "primary text on card",
+      "kind": "text",
+      "foreground": "eggclip_text_primary",
+      "background": "eggclip_card_background",
+      "minimumRatio": 4.5
+    },
+    {
+      "name": "primary text on control",
+      "kind": "text",
+      "foreground": "eggclip_text_primary",
+      "background": "eggclip_control_background",
+      "minimumRatio": 4.5
+    },
+    {
+      "name": "secondary text on page",
+      "kind": "text",
+      "foreground": "eggclip_text_secondary",
+      "background": "eggclip_page_background",
+      "minimumRatio": 4.5
+    },
+    {
+      "name": "secondary text on card",
+      "kind": "text",
+      "foreground": "eggclip_text_secondary",
+      "background": "eggclip_card_background",
+      "minimumRatio": 4.5
+    },
+    {
+      "name": "secondary text on control",
+      "kind": "text",
+      "foreground": "eggclip_text_secondary",
+      "background": "eggclip_control_background",
+      "minimumRatio": 4.5
+    },
+    {
+      "name": "label on primary action",
+      "kind": "text",
+      "foreground": "eggclip_on_primary",
+      "background": "eggclip_primary",
+      "minimumRatio": 4.5
+    },
+    {
+      "name": "accent text on page",
+      "kind": "text",
+      "foreground": "eggclip_accent_foreground",
+      "background": "eggclip_page_background",
+      "minimumRatio": 4.5
+    },
+    {
+      "name": "accent text on card",
+      "kind": "text",
+      "foreground": "eggclip_accent_foreground",
+      "background": "eggclip_card_background",
+      "minimumRatio": 4.5
+    },
+    {
+      "name": "accent text on control",
+      "kind": "text",
+      "foreground": "eggclip_accent_foreground",
+      "background": "eggclip_control_background",
+      "minimumRatio": 4.5
+    },
+    {
+      "name": "pending text on page",
+      "kind": "text",
+      "foreground": "eggclip_status_pending",
+      "background": "eggclip_page_background",
+      "minimumRatio": 4.5
+    },
+    {
+      "name": "pending text on card",
+      "kind": "text",
+      "foreground": "eggclip_status_pending",
+      "background": "eggclip_card_background",
+      "minimumRatio": 4.5
+    },
+    {
+      "name": "pending text on control",
+      "kind": "text",
+      "foreground": "eggclip_status_pending",
+      "background": "eggclip_control_background",
+      "minimumRatio": 4.5
+    },
+    {
+      "name": "online text on page",
+      "kind": "text",
+      "foreground": "eggclip_status_online",
+      "background": "eggclip_page_background",
+      "minimumRatio": 4.5
+    },
+    {
+      "name": "online text on card",
+      "kind": "text",
+      "foreground": "eggclip_status_online",
+      "background": "eggclip_card_background",
+      "minimumRatio": 4.5
+    },
+    {
+      "name": "online text on control",
+      "kind": "text",
+      "foreground": "eggclip_status_online",
+      "background": "eggclip_control_background",
+      "minimumRatio": 4.5
+    },
+    {
+      "name": "error text on page",
+      "kind": "text",
+      "foreground": "eggclip_status_error",
+      "background": "eggclip_page_background",
+      "minimumRatio": 4.5
+    },
+    {
+      "name": "error text on card",
+      "kind": "text",
+      "foreground": "eggclip_status_error",
+      "background": "eggclip_card_background",
+      "minimumRatio": 4.5
+    },
+    {
+      "name": "error text on control",
+      "kind": "text",
+      "foreground": "eggclip_status_error",
+      "background": "eggclip_control_background",
+      "minimumRatio": 4.5
+    },
+    {
+      "name": "selected navigation icon",
+      "kind": "icon",
+      "foreground": "eggclip_on_primary",
+      "background": "eggclip_primary",
+      "minimumRatio": 3.0
+    },
+    {
+      "name": "default navigation icon",
+      "kind": "icon",
+      "foreground": "eggclip_text_primary",
+      "background": "eggclip_card_background",
+      "minimumRatio": 3.0
+    },
+    {
+      "name": "online status icon",
+      "kind": "icon",
+      "foreground": "eggclip_status_online",
+      "background": "eggclip_card_background",
+      "minimumRatio": 3.0
+    }
+  ]
+}
