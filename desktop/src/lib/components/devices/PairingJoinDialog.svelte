@@ -130,9 +130,20 @@
   <button class="pairing-dialog-backdrop" type="button" aria-label="取消加入设备" on:click={() => closeDialog()}></button>
   <dialog open class="pairing-dialog-card" aria-modal="true" aria-labelledby="pairing-dialog-title">
     <header class="pairing-dialog-header">
-      <div>
-        <h2 id="pairing-dialog-title">加入另一台电脑</h2>
-        <p>粘贴由另一台 EggClip 生成的一次性邀请。</p>
+      <div class="pairing-dialog-heading">
+        <span class="pairing-dialog-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" role="img">
+            <rect x="2.5" y="5" width="12" height="10" rx="2.5"></rect>
+            <path d="M6 19h5M8.5 15v4"></path>
+            <rect x="15.5" y="8" width="6" height="9" rx="1.8"></rect>
+            <path d="M17.8 14.5h1.4"></path>
+          </svg>
+        </span>
+        <div>
+          <span class="pairing-dialog-eyebrow">可信设备配对</span>
+          <h2 id="pairing-dialog-title">加入另一台电脑</h2>
+          <p>粘贴邀请并核对确认码，建立加密连接。</p>
+        </div>
       </div>
       <button class="qr-dialog-close" type="button" aria-label="关闭" on:click={() => closeDialog()}>×</button>
     </header>

@@ -18,6 +18,10 @@
   --line: rgba(93, 75, 42, 0.12);
   --online: #4e9f6d;
   --offline: #a59b8c;
+  --device-icon-color: #5f4700;
+  --device-icon-bg: rgba(244, 196, 48, 0.24);
+  --device-icon-border: rgba(167, 122, 0, 0.16);
+  --device-icon-hero-bg: linear-gradient(145deg, rgba(255, 234, 128, 0.78), rgba(244, 196, 48, 0.28));
 }
 
 * {
@@ -745,11 +749,99 @@ footer {
   gap: 8px;
 }
 
-.device-entry-actions .primary-action,
-.device-entry-actions .secondary-action {
+.device-entry-button {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
   min-width: 0;
-  height: 38px;
+  min-height: 58px;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  color: var(--text);
+  background: var(--card);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.device-entry-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(167, 122, 0, 0.3);
+  box-shadow: 0 8px 20px rgba(78, 56, 11, 0.1);
+}
+
+.device-entry-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.device-entry-button.add-device-entry {
+  border-color: rgba(167, 122, 0, 0.24);
+  background: linear-gradient(145deg, rgba(255, 234, 128, 0.8), rgba(244, 196, 48, 0.42));
+}
+
+.device-entry-icon,
+.pairing-dialog-mark {
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--device-icon-border);
+  border-radius: 11px;
+  color: var(--device-icon-color);
+  background: var(--device-icon-bg);
+}
+
+.device-entry-icon {
+  width: 34px;
+  height: 34px;
+}
+
+.device-entry-icon svg,
+.pairing-dialog-mark svg {
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.device-entry-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.device-entry-copy strong {
+  overflow: hidden;
   font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-entry-copy small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-entry-chevron {
+  color: var(--muted);
+  font-size: 20px;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.device-entry-actions .device-entry-button {
+  min-width: 0;
 }
 
 .device-entry-hint {
@@ -1106,9 +1198,37 @@ footer {
   gap: 12px;
 }
 
+.pairing-dialog-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 11px;
+}
+
+.pairing-dialog-heading > div {
+  min-width: 0;
+}
+
+.pairing-dialog-mark {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  background: var(--device-icon-hero-bg);
+}
+
+.pairing-dialog-eyebrow {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--primary-deep);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
 .pairing-dialog-header h2 {
   margin: 0;
-  font-size: 17px;
+  font-size: 16px;
+  line-height: 1.25;
 }
 
 .pairing-dialog-header p,
@@ -1116,7 +1236,7 @@ footer {
 .pairing-addresses p,
 .pairing-success p,
 .pairing-issue p {
-  margin: 4px 0 0;
+  margin: 3px 0 0;
   color: var(--muted);
   font-size: 11px;
   line-height: 1.45;
@@ -1838,6 +1958,10 @@ footer {
   --line: rgba(255, 244, 221, 0.09);
   --online: #78c091;
   --offline: #786f62;
+  --device-icon-color: #ffe27a;
+  --device-icon-bg: rgba(231, 190, 50, 0.16);
+  --device-icon-border: rgba(255, 226, 122, 0.3);
+  --device-icon-hero-bg: linear-gradient(145deg, rgba(231, 190, 50, 0.24), rgba(231, 190, 50, 0.1));
 }
 
 :root[data-theme="dark"] body {
@@ -1938,6 +2062,10 @@ footer {
     --line: rgba(255, 244, 221, 0.09);
     --online: #78c091;
     --offline: #786f62;
+    --device-icon-color: #ffe27a;
+    --device-icon-bg: rgba(231, 190, 50, 0.16);
+    --device-icon-border: rgba(255, 226, 122, 0.3);
+    --device-icon-hero-bg: linear-gradient(145deg, rgba(231, 190, 50, 0.24), rgba(231, 190, 50, 0.1));
   }
 
   :root:not([data-theme="light"]):not([data-theme="dark"]) body {

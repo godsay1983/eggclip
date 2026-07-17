@@ -322,16 +322,43 @@
         </div>
         <div class="device-entry-actions">
           <button
-            class="primary-action"
+            class="device-entry-button add-device-entry"
             type="button"
             disabled={!invitationTargetSpace() || $shellSnapshot.syncSpace.state === "inviting"}
             on:click={() => createInvitationForCurrentOwner()}
-          >添加设备</button>
+          >
+            <span class="device-entry-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" role="img">
+                <rect x="3.5" y="5" width="12" height="14" rx="3"></rect>
+                <path d="M7.5 16h4"></path>
+                <path d="M19 8v6M16 11h6"></path>
+              </svg>
+            </span>
+            <span class="device-entry-copy">
+              <strong>添加设备</strong>
+              <small>生成配对邀请</small>
+            </span>
+            <span class="device-entry-chevron" aria-hidden="true">›</span>
+          </button>
           <button
-            class="secondary-action"
+            class="device-entry-button join-device-entry"
             type="button"
             on:click={() => (joinDialogVisible = true)}
-          >加入另一台电脑</button>
+          >
+            <span class="device-entry-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" role="img">
+                <rect x="2.5" y="5" width="12" height="10" rx="2.5"></rect>
+                <path d="M6 19h5M8.5 15v4"></path>
+                <rect x="15.5" y="8" width="6" height="9" rx="1.8"></rect>
+                <path d="M17.8 14.5h1.4"></path>
+              </svg>
+            </span>
+            <span class="device-entry-copy">
+              <strong>加入另一台电脑</strong>
+              <small>粘贴邀请并连接</small>
+            </span>
+            <span class="device-entry-chevron" aria-hidden="true">›</span>
+          </button>
         </div>
         {#if !invitationTargetSpace()}
           <p class="device-entry-hint">当前没有可发出邀请的协调端空间；仍可通过邀请加入另一台电脑。</p>
