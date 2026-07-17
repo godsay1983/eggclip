@@ -13,6 +13,7 @@
   import { settingsSnapshot } from "$lib/stores/settings";
   import { autostartSnapshot } from "$lib/stores/autostart";
   import { shellSnapshot } from "$lib/stores/shell";
+  import { canManageSyncSpace } from "$lib/pairing-join";
   import type { AppSettings, ThemeMode } from "$lib/types/settings";
   import type { SyncSpaceSummary } from "$lib/types/shell";
   import { listen } from "@tauri-apps/api/event";
@@ -45,7 +46,8 @@
   }
 
   function invitationTargetSpace(): SyncSpaceSummary | null {
-    const ownerSpaces = $shellSnapshot.syncSpace.spaces.filter((space) => space.localRole === "owner");
+    const ownerSpaces = $shellSnapshot.syncSpace.spaces.filter((space) =>
+      canManageSyncSpace(space.localRole, "invite"));
     return ownerSpaces.find((space) => space.id === $shellSnapshot.syncSpace.activeSpaceId) ?? ownerSpaces[0] ?? null;
   }
 
@@ -498,7 +500,7 @@
                 disabled={$shellSnapshot.syncSpace.state === "copyingInvitation"}
                 on:click={() =>
                   shellSnapshot.copyPairingInvitation(
-                    $shellSnapshot.syncSpace.invitation?.invitationString ?? "",
+                    $shellSnapshot.syncSpace.invitation?.invitationId ?? "",
                   )}
               >
                 <span aria-hidden="true">⧉</span>
@@ -530,7 +532,7 @@
           onRemove={(deviceId) => shellSnapshot.removeTrustedDevice(deviceId)}
           canRemove={(device) =>
             $shellSnapshot.syncSpace.spaces.some((space) =>
-              space.id === device.spaceId && space.localRole === "owner")}
+              space.id === device.spaceId && canManageSyncSpace(space.localRole, "remove"))}
         />
       </div>
       {:else}

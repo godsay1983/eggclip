@@ -134,7 +134,6 @@ interface PairingInvitationSummaryDto {
   invitationId: string;
   spaceId: string;
   spaceDisplayName: string;
-  invitation: string;
   qrSvg: string;
   expiresAtMs: number;
   expiresInSeconds: number;
@@ -359,9 +358,9 @@ export async function createPairingInvitation(
   return toPairingInvitationSummary(invitation);
 }
 
-export async function copyPairingInvitation(invitationString: string): Promise<void> {
+export async function copyPairingInvitation(invitationId: string): Promise<void> {
   await invoke("copy_pairing_invitation", {
-    invitation: invitationString,
+    invitationId,
   });
 }
 
@@ -576,7 +575,6 @@ function toPairingInvitationSummary(
     invitationId: invitation.invitationId,
     spaceId: invitation.spaceId,
     spaceDisplayName: invitation.spaceDisplayName,
-    invitationString: invitation.invitation,
     qrSvg: invitation.qrSvg,
     expiresAt: new Date(invitation.expiresAtMs).toLocaleTimeString("zh-CN", {
       hour: "2-digit",

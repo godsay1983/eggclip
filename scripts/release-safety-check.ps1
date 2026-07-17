@@ -37,6 +37,43 @@ foreach ($relativePath in $tracked) {
   }
 }
 
+$frontendSensitiveStatePattern = '(?i)\b(?:invitationString|pairingSecret|privateKey|sharedSecret|rawFrame|frameBody|decryptedPayload)\b'
+$frontendFiles = Get-ChildItem -LiteralPath (Join-Path $repoRoot 'desktop/src') -Recurse -File |
+  Where-Object { $_.Extension -match '(?i)^\.(ts|svelte)$' }
+foreach ($file in $frontendFiles) {
+  $relativePath = $file.FullName.Substring($repoRoot.Length).TrimStart('\', '/') -replace '\\', '/'
+  $content = Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8
+  if ($content -match $frontendSensitiveStatePattern) {
+    $violations.Add("$relativePath [sensitive material identifier in frontend state]")
+  }
+}
+
+$rustLogPattern = '(?i)\b(?:trace|debug|info|warn|error)!\s*\(|\b(?:println|eprintln|dbg)!\s*\('
+$rustSensitivePattern = '(?i)pairing[_ ]?secret|invitation(?:_text|_secret|string)|space[_ ]?key(?!_version| version)|private[_ ]?key|shared[_ ]?secret|clipboard(?:_text|_content| body)|raw[_ ]?frame|frame[_ ]?body|decrypted[_ ]?payload|plaintext|ciphertext'
+$rustFiles = Get-ChildItem -LiteralPath (Join-Path $repoRoot 'desktop/src-tauri/src') -Recurse -File -Filter '*.rs'
+foreach ($file in $rustFiles) {
+  $lines = @(Get-Content -LiteralPath $file.FullName -Encoding UTF8)
+  for ($lineIndex = 0; $lineIndex -lt $lines.Count; $lineIndex += 1) {
+    if ($lines[$lineIndex] -notmatch $rustLogPattern) { continue }
+    $windowEnd = [Math]::Min($lines.Count - 1, $lineIndex + 4)
+    $logCall = $lines[$lineIndex..$windowEnd] -join "`n"
+    if ($logCall -match $rustSensitivePattern) {
+      $relativePath = $file.FullName.Substring($repoRoot.Length).TrimStart('\', '/') -replace '\\', '/'
+      $violations.Add("$relativePath`:$($lineIndex + 1) [sensitive identifier passed to Rust log]")
+    }
+  }
+}
+
+$fixtureValidator = Join-Path $repoRoot 'protocol/scripts/validate-fixtures.mjs'
+if (-not (Test-Path -LiteralPath $fixtureValidator -PathType Leaf)) {
+  $violations.Add('protocol/scripts/validate-fixtures.mjs [fixture validator missing]')
+} else {
+  & node $fixtureValidator
+  if ($LASTEXITCODE -ne 0) {
+    $violations.Add('protocol/test-vectors [shared fixture validation failed]')
+  }
+}
+
 $buildProfilePath = Join-Path $repoRoot 'harmony/build-profile.json5'
 if (Test-Path -LiteralPath $buildProfilePath) {
   $profile = Get-Content -LiteralPath $buildProfilePath -Raw -Encoding UTF8

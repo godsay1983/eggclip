@@ -8,7 +8,13 @@ import { createAutostartStore } from "$lib/stores/autostart";
 import type { AutostartSnapshot } from "$lib/types/autostart";
 import type { AppSettings } from "$lib/types/settings";
 import { countOnlineDevices, mergeRuntimeDevices } from "$lib/stores/shell-state";
-import { classifyPairingJoinError, prioritizedPairingAddresses } from "$lib/pairing-join";
+import {
+  canManageSyncSpace,
+  classifyPairingJoinError,
+  emptyPairingJoinFormState,
+  prioritizedPairingAddresses,
+  readyPairingJoinFormState,
+} from "$lib/pairing-join";
 import type { DeviceSummary } from "$lib/types/shell";
 
 describe("desktop shell", () => {
@@ -146,6 +152,38 @@ describe("desktop shell", () => {
       retryableNetwork: true,
     });
     expect(classifyPairingJoinError("设备认证失败").title).toBe("认证失败");
+  });
+
+  it("clears join material after close or success and restores a validated address choice", () => {
+    const cleared = emptyPairingJoinFormState();
+    expect(cleared).toMatchObject({
+      invitationText: "",
+      selectedCandidateId: "",
+      confirmationMatches: false,
+      manualHost: "",
+    });
+    const ready = readyPairingJoinFormState({
+      attemptId: "attempt-1",
+      issuerDeviceName: "EggClip A",
+      issuerShortFingerprint: "12345678",
+      spaceShortId: "87654321",
+      expiresAtMs: Date.now() + 60_000,
+      expiresInSeconds: 60,
+      confirmationCode: "123456",
+      addresses: [{ candidateId: "address-1", displayAddress: "192.168.*.*:4567" }],
+    });
+    expect(ready.invitationText).toBe("");
+    expect(ready.selectedCandidateId).toBe("address-1");
+    expect(ready.confirmationMatches).toBe(false);
+  });
+
+  it("keeps owner and member device actions separated", () => {
+    expect(canManageSyncSpace("owner", "invite")).toBe(true);
+    expect(canManageSyncSpace("owner", "remove")).toBe(true);
+    expect(canManageSyncSpace("owner", "leave")).toBe(false);
+    expect(canManageSyncSpace("member", "invite")).toBe(false);
+    expect(canManageSyncSpace("member", "remove")).toBe(false);
+    expect(canManageSyncSpace("member", "leave")).toBe(true);
   });
 
   it("returns a single offline placeholder when no runtime device exists", () => {

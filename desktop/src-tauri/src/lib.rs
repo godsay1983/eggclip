@@ -49,6 +49,7 @@ pub fn run() {
         .manage(discovery::PocDiscoveryRuntime::default())
         .manage(transport::PocTransportRuntime::default())
         .manage(pairing::PairingJoinRuntime::default())
+        .manage(pairing::PairingInvitationClipboardRuntime::default())
         .setup(|app| {
             pairing::reset_trusted_device_connection_states(app.handle())
                 .map_err(std::io::Error::other)?;

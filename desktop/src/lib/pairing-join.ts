@@ -1,4 +1,41 @@
-import type { PairingJoinAddressSummary } from "$lib/types/pairing";
+import type { PairingJoinAddressSummary, PairingJoinAttemptSummary } from "$lib/types/pairing";
+
+export interface PairingJoinFormState {
+  invitationText: string;
+  selectedCandidateId: string;
+  confirmationMatches: boolean;
+  manualHost: string;
+  manualPort: number;
+  useManualAddress: boolean;
+}
+
+export function emptyPairingJoinFormState(): PairingJoinFormState {
+  return {
+    invitationText: "",
+    selectedCandidateId: "",
+    confirmationMatches: false,
+    manualHost: "",
+    manualPort: 4567,
+    useManualAddress: false,
+  };
+}
+
+export function readyPairingJoinFormState(
+  attempt: PairingJoinAttemptSummary,
+): PairingJoinFormState {
+  return {
+    ...emptyPairingJoinFormState(),
+    selectedCandidateId: attempt.addresses[0]?.candidateId ?? "",
+    useManualAddress: attempt.addresses.length === 0,
+  };
+}
+
+export function canManageSyncSpace(
+  role: "owner" | "member",
+  action: "invite" | "remove" | "leave",
+): boolean {
+  return role === "owner" ? action !== "leave" : action === "leave";
+}
 
 export interface PairingJoinIssue {
   title: string;

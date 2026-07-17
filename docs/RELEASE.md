@@ -20,6 +20,8 @@
 
 安全检查不得输出或提交签名密码、证书路径、剪贴板正文、邀请秘密和密钥。共享 `harmony/build-profile.json5` 必须保持无签名材料。
 
+本机需要 DevEco 签名配置时，使用忽略提交的 `harmony/build-profile.local*.json5` 保存。进入 DevEco 前可执行 `./scripts/sanitize-harmony-build-profile.ps1 -Restore` 恢复本机配置；构建结束后必须执行 `./scripts/sanitize-harmony-build-profile.ps1` 重新净化共享文件，再运行安全门禁。脚本不会在输出中展示签名内容。
+
 ## Windows NSIS
 
 内部验收包：

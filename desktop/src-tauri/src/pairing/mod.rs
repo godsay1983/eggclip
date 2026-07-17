@@ -1,4 +1,4 @@
-use std::{fmt, path::Path};
+use std::{fmt, path::Path, sync::Mutex};
 
 #[cfg(test)]
 use std::collections::HashMap;
@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::Manager;
 use uuid::Uuid;
+use zeroize::Zeroize;
 
 pub mod client;
 pub(crate) mod client_handshake;
@@ -18,6 +19,72 @@ pub(crate) mod client_join;
 mod join_runtime;
 
 pub use join_runtime::PairingJoinRuntime;
+
+#[derive(Default)]
+pub struct PairingInvitationClipboardRuntime {
+    active: Mutex<Option<PairingInvitationClipboardMaterial>>,
+}
+
+struct PairingInvitationClipboardMaterial {
+    invitation_id: Uuid,
+    invitation: String,
+    expires_at_ms: u64,
+}
+
+impl Drop for PairingInvitationClipboardMaterial {
+    fn drop(&mut self) {
+        self.invitation.zeroize();
+    }
+}
+
+impl PairingInvitationClipboardRuntime {
+    fn replace(&self, summary: &PairingInvitationSummary) -> Result<(), PairingError> {
+        let invitation_id =
+            Uuid::parse_str(&summary.invitation_id).map_err(|_| PairingError::InvalidInvitation)?;
+        let mut active = self
+            .active
+            .lock()
+            .map_err(|_| PairingError::RuntimeUnavailable)?;
+        *active = Some(PairingInvitationClipboardMaterial {
+            invitation_id,
+            invitation: summary.invitation.clone(),
+            expires_at_ms: summary.expires_at_ms,
+        });
+        Ok(())
+    }
+
+    fn copyable(&self, invitation_id: &str, now_ms: u64) -> Result<String, PairingError> {
+        let invitation_id =
+            Uuid::parse_str(invitation_id).map_err(|_| PairingError::InvalidInvitation)?;
+        let mut active = self
+            .active
+            .lock()
+            .map_err(|_| PairingError::RuntimeUnavailable)?;
+        if active
+            .as_ref()
+            .is_some_and(|material| material.expires_at_ms <= now_ms)
+        {
+            *active = None;
+            return Err(PairingError::InvitationExpired);
+        }
+        active
+            .as_ref()
+            .filter(|material| material.invitation_id == invitation_id)
+            .map(|material| material.invitation.clone())
+            .ok_or(PairingError::InvitationMissing)
+    }
+
+    fn expire(&self, now_ms: u64) {
+        if let Ok(mut active) = self.active.lock() {
+            if active
+                .as_ref()
+                .is_some_and(|material| material.expires_at_ms <= now_ms)
+            {
+                *active = None;
+            }
+        }
+    }
+}
 
 use crate::{
     clipboard,
@@ -122,6 +189,7 @@ pub struct PairingInvitationSummary {
     pub invitation_id: String,
     pub space_id: String,
     pub space_display_name: String,
+    #[serde(skip_serializing)]
     pub invitation: String,
     pub qr_svg: String,
     pub expires_at_ms: u64,
@@ -226,6 +294,7 @@ pub enum PairingError {
     CannotRevokeLocalDevice,
     Identity(String),
     InvalidInvitation,
+    RuntimeUnavailable,
     InvitationMissing,
     InvitationExpired,
     InvitationConsumed,
@@ -262,6 +331,9 @@ impl fmt::Display for PairingError {
             }
             PairingError::Identity(message) => write!(formatter, "identity error: {message}"),
             PairingError::InvalidInvitation => formatter.write_str("invalid pairing invitation"),
+            PairingError::RuntimeUnavailable => {
+                formatter.write_str("pairing invitation runtime unavailable")
+            }
             PairingError::InvitationMissing => formatter.write_str("pairing invitation missing"),
             PairingError::InvitationExpired => formatter.write_str("pairing invitation expired"),
             PairingError::InvitationConsumed => formatter.write_str("pairing invitation consumed"),
@@ -407,6 +479,7 @@ pub fn run_space_hmac_diagnostic(
 #[tauri::command]
 pub fn create_pairing_invitation(
     app: tauri::AppHandle,
+    runtime: tauri::State<'_, PairingInvitationClipboardRuntime>,
     space_id: String,
 ) -> Result<PairingInvitationSummary, String> {
     let path = database_path(&app)?;
@@ -442,15 +515,29 @@ pub fn create_pairing_invitation(
             .map_err(|error| format!("无法生成配对邀请：{error}"))?;
         summary.confirmation_code = confirmation_code(&payload_json);
     }
+    runtime
+        .replace(&summary)
+        .map_err(|error| format!("无法暂存配对邀请：{error}"))?;
     Ok(summary)
 }
 
 #[tauri::command]
-pub fn copy_pairing_invitation(app: tauri::AppHandle, invitation: String) -> Result<(), String> {
-    validate_pairing_invitation_uri(&invitation)
+pub fn copy_pairing_invitation(
+    app: tauri::AppHandle,
+    runtime: tauri::State<'_, PairingInvitationClipboardRuntime>,
+    invitation_id: String,
+) -> Result<(), String> {
+    let mut invitation = runtime
+        .copyable(&invitation_id, now_ms()?)
         .map_err(|error| format!("无法复制配对邀请：{error}"))?;
-    clipboard::write_suppressed_clipboard_text(&app, invitation)
-        .map_err(|error| format!("无法复制配对邀请：{error}"))
+    let result = (|| {
+        validate_pairing_invitation_uri(&invitation)
+            .map_err(|error| format!("无法复制配对邀请：{error}"))?;
+        clipboard::write_suppressed_clipboard_text(&app, invitation.clone())
+            .map_err(|error| format!("无法复制配对邀请：{error}"))
+    })();
+    invitation.zeroize();
+    result
 }
 
 pub fn start_pairing_invitation_expiry_task(app: tauri::AppHandle) {
@@ -465,6 +552,9 @@ pub fn start_pairing_invitation_expiry_task(app: tauri::AppHandle) {
             };
             if let Some(runtime) = app.try_state::<PairingJoinRuntime>() {
                 let _ = runtime.expire(timestamp_ms);
+            }
+            if let Some(runtime) = app.try_state::<PairingInvitationClipboardRuntime>() {
+                runtime.expire(timestamp_ms);
             }
             let Ok(path) = database_path(&app) else {
                 continue;
@@ -2548,6 +2638,49 @@ mod tests {
         assert_ne!(
             decode_invitation_payload(&first.invitation).pairing_secret,
             decode_invitation_payload(&second.invitation).pairing_secret
+        );
+    }
+
+    #[test]
+    fn invitation_secret_stays_out_of_serialized_summary_and_expires_from_runtime() {
+        let mut connection = open_in_memory_database().expect("database should open");
+        let mut store = MemorySecretStore::default();
+        let space = create_sync_space(&mut connection, &mut store, "默认空间", 1_700_000_000_000)
+            .expect("space should be created");
+        let invitation = create_pairing_invitation_for_space(
+            &mut connection,
+            &mut store,
+            &space.space_id,
+            1_700_000_000_500,
+        )
+        .expect("invitation should be created");
+        let payload = decode_invitation_payload(&invitation.invitation);
+        let stored = PairingInvitationRepository::new(&connection)
+            .get(Uuid::parse_str(&invitation.invitation_id).expect("invitation id"))
+            .expect("invitation lookup")
+            .expect("stored invitation");
+        assert_ne!(stored.secret_verifier, payload.pairing_secret);
+        let serialized = serde_json::to_value(&invitation).expect("summary should serialize");
+        assert!(serialized.get("invitation").is_none());
+        assert!(serialized.get("qrSvg").is_some());
+
+        let runtime = PairingInvitationClipboardRuntime::default();
+        runtime
+            .replace(&invitation)
+            .expect("runtime should retain it");
+        assert_eq!(
+            runtime
+                .copyable(&invitation.invitation_id, invitation.expires_at_ms - 1)
+                .expect("active invitation"),
+            invitation.invitation
+        );
+        assert_eq!(
+            runtime.copyable(&invitation.invitation_id, invitation.expires_at_ms),
+            Err(PairingError::InvitationExpired)
+        );
+        assert_eq!(
+            runtime.copyable(&invitation.invitation_id, invitation.expires_at_ms + 1),
+            Err(PairingError::InvitationMissing)
         );
     }
 

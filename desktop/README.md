@@ -53,6 +53,14 @@ cargo check
 cargo test
 ```
 
+提交或打包前运行统一门禁：
+
+```powershell
+pnpm release:check
+```
+
+该命令还会验证共享协议向量、扫描仓库中的敏感文件和凭据特征，并拒绝前端状态中的完整邀请、密钥或原始帧标识以及 Rust 日志中的敏感数据引用。
+
 ## NSIS 内部验收包
 
 ```powershell

@@ -755,7 +755,7 @@ export const shellSnapshot = {
       }));
     }
   },
-  async copyPairingInvitation(invitationString: string) {
+  async copyPairingInvitation(invitationId: string) {
     snapshot.update((state) => ({
       ...state,
       syncSpace: {
@@ -765,7 +765,7 @@ export const shellSnapshot = {
       },
     }));
     try {
-      await copyPairingInvitation(invitationString);
+      await copyPairingInvitation(invitationId);
       snapshot.update((state) => ({
         ...state,
         syncSpace: {

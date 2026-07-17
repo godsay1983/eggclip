@@ -139,7 +139,6 @@ export interface PairingInvitationSummary {
   invitationId: string;
   spaceId: string;
   spaceDisplayName: string;
-  invitationString: string;
   qrSvg: string;
   expiresAt: string;
   expiresInSeconds: number;

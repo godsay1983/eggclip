@@ -6,7 +6,9 @@
   } from "$lib/api/pairing";
   import {
     classifyPairingJoinError,
+    emptyPairingJoinFormState,
     prioritizedPairingAddresses,
+    readyPairingJoinFormState,
     type PairingJoinIssue,
   } from "$lib/pairing-join";
   import type { PairingJoinAttemptSummary } from "$lib/types/pairing";
@@ -14,25 +16,28 @@
   export let onClose: () => void = () => {};
   export let onConnected: () => Promise<void> | void = () => {};
 
-  let invitationText = "";
+  const initialForm = emptyPairingJoinFormState();
+  let invitationText = initialForm.invitationText;
   let attempt: PairingJoinAttemptSummary | null = null;
-  let selectedCandidateId = "";
-  let confirmationMatches = false;
+  let selectedCandidateId = initialForm.selectedCandidateId;
+  let confirmationMatches = initialForm.confirmationMatches;
   let advancedOpen = false;
-  let manualHost = "";
-  let manualPort = 4567;
-  let useManualAddress = false;
+  let manualHost = initialForm.manualHost;
+  let manualPort = initialForm.manualPort;
+  let useManualAddress = initialForm.useManualAddress;
   let state: "input" | "parsing" | "ready" | "connecting" | "success" | "error" = "input";
   let progress = "";
   let issue: PairingJoinIssue | null = null;
 
   function clearSensitiveState(): void {
-    invitationText = "";
+    const cleared = emptyPairingJoinFormState();
+    invitationText = cleared.invitationText;
     attempt = null;
-    selectedCandidateId = "";
-    confirmationMatches = false;
-    manualHost = "";
-    manualPort = 4567;
+    selectedCandidateId = cleared.selectedCandidateId;
+    confirmationMatches = cleared.confirmationMatches;
+    manualHost = cleared.manualHost;
+    manualPort = cleared.manualPort;
+    useManualAddress = cleared.useManualAddress;
   }
 
   async function closeDialog(): Promise<void> {
@@ -59,10 +64,13 @@
     }
     try {
       attempt = await parsePairingJoinInvitation(invitationText.trim());
-      invitationText = "";
-      selectedCandidateId = attempt.addresses[0]?.candidateId ?? "";
-      confirmationMatches = false;
-      useManualAddress = attempt.addresses.length === 0;
+      const ready = readyPairingJoinFormState(attempt);
+      invitationText = ready.invitationText;
+      selectedCandidateId = ready.selectedCandidateId;
+      confirmationMatches = ready.confirmationMatches;
+      manualHost = ready.manualHost;
+      manualPort = ready.manualPort;
+      useManualAddress = ready.useManualAddress;
       state = "ready";
     } catch (error) {
       attempt = null;

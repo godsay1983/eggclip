@@ -65,7 +65,7 @@ function readJson(file) {
 }
 
 function assertAccepts(file, value) {
-  if (isCryptoFixture(file)) {
+  if (isCryptoFixture(file) || typeof value?.algorithm === "string") {
     validateCryptoVector(value);
     return;
   }
@@ -193,6 +193,26 @@ function validateCryptoVector(value) {
           throw new Error(`rejected[${index}].reason must be duplicate or old`);
         }
       });
+      return;
+    case "EggClip-Pairing-Secret-Proof-v2":
+      for (const field of ["invitationId", "spaceId", "issuerDeviceId", "clientDeviceId"]) {
+        requireUuid(value[field], field);
+      }
+      for (const field of [
+        "issuerIdentityPublicKey",
+        "clientIdentityPublicKey",
+        "clientEphemeralPublicKey",
+        "pairingSecret",
+        "verifier",
+        "proof",
+      ]) {
+        requireBase64Url(value[field], field);
+      }
+      for (const field of ["source", "verifierInput", "claim"]) {
+        if (typeof value[field] !== "string" || value[field].length === 0) {
+          throw new Error(`${field} must be a non-empty string`);
+        }
+      }
       return;
     default:
       throw new Error(`unknown crypto vector algorithm: ${value.algorithm}`);
