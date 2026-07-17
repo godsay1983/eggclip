@@ -1779,7 +1779,9 @@ fn persist_trusted_pairing_device_in_connection(
             device: Device {
                 device_id: peer_device_id,
                 space_id,
-                display_name: trusted_pairing_device_display_name(&accepted.peer_device_id),
+                display_name: crate::pairing::trusted_device_default_display_name(
+                    &accepted.peer_identity_public_key,
+                ),
                 identity_public_key_ref: accepted.peer_identity_public_key.clone(),
                 trust_state: DeviceTrustState::Trusted,
                 connection_state: DeviceConnectionState::Online,
@@ -1791,11 +1793,6 @@ fn persist_trusted_pairing_device_in_connection(
         })
         .map_err(|_| ())?;
     transaction.commit().map_err(|_| ())
-}
-
-fn trusted_pairing_device_display_name(device_id: &str) -> String {
-    let short_id = device_id.get(0..8).unwrap_or("unknown");
-    format!("HarmonyOS 设备 #{short_id}")
 }
 
 fn pairing_client_hello_rejection(error: &PairingError) -> PocRejectionReason {

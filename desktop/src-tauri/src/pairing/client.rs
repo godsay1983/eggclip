@@ -377,6 +377,9 @@ pub(crate) fn describe_join_error(error: super::join_runtime::PairingJoinRuntime
         PairingJoinRuntimeError::InvalidAttemptId | PairingJoinRuntimeError::AttemptMissing => {
             "配对加入尝试不存在，请重新粘贴邀请".to_string()
         }
+        PairingJoinRuntimeError::InvalidCandidate => {
+            "邀请中的候选地址无效，请重新粘贴邀请".to_string()
+        }
         PairingJoinRuntimeError::Unavailable => "配对加入状态暂时不可用".to_string(),
     }
 }

@@ -5,7 +5,10 @@ use serde::Deserialize;
 use uuid::Uuid;
 use zeroize::Zeroize;
 
-use super::{local_device_display_name, space_key_ref, ACTIVE_SYNC_SPACE_ID_KEY, SPACE_KEY_BYTES};
+use super::{
+    local_device_display_name, space_key_ref, trusted_device_default_display_name,
+    ACTIVE_SYNC_SPACE_ID_KEY, SPACE_KEY_BYTES,
+};
 use crate::{
     crypto::{decode_base64url, fixed_bytes},
     protocol::MessageType,
@@ -79,7 +82,6 @@ pub(crate) struct PairingClientPendingJoin {
     pub(super) space_id: Uuid,
     pub(super) expected_key_version: u32,
     pub(super) coordinator_device_id: Uuid,
-    pub(super) coordinator_device_name: String,
     pub(super) coordinator_identity_public_key: String,
     pub(super) local_device_id: Uuid,
     pub(super) local_identity_public_key: String,
@@ -151,7 +153,6 @@ impl PairingClientPendingJoin {
                 space_id: self.space_id,
                 key_version: self.expected_key_version,
                 coordinator_device_id: self.coordinator_device_id,
-                coordinator_device_name: self.coordinator_device_name.clone(),
                 coordinator_identity_public_key: self.coordinator_identity_public_key.clone(),
                 local_device_id: self.local_device_id,
                 local_identity_public_key: self.local_identity_public_key.clone(),
@@ -294,7 +295,6 @@ struct JoinedSpaceCommitInput {
     space_id: Uuid,
     key_version: u32,
     coordinator_device_id: Uuid,
-    coordinator_device_name: String,
     coordinator_identity_public_key: String,
     local_device_id: Uuid,
     local_identity_public_key: String,
@@ -388,7 +388,9 @@ fn commit_joined_space<S: SecretBytesStore>(
                 device: Device {
                     device_id: input.coordinator_device_id,
                     space_id: input.space_id,
-                    display_name: input.coordinator_device_name.clone(),
+                    display_name: trusted_device_default_display_name(
+                        &input.coordinator_identity_public_key,
+                    ),
                     identity_public_key_ref: input.coordinator_identity_public_key.clone(),
                     trust_state: DeviceTrustState::Trusted,
                     connection_state: DeviceConnectionState::Online,
@@ -488,7 +490,6 @@ mod tests {
             expected_key_version: key_version,
             coordinator_device_id: Uuid::parse_str("018ff6f0-0a3b-7815-a4db-3eb6e23d9338")
                 .expect("coordinator id"),
-            coordinator_device_name: "Windows 协调端".to_string(),
             coordinator_identity_public_key: "coordinator-public-key".to_string(),
             local_device_id: Uuid::parse_str("018ff6f0-4adf-7d31-a987-3ef2b25d0212")
                 .expect("local id"),

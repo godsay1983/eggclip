@@ -718,6 +718,45 @@ footer {
   box-shadow: none;
 }
 
+.device-entry-panel {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(167, 122, 0, 0.22);
+  border-radius: 20px;
+  background: var(--primary-soft);
+}
+
+.device-entry-panel strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.device-entry-panel p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.device-entry-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.device-entry-actions .primary-action,
+.device-entry-actions .secondary-action {
+  min-width: 0;
+  height: 38px;
+  font-size: 12px;
+}
+
+.device-entry-hint {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
 .settings-divider {
   height: 1px;
   margin: 14px 0 2px;
@@ -1021,6 +1060,275 @@ footer {
 .qr-dialog-expiry {
   margin: 0 4px 2px;
   text-align: center;
+}
+
+.pairing-dialog-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+}
+
+.pairing-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: rgba(31, 27, 20, 0.62);
+  backdrop-filter: blur(8px);
+}
+
+.pairing-dialog-card {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: min(430px, 100%);
+  max-height: 100%;
+  gap: 12px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid rgba(167, 122, 0, 0.2);
+  border-radius: 24px;
+  color: var(--text);
+  background: var(--card-strong);
+  box-shadow: 0 24px 64px rgba(31, 27, 20, 0.32);
+}
+
+.pairing-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pairing-dialog-header h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.pairing-dialog-header p,
+.pairing-privacy-note,
+.pairing-addresses p,
+.pairing-success p,
+.pairing-issue p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.pairing-invitation-input,
+.pairing-manual-fields label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.pairing-invitation-input textarea,
+.pairing-manual-fields input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  color: var(--text);
+  background: var(--control);
+  font: inherit;
+  font-weight: 500;
+  outline: none;
+}
+
+.pairing-invitation-input textarea {
+  min-height: 82px;
+  resize: vertical;
+  padding: 10px;
+  line-height: 1.45;
+}
+
+.pairing-invitation-input textarea:focus,
+.pairing-manual-fields input:focus {
+  border-color: rgba(167, 122, 0, 0.55);
+  box-shadow: 0 0 0 3px rgba(244, 196, 48, 0.12);
+}
+
+.pairing-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pairing-summary > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  padding: 9px 10px;
+  border-radius: 13px;
+  background: var(--control);
+}
+
+.pairing-summary span,
+.pairing-confirmation-code span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.pairing-summary strong {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pairing-confirmation-code {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  padding: 11px;
+  border: 1px solid rgba(167, 122, 0, 0.22);
+  border-radius: 16px;
+  background: var(--primary-soft);
+}
+
+.pairing-confirmation-code strong {
+  font-size: 23px;
+  letter-spacing: 0.18em;
+}
+
+.pairing-confirmation-check,
+.pairing-addresses label,
+.pairing-manual-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 11px;
+}
+
+.pairing-confirmation-check {
+  padding: 9px 10px;
+  border-radius: 13px;
+  background: var(--control);
+}
+
+.pairing-addresses {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+}
+
+.pairing-addresses legend {
+  padding: 0 5px;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.pairing-addresses p {
+  margin: 0 0 2px;
+}
+
+.pairing-addresses label {
+  min-height: 30px;
+  padding: 5px 8px;
+  border-radius: 10px;
+  background: var(--control);
+}
+
+.pairing-advanced {
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--control);
+}
+
+.pairing-advanced summary {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pairing-manual-toggle {
+  margin-top: 10px;
+}
+
+.pairing-manual-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(90px, 0.7fr);
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.pairing-manual-fields input {
+  height: 34px;
+  padding: 0 9px;
+}
+
+.pairing-progress,
+.pairing-issue {
+  margin: 0;
+  padding: 9px 10px;
+  border-radius: 13px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.pairing-progress {
+  color: #6c5200;
+  background: var(--primary-soft);
+}
+
+.pairing-issue {
+  border: 1px solid rgba(176, 68, 53, 0.24);
+  color: #8b3327;
+  background: rgba(176, 68, 53, 0.08);
+}
+
+.pairing-issue p {
+  color: inherit;
+}
+
+.pairing-dialog-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.pairing-dialog-actions .primary-action,
+.pairing-dialog-card > .primary-action {
+  width: 100%;
+  height: 40px;
+}
+
+.pairing-success {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 22px 14px;
+  border-radius: 18px;
+  background: rgba(78, 159, 109, 0.13);
+  text-align: center;
+}
+
+.pairing-success > span {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: #4e9f6d;
+  font-size: 20px;
+  font-weight: 800;
 }
 
 .invitation-copy {

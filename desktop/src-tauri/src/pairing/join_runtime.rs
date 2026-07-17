@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use super::client::{
     parse_pairing_invitation, PairingInvitationParseError, PairingJoinAttemptSummary,
-    ParsedPairingInvitation,
+    PairingJoinEndpoint, ParsedPairingInvitation,
 };
 
 const JOIN_ATTEMPT_MAX_TTL_MS: u64 = 5 * 60 * 1000;
@@ -15,6 +15,7 @@ pub enum PairingJoinRuntimeError {
     InvalidAttemptId,
     AttemptMissing,
     AttemptExpired,
+    InvalidCandidate,
     Unavailable,
 }
 
@@ -105,6 +106,41 @@ impl PairingJoinRuntime {
             .remove(&attempt_id)
             .map(|attempt| attempt.invitation)
             .ok_or(PairingJoinRuntimeError::AttemptMissing)
+    }
+
+    pub(crate) fn endpoint_for_candidate(
+        &self,
+        attempt_id: &str,
+        candidate_id: &str,
+        now_ms: u64,
+    ) -> Result<PairingJoinEndpoint, PairingJoinRuntimeError> {
+        let attempt_id = parse_attempt_id(attempt_id)?;
+        let mut attempts = self
+            .attempts
+            .lock()
+            .map_err(|_| PairingJoinRuntimeError::Unavailable)?;
+        let expired = attempts
+            .get(&attempt_id)
+            .map(|attempt| attempt.expires_at_ms <= now_ms)
+            .unwrap_or(false);
+        if expired {
+            attempts.remove(&attempt_id);
+            return Err(PairingJoinRuntimeError::AttemptExpired);
+        }
+        let attempt = attempts
+            .get(&attempt_id)
+            .ok_or(PairingJoinRuntimeError::AttemptMissing)?;
+        let index = candidate_id
+            .strip_prefix("address-")
+            .and_then(|value| value.parse::<usize>().ok())
+            .and_then(|value| value.checked_sub(1))
+            .ok_or(PairingJoinRuntimeError::InvalidCandidate)?;
+        attempt
+            .invitation
+            .endpoints
+            .get(index)
+            .cloned()
+            .ok_or(PairingJoinRuntimeError::InvalidCandidate)
     }
 
     #[cfg(test)]
@@ -224,6 +260,27 @@ mod tests {
         assert!(matches!(
             runtime.discard("not-a-uuid"),
             Err(PairingJoinRuntimeError::InvalidAttemptId)
+        ));
+    }
+
+    #[test]
+    fn resolves_only_candidates_owned_by_the_active_attempt() {
+        let runtime = PairingJoinRuntime::default();
+        let summary = runtime
+            .begin(invitation(NOW_MS + 300_000), NOW_MS)
+            .expect("attempt");
+        let endpoint = runtime
+            .endpoint_for_candidate(&summary.attempt_id, "address-1", NOW_MS)
+            .expect("candidate");
+        assert_eq!(endpoint.host.to_string(), "192.168.10.24");
+        assert_eq!(endpoint.port, 4567);
+        assert!(matches!(
+            runtime.endpoint_for_candidate(&summary.attempt_id, "address-2", NOW_MS),
+            Err(PairingJoinRuntimeError::InvalidCandidate)
+        ));
+        assert!(matches!(
+            runtime.endpoint_for_candidate(&summary.attempt_id, "../address-1", NOW_MS),
+            Err(PairingJoinRuntimeError::InvalidCandidate)
         ));
     }
 }

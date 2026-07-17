@@ -18,12 +18,12 @@ export async function cancelPairingJoinAttempt(attemptId: string): Promise<void>
 
 export async function connectTrustedPeer(
   attemptId: string,
-  host: string,
-  port: number,
+  options: { candidateId: string } | { manualHost: string; manualPort: number },
 ): Promise<TrustedOutboundConnectionSummary> {
   return invoke<TrustedOutboundConnectionSummary>("connect_trusted_peer", {
     attemptId,
-    host,
-    port,
+    candidateId: "candidateId" in options ? options.candidateId : null,
+    manualHost: "manualHost" in options ? options.manualHost : null,
+    manualPort: "manualPort" in options ? options.manualPort : null,
   });
 }

@@ -6,6 +6,7 @@
   import DeviceChips from "$lib/components/devices/DeviceChips.svelte";
   import NetworkDiagnosticsCard from "$lib/components/devices/NetworkDiagnosticsCard.svelte";
   import NetworkTroubleshootingCard from "$lib/components/devices/NetworkTroubleshootingCard.svelte";
+  import PairingJoinDialog from "$lib/components/devices/PairingJoinDialog.svelte";
   import PocConnectCard from "$lib/components/devices/PocConnectCard.svelte";
   import StatusCard from "$lib/components/common/StatusCard.svelte";
   import StatusDot from "$lib/components/common/StatusDot.svelte";
@@ -24,6 +25,7 @@
   let pendingSpaceDeletionId = "";
   let expandedSpaceActionsId = "";
   let qrExpanded = false;
+  let joinDialogVisible = false;
 
   $: if (qrExpanded && !$shellSnapshot.syncSpace.invitation) {
     qrExpanded = false;
@@ -40,6 +42,24 @@
     } catch (_) {
       // The store exposes the actionable backend error inside the space panel.
     }
+  }
+
+  function invitationTargetSpace(): SyncSpaceSummary | null {
+    const ownerSpaces = $shellSnapshot.syncSpace.spaces.filter((space) => space.localRole === "owner");
+    return ownerSpaces.find((space) => space.id === $shellSnapshot.syncSpace.activeSpaceId) ?? ownerSpaces[0] ?? null;
+  }
+
+  async function createInvitationForCurrentOwner(): Promise<void> {
+    const space = invitationTargetSpace();
+    if (space) await shellSnapshot.createPairingInvitation(space.id);
+  }
+
+  async function refreshAfterDesktopJoin(): Promise<void> {
+    await Promise.all([
+      shellSnapshot.refreshSyncSpaces(),
+      shellSnapshot.refreshTrustedDevices(),
+      shellSnapshot.refreshHistorySummary(),
+    ]);
   }
 
   onMount(() => {
@@ -295,6 +315,29 @@
         <p class="settings-footnote">只在局域网同步纯文本；设置和历史保存在本机。</p>
       {:else if settingsSection === "devices"}
 
+      <section class="device-entry-panel" aria-label="设备配对入口">
+        <div>
+          <strong>连接新设备</strong>
+          <p>向手机、平板或电脑发出邀请，也可以加入另一台电脑。</p>
+        </div>
+        <div class="device-entry-actions">
+          <button
+            class="primary-action"
+            type="button"
+            disabled={!invitationTargetSpace() || $shellSnapshot.syncSpace.state === "inviting"}
+            on:click={() => createInvitationForCurrentOwner()}
+          >添加设备</button>
+          <button
+            class="secondary-action"
+            type="button"
+            on:click={() => (joinDialogVisible = true)}
+          >加入另一台电脑</button>
+        </div>
+        {#if !invitationTargetSpace()}
+          <p class="device-entry-hint">当前没有可发出邀请的协调端空间；仍可通过邀请加入另一台电脑。</p>
+        {/if}
+      </section>
+
       <section class="space-summary" aria-label="同步空间">
         <div class="section-heading compact">
           <div>
@@ -455,7 +498,7 @@
 
       <div id="trusted-devices" class="settings-anchor">
         <DeviceChips
-          devices={$shellSnapshot.devices}
+          devices={$shellSnapshot.devices.filter((device) => device.trustKind !== "poc")}
           onRename={(deviceId, name) => shellSnapshot.renameTrustedDevice(deviceId, name)}
           onRemove={(deviceId) => shellSnapshot.removeTrustedDevice(deviceId)}
           canRemove={(device) =>
@@ -529,6 +572,13 @@
         </p>
       </dialog>
     </div>
+  {/if}
+
+  {#if joinDialogVisible}
+    <PairingJoinDialog
+      onClose={() => (joinDialogVisible = false)}
+      onConnected={() => refreshAfterDesktopJoin()}
+    />
   {/if}
 
   {#if !aboutVisible}

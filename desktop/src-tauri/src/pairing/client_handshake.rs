@@ -127,13 +127,8 @@ pub(crate) struct TrustedClientReadySession {
 }
 
 enum PairingClientHandshakeMode {
-    InitialJoin {
-        expected_space_key_version: u32,
-        issuer_device_name: String,
-    },
-    TrustedReconnect {
-        key_version: u32,
-    },
+    InitialJoin { expected_space_key_version: u32 },
+    TrustedReconnect { key_version: u32 },
 }
 
 pub(crate) struct PairingClientHandshake {
@@ -247,7 +242,6 @@ impl PairingClientHandshake {
                     .min(now_ms.saturating_add(HANDSHAKE_TIMEOUT_SECONDS.saturating_mul(1000))),
                 mode: PairingClientHandshakeMode::InitialJoin {
                     expected_space_key_version: invitation.space_key_version,
-                    issuer_device_name: invitation.issuer_device_name.clone(),
                 },
                 space_id: invitation.space_id.to_string(),
                 issuer_device_id: invitation.issuer_device_id.to_string(),
@@ -584,7 +578,6 @@ impl PairingClientHandshake {
         match &self.mode {
             PairingClientHandshakeMode::InitialJoin {
                 expected_space_key_version,
-                issuer_device_name,
             } => {
                 self.state = PairingClientHandshakeState::WaitingInitialSpaceKey;
                 Ok(PairingClientHandshakeEvent::AwaitingSpaceKey(
@@ -592,7 +585,6 @@ impl PairingClientHandshake {
                         space_id,
                         expected_key_version: *expected_space_key_version,
                         coordinator_device_id,
-                        coordinator_device_name: issuer_device_name.clone(),
                         coordinator_identity_public_key: self.issuer_identity_public_key.clone(),
                         local_device_id,
                         local_identity_public_key: self.local_identity_public_key.clone(),

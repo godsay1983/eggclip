@@ -1041,6 +1041,11 @@ fn trusted_device_summary(
     }
 }
 
+pub(crate) fn trusted_device_default_display_name(identity_public_key: &str) -> String {
+    let digest = Sha256::digest(identity_public_key.as_bytes());
+    format!("EggClip 设备 #{}", encode_base64url(&digest[..6]))
+}
+
 fn normalize_device_display_name(value: &str) -> Result<String, PairingError> {
     let normalized = value.trim();
     if normalized.is_empty()
@@ -1950,6 +1955,30 @@ impl SecretBytesStore for MemorySecretStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_trusted_device_name_uses_the_visible_short_fingerprint() {
+        let identity = "test-device-identity-public-key";
+        let record = DeviceRecord {
+            device: Device {
+                device_id: Uuid::now_v7(),
+                space_id: Uuid::now_v7(),
+                display_name: trusted_device_default_display_name(identity),
+                identity_public_key_ref: identity.to_string(),
+                trust_state: DeviceTrustState::Trusted,
+                connection_state: DeviceConnectionState::Offline,
+                last_seen_at: None,
+            },
+            route: TrustedDeviceRoute::default(),
+            paired_at: None,
+            revoked_at: None,
+        };
+        let summary = trusted_device_summary(&record);
+        assert_eq!(
+            record.device.display_name,
+            format!("EggClip 设备 #{}", summary.short_fingerprint)
+        );
+    }
     use crate::identity::IdentitySecretStore;
     use crate::storage::{open_in_memory_database, repositories::SpaceRepository};
 

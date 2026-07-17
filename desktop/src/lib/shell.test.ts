@@ -8,6 +8,7 @@ import { createAutostartStore } from "$lib/stores/autostart";
 import type { AutostartSnapshot } from "$lib/types/autostart";
 import type { AppSettings } from "$lib/types/settings";
 import { countOnlineDevices, mergeRuntimeDevices } from "$lib/stores/shell-state";
+import { classifyPairingJoinError, prioritizedPairingAddresses } from "$lib/pairing-join";
 import type { DeviceSummary } from "$lib/types/shell";
 
 describe("desktop shell", () => {
@@ -121,6 +122,30 @@ describe("desktop shell", () => {
     expect(devices[0].trustKind).toBe("trusted");
     expect(devices[1].id).toBe("poc-192.168.1.10:4567");
     expect(countOnlineDevices(devices)).toBe(1);
+  });
+
+  it("prioritizes the selected pairing address without losing fallbacks", () => {
+    const addresses = [
+      { candidateId: "address-1", displayAddress: "192.168.*.*:4567" },
+      { candidateId: "address-2", displayAddress: "10.0.*.*:4567" },
+    ];
+    expect(prioritizedPairingAddresses(addresses, "address-2")).toEqual([
+      addresses[1],
+      addresses[0],
+    ]);
+  });
+
+  it("distinguishes pairing failures that require different user actions", () => {
+    expect(classifyPairingJoinError("配对邀请已过期，请重新生成").title).toBe("邀请已过期");
+    expect(classifyPairingJoinError("配对邀请已使用，请重新生成").title).toBe("邀请不可用");
+    expect(classifyPairingJoinError("设备身份与邀请不匹配").title).toBe("设备身份不匹配");
+    expect(classifyPairingJoinError("空间密钥保存失败").title).toBe("密钥保存失败");
+    expect(classifyPairingJoinError("本机数据库写入失败").title).toBe("本机保存失败");
+    expect(classifyPairingJoinError("无法连接可信设备，请检查防火墙")).toMatchObject({
+      title: "网络不可达",
+      retryableNetwork: true,
+    });
+    expect(classifyPairingJoinError("设备认证失败").title).toBe("认证失败");
   });
 
   it("returns a single offline placeholder when no runtime device exists", () => {
