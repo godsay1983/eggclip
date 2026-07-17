@@ -48,6 +48,7 @@ pub fn run() {
         .manage(clipboard::ClipboardRuntime::default())
         .manage(discovery::PocDiscoveryRuntime::default())
         .manage(transport::PocTransportRuntime::default())
+        .manage(pairing::PairingJoinRuntime::default())
         .setup(|app| {
             pairing::reset_trusted_device_connection_states(app.handle())
                 .map_err(std::io::Error::other)?;
@@ -82,6 +83,7 @@ pub fn run() {
             history::get_clipboard_history_used,
             history::list_clipboard_history_preview,
             pairing::copy_pairing_invitation,
+            pairing::client::cancel_pairing_join_attempt,
             pairing::create_local_sync_space,
             pairing::delete_local_sync_space,
             pairing::create_pairing_invitation,
@@ -89,6 +91,7 @@ pub fn run() {
             pairing::list_local_sync_spaces,
             pairing::list_trusted_devices,
             pairing::load_active_sync_space_id,
+            pairing::client::parse_pairing_join_invitation,
             pairing::run_space_hmac_diagnostic,
             pairing::rename_trusted_device,
             pairing::select_active_sync_space,

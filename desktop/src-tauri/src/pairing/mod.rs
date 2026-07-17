@@ -9,7 +9,13 @@ use qrcode::{render::svg, EcLevel, QrCode};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use tauri::Manager;
 use uuid::Uuid;
+
+pub mod client;
+mod join_runtime;
+
+pub use join_runtime::PairingJoinRuntime;
 
 use crate::{
     clipboard,
@@ -406,6 +412,9 @@ pub fn start_pairing_invitation_expiry_task(app: tauri::AppHandle) {
             let Ok(timestamp_ms) = now_ms() else {
                 continue;
             };
+            if let Some(runtime) = app.try_state::<PairingJoinRuntime>() {
+                let _ = runtime.expire(timestamp_ms);
+            }
             let Ok(path) = database_path(&app) else {
                 continue;
             };

@@ -45,3 +45,4 @@ tokio-tungstenite = "0.26"
 uuid = { version = "1.23.3", features = ["serde", "v4", "v7"] }
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Credentials"] }
 x25519-dalek = { version = "2", features = ["static_secrets"] }
+zeroize = "1"
