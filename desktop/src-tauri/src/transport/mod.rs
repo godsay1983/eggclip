@@ -1,6 +1,13 @@
+pub(crate) mod outbound;
 mod session;
 
-use std::{collections::HashMap, net::Ipv4Addr, str::FromStr, sync::Mutex, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    net::Ipv4Addr,
+    str::FromStr,
+    sync::Mutex,
+    time::Duration,
+};
 
 use crate::{
     clipboard::{ClipboardText, ClipboardTextError},
@@ -72,6 +79,8 @@ pub struct PocTransportRuntime {
     peers: Mutex<HashMap<String, mpsc::UnboundedSender<Message>>>,
     pairing_handshakes: Mutex<HashMap<String, PairingServerHandshakeRuntimeState>>,
     authenticated_sessions: Mutex<HashMap<String, AuthenticatedPeerSession>>,
+    formal_outbound_peers: Mutex<HashMap<String, mpsc::UnboundedSender<Message>>>,
+    formal_connecting: Mutex<HashSet<String>>,
     diagnostics: Mutex<PocTransportDiagnostics>,
 }
 
@@ -104,6 +113,13 @@ struct AuthenticatedPeerSession {
     session: AuthenticatedTransportSession,
     space_id: Uuid,
     device_id: Uuid,
+    connection_kind: AuthenticatedConnectionKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AuthenticatedConnectionKind {
+    Inbound,
+    FormalOutbound,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -568,8 +584,10 @@ fn disconnect_all_poc_peers_with_runtime(
         .authenticated_sessions
         .lock()
         .map_err(|_| "认证会话状态锁已损坏".to_owned())?
-        .keys()
-        .cloned()
+        .iter()
+        .filter_map(|(peer, session)| {
+            (session.connection_kind == AuthenticatedConnectionKind::Inbound).then(|| peer.clone())
+        })
         .collect::<Vec<_>>();
     let mut peers = runtime
         .peers
@@ -886,15 +904,10 @@ fn send_authenticated_business_payload(
         .session
         .encode_business_message(message_type, Uuid::now_v7().to_string(), payload)
         .map_err(|_| ())?;
-    let sent = runtime
-        .peers
-        .lock()
-        .map_err(|_| ())?
-        .get(peer)
+    authenticated_sender(&runtime, peer)
         .ok_or(())?
         .send(frame)
-        .map_err(|_| ());
-    sent
+        .map_err(|_| ())
 }
 
 fn build_sync_heads_payload(app: &AppHandle, space_id: Uuid) -> Result<serde_json::Value, ()> {
@@ -950,15 +963,10 @@ fn broadcast_authenticated_item_live(
 
     let mut sent_peers = 0;
     let mut stale_peers = Vec::new();
-    if let Ok(mut peers) = runtime.peers.lock() {
-        for (peer, frame) in frames {
-            match peers.get(&peer) {
-                Some(sender) if sender.send(frame).is_ok() => sent_peers += 1,
-                _ => stale_peers.push(peer),
-            }
-        }
-        for peer in &stale_peers {
-            peers.remove(peer);
+    for (peer, frame) in frames {
+        match authenticated_sender(&runtime, &peer) {
+            Some(sender) if sender.send(frame).is_ok() => sent_peers += 1,
+            _ => stale_peers.push(peer),
         }
     }
     for peer in stale_peers {
@@ -1709,9 +1717,19 @@ fn dispatch_authenticated_payload(
     payload: &serde_json::Value,
 ) -> Result<(), ()> {
     match message_type {
-        MessageType::SyncHeads => return handle_remote_sync_heads(app, peer, payload),
+        MessageType::SyncHeads => {
+            let sync_complete = handle_remote_sync_heads(app, peer, payload)?;
+            if sync_complete {
+                mark_authenticated_session_ready(app, peer)?;
+            }
+            return Ok(());
+        }
         MessageType::RequestRange => return respond_to_request_range(app, peer, payload),
-        MessageType::ItemBatch => return handle_inbound_item_batch(app, peer, payload),
+        MessageType::ItemBatch => {
+            handle_inbound_item_batch(app, peer, payload)?;
+            mark_authenticated_session_ready(app, peer)?;
+            return Ok(());
+        }
         MessageType::ItemAck => {
             let ack: ItemAckPayload = serde_json::from_value(payload.clone()).map_err(|_| ())?;
             ack.validate().map_err(|_| ())?;
@@ -1784,11 +1802,32 @@ fn authenticated_peer_context(app: &AppHandle, peer: &str) -> Result<(Uuid, Uuid
     context
 }
 
+fn mark_authenticated_session_ready(app: &AppHandle, peer: &str) -> Result<(), ()> {
+    let runtime = app.state::<PocTransportRuntime>();
+    let (device_id, space_id) = {
+        let mut sessions = runtime.authenticated_sessions.lock().map_err(|_| ())?;
+        let entry = sessions.get_mut(peer).ok_or(())?;
+        entry.session.mark_ready().map_err(|_| ())?;
+        (entry.device_id, entry.space_id)
+    };
+    let _ = app.emit(
+        "transport://authenticated-connection",
+        AuthenticatedConnectionStateEvent {
+            peer: peer.to_owned(),
+            device_id: device_id.to_string(),
+            space_id: space_id.to_string(),
+            state: "ready",
+            reason: "syncComplete",
+        },
+    );
+    Ok(())
+}
+
 fn handle_remote_sync_heads(
     app: &AppHandle,
     peer: &str,
     payload: &serde_json::Value,
-) -> Result<(), ()> {
+) -> Result<bool, ()> {
     let remote: SyncHeadsPayload = serde_json::from_value(payload.clone()).map_err(|_| ())?;
     remote.validate().map_err(|_| ())?;
     let (space_id, peer_device_id) = authenticated_peer_context(app, peer)?;
@@ -1832,12 +1871,13 @@ fn handle_remote_sync_heads(
         .take(MAX_BATCH_ITEMS)
         .collect();
     if ranges.is_empty() {
-        return Ok(());
+        return Ok(true);
     }
     let request = RequestRangePayload { ranges };
     request.validate().map_err(|_| ())?;
     let value = serde_json::to_value(request).map_err(|_| ())?;
-    send_authenticated_business_payload(app, peer, MessageType::RequestRange, &value)
+    send_authenticated_business_payload(app, peer, MessageType::RequestRange, &value)?;
+    Ok(false)
 }
 
 fn handle_inbound_item_batch(
@@ -2168,47 +2208,22 @@ fn remember_authenticated_session(
     peer: &str,
     accepted: crate::pairing::PairingServerAuthProofAccepted,
 ) -> Result<(), ()> {
-    let runtime = app.state::<PocTransportRuntime>();
     let device_id = Uuid::parse_str(&accepted.peer_device_id).map_err(|_| ())?;
     let space_id = Uuid::parse_str(&accepted.space_id).map_err(|_| ())?;
-    let mut sessions = runtime.authenticated_sessions.lock().map_err(|_| ())?;
-    let displaced = authenticated_peers_to_displace(
-        sessions
-            .iter()
-            .map(|(existing_peer, entry)| (existing_peer.as_str(), entry.device_id)),
-        device_id,
+    register_authenticated_session(
+        app,
         peer,
-    );
-    for displaced_peer in &displaced {
-        if let Some(mut session) = sessions.remove(displaced_peer) {
-            session.session.close();
-        }
-    }
-    let replaced = sessions.insert(
-        peer.to_owned(),
-        AuthenticatedPeerSession {
-            session: AuthenticatedTransportSession::new(
-                SessionDirection::ClientToServer,
-                accepted.session_keys.client_to_server,
-                SessionDirection::ServerToClient,
-                accepted.session_keys.server_to_client,
-                6,
-            ),
-            space_id,
-            device_id,
-        },
-    );
-    if let Some(mut replaced) = replaced {
-        replaced.session.close();
-    }
-    drop(sessions);
-    if let Ok(peers) = runtime.peers.lock() {
-        for displaced_peer in &displaced {
-            if let Some(sender) = peers.get(displaced_peer) {
-                let _ = sender.send(Message::Close(None));
-            }
-        }
-    }
+        AuthenticatedTransportSession::new(
+            SessionDirection::ClientToServer,
+            accepted.session_keys.client_to_server,
+            SessionDirection::ServerToClient,
+            accepted.session_keys.server_to_client,
+            6,
+        ),
+        space_id,
+        device_id,
+        AuthenticatedConnectionKind::Inbound,
+    )?;
     let _ = app.emit(
         "transport://authenticated-connection",
         AuthenticatedConnectionStateEvent {
@@ -2222,14 +2237,82 @@ fn remember_authenticated_session(
     Ok(())
 }
 
+fn register_authenticated_session(
+    app: &AppHandle,
+    peer: &str,
+    session: AuthenticatedTransportSession,
+    space_id: Uuid,
+    device_id: Uuid,
+    connection_kind: AuthenticatedConnectionKind,
+) -> Result<(), ()> {
+    let runtime = app.state::<PocTransportRuntime>();
+    let mut sessions = runtime.authenticated_sessions.lock().map_err(|_| ())?;
+    let displaced = authenticated_peers_to_displace(
+        sessions.iter().map(|(existing_peer, entry)| {
+            (existing_peer.as_str(), entry.space_id, entry.device_id)
+        }),
+        space_id,
+        device_id,
+        peer,
+    );
+    for displaced_peer in &displaced {
+        if let Some(mut displaced_session) = sessions.remove(displaced_peer) {
+            displaced_session.session.close();
+        }
+    }
+    if let Some(mut replaced) = sessions.insert(
+        peer.to_owned(),
+        AuthenticatedPeerSession {
+            session,
+            space_id,
+            device_id,
+            connection_kind,
+        },
+    ) {
+        replaced.session.close();
+    }
+    drop(sessions);
+    for displaced_peer in displaced {
+        if let Some(sender) = authenticated_sender(&runtime, &displaced_peer) {
+            let _ = sender.send(Message::Close(Some(CloseFrame {
+                code: CloseCode::Policy,
+                reason: "replacedSession".into(),
+            })));
+        }
+    }
+    Ok(())
+}
+
+fn authenticated_sender(
+    runtime: &PocTransportRuntime,
+    peer: &str,
+) -> Option<mpsc::UnboundedSender<Message>> {
+    runtime
+        .formal_outbound_peers
+        .lock()
+        .ok()
+        .and_then(|peers| peers.get(peer).cloned())
+        .or_else(|| {
+            runtime
+                .peers
+                .lock()
+                .ok()
+                .and_then(|peers| peers.get(peer).cloned())
+        })
+}
+
 fn authenticated_peers_to_displace<'a>(
-    connections: impl Iterator<Item = (&'a str, Uuid)>,
+    connections: impl Iterator<Item = (&'a str, Uuid, Uuid)>,
+    space_id: Uuid,
     device_id: Uuid,
     current_peer: &str,
 ) -> Vec<String> {
     let mut peers = connections
-        .filter_map(|(peer, candidate_device_id)| {
-            (candidate_device_id == device_id && peer != current_peer).then(|| peer.to_owned())
+        .filter_map(|(peer, candidate_space_id, candidate_device_id)| {
+            (candidate_space_id == space_id
+                && candidate_device_id == device_id
+                && peer != current_peer)
+                .then(|| peer.to_owned())
         })
         .collect::<Vec<_>>();
     peers.sort();
@@ -2289,20 +2372,13 @@ fn broadcast_space_key_rotation(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    runtime
-        .peers
-        .lock()
-        .map(|peers| {
-            frames
-                .into_iter()
-                .filter(|(peer, frame)| {
-                    peers.get(peer).is_some_and(|sender| {
-                        sender.send(Message::Text(frame.clone().into())).is_ok()
-                    })
-                })
-                .count()
+    frames
+        .into_iter()
+        .filter(|(peer, frame)| {
+            authenticated_sender(&runtime, peer)
+                .is_some_and(|sender| sender.send(Message::Text(frame.clone().into())).is_ok())
         })
-        .unwrap_or(0)
+        .count()
 }
 
 fn close_authenticated_session_with_reason(
@@ -2328,13 +2404,11 @@ fn close_authenticated_session_with_reason(
         return;
     };
     if notify_peer {
-        if let Ok(peers) = runtime.peers.lock() {
-            if let Some(sender) = peers.get(peer) {
-                let _ = sender.send(Message::Close(Some(CloseFrame {
-                    code: CloseCode::Policy,
-                    reason: reason.into(),
-                })));
-            }
+        if let Some(sender) = authenticated_sender(&runtime, peer) {
+            let _ = sender.send(Message::Close(Some(CloseFrame {
+                code: CloseCode::Policy,
+                reason: reason.into(),
+            })));
         }
     }
     if !device_still_online {
@@ -2549,16 +2623,24 @@ mod tests {
 
     #[test]
     fn connection_manager_displaces_only_older_sessions_for_the_same_device() {
+        let space_id = Uuid::now_v7();
+        let other_space_id = Uuid::now_v7();
         let device_id = Uuid::now_v7();
         let other_device_id = Uuid::now_v7();
         let connections = [
-            ("192.168.1.8:5001", device_id),
-            ("192.168.1.8:5002", device_id),
-            ("192.168.1.9:5001", other_device_id),
+            ("192.168.1.8:5001", space_id, device_id),
+            ("192.168.1.8:5002", space_id, device_id),
+            ("192.168.1.9:5001", space_id, other_device_id),
+            ("192.168.1.10:5001", other_space_id, device_id),
         ];
 
         assert_eq!(
-            authenticated_peers_to_displace(connections.into_iter(), device_id, "192.168.1.8:5002"),
+            authenticated_peers_to_displace(
+                connections.into_iter(),
+                space_id,
+                device_id,
+                "192.168.1.8:5002"
+            ),
             vec!["192.168.1.8:5001".to_owned()]
         );
     }

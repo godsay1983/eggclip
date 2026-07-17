@@ -13,3 +13,10 @@ export interface PairingJoinAttemptSummary {
   confirmationCode: string;
   addresses: PairingJoinAddressSummary[];
 }
+
+export interface TrustedOutboundConnectionSummary {
+  spaceId: string;
+  deviceId: string;
+  endpoint: string;
+  state: "syncing";
+}

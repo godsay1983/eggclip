@@ -99,6 +99,7 @@ pub fn run() {
             settings::load_app_settings,
             settings::save_app_settings,
             transport::connect_poc_peer,
+            transport::outbound::connect_trusted_peer,
             transport::disconnect_all_poc_peers,
             transport::get_poc_transport_status,
             transport::load_poc_recent_endpoint,

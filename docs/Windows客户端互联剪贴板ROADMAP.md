@@ -90,14 +90,14 @@
 
 完成标准：首次认证成功后重启应用，空间密钥、协调端身份和可信路由仍可读取；任一中间失败都不会产生可用的半成品空间。
 
-### [ ] W2W-06 建立正式出站 WebSocket 认证会话
+### [x] W2W-06 建立正式出站 WebSocket 认证会话
 
-- [ ] 新增正式主动连接入口，与 `connect_poc_peer` 的状态、事件和设备列表严格分离。
-- [ ] 把客户端方向会话注册到统一 authenticated session registry。
-- [ ] 同一 `(spaceId, peerDeviceId)` 只保留一个 active session，并正确关闭被替换连接。
-- [ ] 认证成功后立即交换 `SYNC_HEADS`，同步结束后进入 ready。
-- [ ] 连接关闭时更新可信设备状态，不删除信任和路由。
-- [ ] 增加握手超时、帧上限、心跳、空闲断开和通道关闭测试。
+- [x] 新增正式主动连接入口，与 `connect_poc_peer` 的状态、事件和设备列表严格分离。
+- [x] 把客户端方向会话注册到统一 authenticated session registry。
+- [x] 同一 `(spaceId, peerDeviceId)` 只保留一个 active session，并正确关闭被替换连接。
+- [x] 认证成功后立即交换 `SYNC_HEADS`，同步结束后进入 ready。
+- [x] 连接关闭时更新可信设备状态，不删除信任和路由。
+- [x] 增加握手超时、帧上限、心跳、空闲断开和通道关闭测试。
 
 完成标准：不用 POC command，Windows B 可以通过正式认证会话连接 Windows A，并在设备列表显示同一可信设备在线。
 

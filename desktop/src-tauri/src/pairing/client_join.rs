@@ -148,9 +148,6 @@ impl PairingClientPendingJoin {
         decoded.zeroize();
         let mut space_key =
             key_result.map_err(|_| PairingJoinCommitError::InvalidSpaceKeyPayload)?;
-        self.transport
-            .mark_ready()
-            .map_err(|_| PairingJoinCommitError::InvalidSpaceKeyPayload)?;
         let result = commit_joined_space(
             connection,
             secret_store,
@@ -458,7 +455,7 @@ mod tests {
         assert!(!ready.transport.is_closed());
         assert_eq!(
             ready.transport.state(),
-            crate::protocol::ProtocolSessionState::Ready
+            crate::protocol::ProtocolSessionState::Authenticated
         );
         drop(connection);
 
