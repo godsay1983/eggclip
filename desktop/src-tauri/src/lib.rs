@@ -88,6 +88,7 @@ pub fn run() {
             pairing::delete_local_sync_space,
             pairing::create_pairing_invitation,
             pairing::ensure_default_sync_space,
+            pairing::leave_member_sync_space,
             pairing::list_local_sync_spaces,
             pairing::list_trusted_devices,
             pairing::load_active_sync_space_id,

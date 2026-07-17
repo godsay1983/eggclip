@@ -115,10 +115,17 @@ interface SyncSpaceSummaryDto {
   keyVersion: number;
   spaceKeyRef: string;
   createdAtMs: number;
+  localRole: "owner" | "member";
 }
 
 export interface SyncSpaceDeletionSummary {
   deletedSpaceId: string;
+  activeSpaceId: string;
+  credentialDeleted: boolean;
+}
+
+export interface MemberSpaceLeaveSummary {
+  leftSpaceId: string;
   activeSpaceId: string;
   credentialDeleted: boolean;
 }
@@ -160,6 +167,11 @@ interface AuthenticatedConnectionStateEvent {
   spaceId: string;
   state: "online" | "offline";
   reason: string;
+}
+
+export interface SpaceKeyRotatedEvent {
+  spaceId: string;
+  keyVersion: number;
 }
 
 export function createInitialShellSnapshot(): ShellSnapshot {
@@ -297,6 +309,12 @@ export async function deleteLocalSyncSpace(
   return invoke<SyncSpaceDeletionSummary>("delete_local_sync_space", { spaceId });
 }
 
+export async function leaveMemberSyncSpace(
+  spaceId: string,
+): Promise<MemberSpaceLeaveSummary> {
+  return invoke<MemberSpaceLeaveSummary>("leave_member_sync_space", { spaceId });
+}
+
 export async function loadActiveSyncSpaceId(): Promise<string | null> {
   return invoke<string | null>("load_active_sync_space_id");
 }
@@ -401,6 +419,14 @@ export async function onAuthenticatedClipboardText(
       handler(toAuthenticatedClipboardPreview(event.payload), event.payload);
     },
   );
+}
+
+export async function onSpaceKeyRotated(
+  handler: (event: SpaceKeyRotatedEvent) => void,
+): Promise<() => void> {
+  return listen<SpaceKeyRotatedEvent>("transport://space-key-rotated", (event) => {
+    handler(event.payload);
+  });
 }
 
 export async function onPocClipboardText(
@@ -539,6 +565,7 @@ function toSyncSpaceSummary(space: SyncSpaceSummaryDto): SyncSpaceSummary {
       minute: "2-digit",
       second: "2-digit",
     }),
+    localRole: space.localRole,
   };
 }
 

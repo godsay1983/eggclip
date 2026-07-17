@@ -233,25 +233,56 @@ fn commit_trusted_space_key_rotation<S: SecretBytesStore>(
         .clone()
         .ok_or(PairingJoinCommitError::SpaceConflict)?;
     let next_key_ref = space_key_ref(space_id, key_version);
-    match secret_store
+    let created_next_key = match secret_store
         .load_secret(&next_key_ref)
         .map_err(|_| PairingJoinCommitError::CredentialStore)?
     {
         Some(existing) if existing.as_slice() != space_key => {
             return Err(PairingJoinCommitError::CredentialConflict)
         }
-        Some(_) => {}
-        None => secret_store
-            .save_secret(&next_key_ref, space_key)
-            .map_err(|_| PairingJoinCommitError::CredentialStore)?,
-    }
+        Some(_) => false,
+        None => {
+            secret_store
+                .save_secret(&next_key_ref, space_key)
+                .map_err(|_| PairingJoinCommitError::CredentialStore)?;
+            true
+        }
+    };
 
     current.space.key_version = key_version;
     current.encrypted_space_key_ref = Some(next_key_ref.clone());
     current.updated_at = accepted_at;
-    if SpaceRepository::new(connection).upsert(&current).is_err() {
-        let _ = secret_store.delete_secret(&next_key_ref);
-        return Err(PairingJoinCommitError::Database);
+    let commit_result = (|| -> Result<(), PairingJoinCommitError> {
+        let transaction = connection
+            .transaction()
+            .map_err(|_| PairingJoinCommitError::Database)?;
+        // History ciphertext and HMAC digests are bound to the previous key.
+        // Clear both history and peer heads atomically with the key version so
+        // no mixed-key state can be exposed after a restart.
+        transaction
+            .execute(
+                "DELETE FROM clipboard_items WHERE space_id = ?1",
+                rusqlite::params![space_id.to_string()],
+            )
+            .map_err(|_| PairingJoinCommitError::Database)?;
+        transaction
+            .execute(
+                "DELETE FROM sync_heads WHERE space_id = ?1",
+                rusqlite::params![space_id.to_string()],
+            )
+            .map_err(|_| PairingJoinCommitError::Database)?;
+        SpaceRepository::new(&transaction)
+            .upsert(&current)
+            .map_err(|_| PairingJoinCommitError::Database)?;
+        transaction
+            .commit()
+            .map_err(|_| PairingJoinCommitError::Database)
+    })();
+    if let Err(error) = commit_result {
+        if created_next_key {
+            let _ = secret_store.delete_secret(&next_key_ref);
+        }
+        return Err(error);
     }
     if previous_key_ref != next_key_ref {
         let _ = secret_store.delete_secret(&previous_key_ref);
@@ -770,6 +801,46 @@ mod tests {
                 updated_at: NOW_MS,
             })
             .expect("member space");
+        let history_origin = Uuid::now_v7();
+        connection
+            .execute(
+                "INSERT INTO device_identities(device_id, identity_public_key) VALUES(?1, 'history-key')",
+                rusqlite::params![history_origin.to_string()],
+            )
+            .expect("history identity");
+        connection
+            .execute(
+                "INSERT INTO space_members(
+                   space_id, device_id, display_name, trust_state, connection_state, route_role
+                 ) VALUES(?1, ?2, '历史来源', 'trusted', 'offline', 'acceptOnly')",
+                rusqlite::params![space_id.to_string(), history_origin.to_string()],
+            )
+            .expect("history member");
+        connection
+            .execute(
+                "INSERT INTO clipboard_items(
+                   item_id, space_id, origin_device_id, origin_seq, hlc, content_type,
+                   content_length, content_digest, encrypted_content, created_at,
+                   received_at, expires_at
+                 ) VALUES(?1, ?2, ?3, 1, '1-0', 'text/plain', 4, 'digest', X'0102', ?4, ?4, ?5)",
+                rusqlite::params![
+                    Uuid::now_v7().to_string(),
+                    space_id.to_string(),
+                    history_origin.to_string(),
+                    NOW_MS,
+                    NOW_MS + 1000,
+                ],
+            )
+            .expect("history item");
+        connection
+            .execute(
+                "INSERT INTO sync_heads(
+                   space_id, peer_device_id, origin_device_id,
+                   highest_origin_seq, minimum_available, updated_at
+                 ) VALUES(?1, ?2, ?2, 1, 1, ?3)",
+                rusqlite::params![space_id.to_string(), history_origin.to_string(), NOW_MS],
+            )
+            .expect("sync head");
         let mut store = TestSecretStore::default();
         store
             .secrets
@@ -803,6 +874,22 @@ mod tests {
         );
         assert_eq!(store.secrets.get(&next_ref), Some(&next_key.to_vec()));
         assert!(!store.secrets.contains_key(&old_ref));
+        let history_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM clipboard_items WHERE space_id = ?1",
+                rusqlite::params![space_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("history count");
+        let head_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sync_heads WHERE space_id = ?1",
+                rusqlite::params![space_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("head count");
+        assert_eq!(history_count, 0);
+        assert_eq!(head_count, 0);
         assert_eq!(
             accept_trusted_space_key_rotation(
                 payload,
@@ -813,5 +900,68 @@ mod tests {
             ),
             Err(PairingJoinCommitError::SpaceKeyVersionMismatch)
         );
+    }
+
+    #[test]
+    fn trusted_rotation_rolls_back_database_and_new_credential_on_failure() {
+        let space_id = Uuid::now_v7();
+        let old_ref = space_key_ref(space_id, 1);
+        let next_ref = space_key_ref(space_id, 2);
+        let mut connection = open_in_memory_database().expect("database");
+        SpaceRepository::new(&connection)
+            .upsert(&SpaceRecord {
+                space: Space {
+                    space_id,
+                    display_name: "互联空间".to_owned(),
+                    key_version: 1,
+                    state: SpaceState::Active,
+                    created_at: NOW_MS,
+                },
+                local_role: LocalSpaceRole::Member,
+                encrypted_space_key_ref: Some(old_ref.clone()),
+                updated_at: NOW_MS,
+            })
+            .expect("member space");
+        connection
+            .execute_batch(
+                "CREATE TRIGGER fail_space_rotation
+                 BEFORE UPDATE ON spaces
+                 BEGIN
+                   SELECT RAISE(ABORT, 'forced rotation failure');
+                 END;",
+            )
+            .expect("failure trigger");
+        let mut store = TestSecretStore::default();
+        store
+            .secrets
+            .insert(old_ref.clone(), vec![0x11; SPACE_KEY_BYTES]);
+        let payload = json!({
+            "spaceId": space_id,
+            "keyVersion": 2,
+            "spaceKey": encode_base64url(&[0x22; SPACE_KEY_BYTES]),
+            "delivery": "rotation-v1",
+        });
+
+        assert_eq!(
+            accept_trusted_space_key_rotation(
+                payload,
+                &mut connection,
+                &mut store,
+                space_id,
+                NOW_MS + 100,
+            ),
+            Err(PairingJoinCommitError::Database)
+        );
+        let current = SpaceRepository::new(&connection)
+            .get(space_id)
+            .expect("space query")
+            .expect("space");
+        assert_eq!(current.space.key_version, 1);
+        assert_eq!(
+            current.encrypted_space_key_ref.as_deref(),
+            Some(old_ref.as_str())
+        );
+        assert!(store.secrets.contains_key(&old_ref));
+        assert!(!store.secrets.contains_key(&next_ref));
     }
 }

@@ -68,12 +68,21 @@ pub struct SyncSpaceSummary {
     pub key_version: u32,
     pub space_key_ref: String,
     pub created_at_ms: u64,
+    pub local_role: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncSpaceDeletionSummary {
     pub deleted_space_id: String,
+    pub active_space_id: String,
+    pub credential_deleted: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemberSpaceLeaveSummary {
+    pub left_space_id: String,
     pub active_space_id: String,
     pub credential_deleted: bool,
 }
@@ -212,6 +221,9 @@ pub enum PairingError {
     MissingSpaceKey,
     LastSpaceCannotDelete,
     SpaceHasTrustedDevices,
+    OwnerRoleRequired,
+    MemberRoleRequired,
+    CannotRevokeLocalDevice,
     Identity(String),
     InvalidInvitation,
     InvitationMissing,
@@ -242,6 +254,11 @@ impl fmt::Display for PairingError {
             }
             PairingError::SpaceHasTrustedDevices => {
                 formatter.write_str("sync space still has trusted devices")
+            }
+            PairingError::OwnerRoleRequired => formatter.write_str("space owner role required"),
+            PairingError::MemberRoleRequired => formatter.write_str("space member role required"),
+            PairingError::CannotRevokeLocalDevice => {
+                formatter.write_str("local device cannot be revoked")
             }
             PairingError::Identity(message) => write!(formatter, "identity error: {message}"),
             PairingError::InvalidInvitation => formatter.write_str("invalid pairing invitation"),
@@ -317,6 +334,31 @@ pub fn delete_local_sync_space(
 }
 
 #[tauri::command]
+pub fn leave_member_sync_space(
+    app: tauri::AppHandle,
+    space_id: String,
+) -> Result<MemberSpaceLeaveSummary, String> {
+    let space_id = Uuid::parse_str(&space_id).map_err(|_| "同步空间 ID 无效".to_owned())?;
+    let path = database_path(&app)?;
+    let mut connection =
+        open_database(path).map_err(|error| format!("无法打开本地数据库：{error}"))?;
+    let space = SpaceRepository::new(&connection)
+        .get(space_id)
+        .map_err(|error| format!("无法读取同步空间：{error}"))?
+        .ok_or_else(|| "同步空间不存在".to_owned())?;
+    if space.local_role != LocalSpaceRole::Member {
+        return Err("只有成员空间可以执行离开操作".to_owned());
+    }
+    crate::transport::disconnect_authenticated_space(&app, space_id, "leftSpace");
+    #[cfg(windows)]
+    let mut store = crate::secret_store::WindowsCredentialSecretStore;
+    #[cfg(not(windows))]
+    let mut store = crate::secret_store::UnavailableSecretStore;
+    leave_member_space_in_database(&mut connection, &mut store, space_id, now_ms()?)
+        .map_err(|error| format!("无法离开同步空间：{error}"))
+}
+
+#[tauri::command]
 pub fn ensure_default_sync_space(app: tauri::AppHandle) -> Result<SyncSpaceSummary, String> {
     let path = database_path(&app)?;
     #[cfg(windows)]
@@ -374,7 +416,10 @@ pub fn create_pairing_invitation(
     let mut store = crate::secret_store::UnavailableSecretStore;
 
     let mut summary = create_pairing_invitation_at_path(&path, &mut store, &space_id, now_ms()?)
-        .map_err(|error| format!("无法生成配对邀请：{error}"))?;
+        .map_err(|error| match error {
+            PairingError::OwnerRoleRequired => "成员空间不能生成配对邀请".to_owned(),
+            _ => format!("无法生成配对邀请：{error}"),
+        })?;
     let endpoints = crate::transport::pairing_invitation_endpoints(&app);
     if !endpoints.is_empty() {
         let encoded = summary
@@ -566,6 +611,78 @@ pub fn create_sync_space<S: SecretBytesStore>(
         key_version,
         space_key_ref,
         created_at_ms: now_ms,
+        local_role: "owner".to_owned(),
+    })
+}
+
+pub fn leave_member_space_in_database<S: SecretBytesStore>(
+    connection: &mut Connection,
+    secret_store: &mut S,
+    space_id: Uuid,
+    updated_at: u64,
+) -> Result<MemberSpaceLeaveSummary, PairingError> {
+    let target = SpaceRepository::new(connection)
+        .get(space_id)
+        .map_err(|error| PairingError::Database(error.to_string()))?
+        .ok_or(PairingError::MissingSpace)?;
+    if target.local_role != LocalSpaceRole::Member {
+        return Err(PairingError::MemberRoleRequired);
+    }
+    let key_ref = target
+        .encrypted_space_key_ref
+        .ok_or(PairingError::MissingSpaceKeyRef)?;
+    let active_space_id = SettingsRepository::new(connection)
+        .get(ACTIVE_SYNC_SPACE_ID_KEY)
+        .map_err(|error| PairingError::Database(error.to_string()))?
+        .and_then(|value| Uuid::parse_str(&value).ok());
+    let mut remaining_space_ids = SpaceRepository::new(connection)
+        .list()
+        .map_err(|error| PairingError::Database(error.to_string()))?
+        .into_iter()
+        .filter(|record| {
+            record.space.space_id != space_id
+                && record.space.state == SpaceState::Active
+                && record.encrypted_space_key_ref.is_some()
+        })
+        .map(|record| record.space.space_id)
+        .collect::<Vec<_>>();
+    if remaining_space_ids.is_empty() {
+        let fallback = create_sync_space(
+            connection,
+            secret_store,
+            DEFAULT_SPACE_DISPLAY_NAME,
+            updated_at,
+        )?;
+        remaining_space_ids
+            .push(Uuid::parse_str(&fallback.space_id).map_err(|_| PairingError::InvalidSpaceId)?);
+    }
+    let next_active_space_id = active_space_id
+        .filter(|active| *active != space_id && remaining_space_ids.contains(active))
+        .unwrap_or(remaining_space_ids[0]);
+    let transaction = connection
+        .transaction()
+        .map_err(|error| PairingError::Database(error.to_string()))?;
+    transaction
+        .execute(
+            "DELETE FROM spaces WHERE space_id = ?1",
+            rusqlite::params![space_id.to_string()],
+        )
+        .map_err(|error| PairingError::Database(error.to_string()))?;
+    SettingsRepository::new(&transaction)
+        .set(
+            ACTIVE_SYNC_SPACE_ID_KEY,
+            &next_active_space_id.to_string(),
+            updated_at,
+        )
+        .map_err(|error| PairingError::Database(error.to_string()))?;
+    transaction
+        .commit()
+        .map_err(|error| PairingError::Database(error.to_string()))?;
+
+    Ok(MemberSpaceLeaveSummary {
+        left_space_id: space_id.to_string(),
+        active_space_id: next_active_space_id.to_string(),
+        credential_deleted: secret_store.delete_secret(&key_ref).is_ok(),
     })
 }
 
@@ -699,6 +816,10 @@ pub fn list_sync_spaces(connection: &Connection) -> Result<Vec<SyncSpaceSummary>
             key_version: record.space.key_version,
             space_key_ref: record.encrypted_space_key_ref.unwrap_or_default(),
             created_at_ms: record.space.created_at,
+            local_role: match record.local_role {
+                LocalSpaceRole::Owner => "owner".to_owned(),
+                LocalSpaceRole::Member => "member".to_owned(),
+            },
         })
         .collect())
 }
@@ -820,6 +941,16 @@ pub(crate) fn revoke_device_and_rotate_space_key<S: SecretBytesStore>(
         .get(space_id)
         .map_err(|error| PairingError::Database(error.to_string()))?
         .ok_or(PairingError::MissingSpace)?;
+    if current_space.local_role != LocalSpaceRole::Owner {
+        return Err(PairingError::OwnerRoleRequired);
+    }
+    let local_device_id = SettingsRepository::new(connection)
+        .get(crate::storage::repositories::LOCAL_DEVICE_ID_KEY)
+        .map_err(|error| PairingError::Database(error.to_string()))?
+        .and_then(|value| Uuid::parse_str(&value).ok());
+    if local_device_id == Some(device_id) {
+        return Err(PairingError::CannotRevokeLocalDevice);
+    }
     let previous_key_ref = current_space
         .encrypted_space_key_ref
         .clone()
@@ -1046,6 +1177,9 @@ pub fn create_pairing_invitation_for_space<S: SecretBytesStore>(
         .ok_or(PairingError::MissingSpace)?;
     if space.encrypted_space_key_ref.is_none() {
         return Err(PairingError::MissingSpaceKeyRef);
+    }
+    if space.local_role != LocalSpaceRole::Owner {
+        return Err(PairingError::OwnerRoleRequired);
     }
     PairingInvitationRepository::new(connection)
         .expire_before(now_ms)
@@ -1819,6 +1953,33 @@ mod tests {
     use crate::identity::IdentitySecretStore;
     use crate::storage::{open_in_memory_database, repositories::SpaceRepository};
 
+    fn insert_member_space(
+        connection: &rusqlite::Connection,
+        store: &mut MemorySecretStore,
+        display_name: &str,
+    ) -> Uuid {
+        let space_id = Uuid::now_v7();
+        let key_ref = space_key_ref(space_id, 1);
+        SpaceRepository::new(connection)
+            .upsert(&SpaceRecord {
+                space: Space {
+                    space_id,
+                    display_name: display_name.to_owned(),
+                    key_version: 1,
+                    state: SpaceState::Active,
+                    created_at: 1_700_000_000_000,
+                },
+                local_role: LocalSpaceRole::Member,
+                encrypted_space_key_ref: Some(key_ref.clone()),
+                updated_at: 1_700_000_000_000,
+            })
+            .expect("member space");
+        store
+            .save_secret(&key_ref, &[0x31; SPACE_KEY_BYTES])
+            .expect("member key");
+        space_id
+    }
+
     fn decode_invitation_payload(invitation: &str) -> PairingInvitationPayload {
         let payload = invitation
             .strip_prefix("eggclip://pair?p=")
@@ -2000,6 +2161,132 @@ mod tests {
         assert!(spaces
             .iter()
             .all(|space| space.space_key_ref.starts_with("credential://")));
+        assert!(spaces.iter().all(|space| space.local_role == "owner"));
+    }
+
+    #[test]
+    fn member_cannot_invite_or_rotate_global_space_key() {
+        let mut connection = open_in_memory_database().expect("database");
+        let mut store = MemorySecretStore::default();
+        let space_id = insert_member_space(&connection, &mut store, "加入的空间");
+        assert_eq!(
+            create_pairing_invitation_for_space(
+                &mut connection,
+                &mut store,
+                &space_id.to_string(),
+                1_700_000_001_000,
+            )
+            .err(),
+            Some(PairingError::OwnerRoleRequired)
+        );
+
+        let coordinator_device_id = Uuid::now_v7();
+        DeviceRepository::new(&connection)
+            .upsert(&DeviceRecord {
+                device: Device {
+                    device_id: coordinator_device_id,
+                    space_id,
+                    display_name: "协调端".to_owned(),
+                    identity_public_key_ref: "coordinator-key".to_owned(),
+                    trust_state: DeviceTrustState::Trusted,
+                    connection_state: DeviceConnectionState::Online,
+                    last_seen_at: Some(1_700_000_001_000),
+                },
+                route: TrustedDeviceRoute {
+                    role: crate::sync::TrustedRouteRole::DialCoordinator,
+                    last_successful_host: Some("192.168.1.8".to_owned()),
+                    last_successful_port: Some(43120),
+                },
+                paired_at: Some(1_700_000_000_000),
+                revoked_at: None,
+            })
+            .expect("coordinator");
+        assert_eq!(
+            revoke_device_and_rotate_space_key(
+                &mut connection,
+                &mut store,
+                coordinator_device_id,
+                1_700_000_002_000,
+            )
+            .err(),
+            Some(PairingError::OwnerRoleRequired)
+        );
+    }
+
+    #[test]
+    fn leaving_member_space_removes_local_state_and_creates_owner_fallback() {
+        let mut connection = open_in_memory_database().expect("database");
+        let mut store = MemorySecretStore::default();
+        let member_space_id = insert_member_space(&connection, &mut store, "加入的空间");
+        let member_key_ref = space_key_ref(member_space_id, 1);
+        SettingsRepository::new(&connection)
+            .set(
+                ACTIVE_SYNC_SPACE_ID_KEY,
+                &member_space_id.to_string(),
+                1_700_000_000_100,
+            )
+            .expect("active member space");
+
+        let result = leave_member_space_in_database(
+            &mut connection,
+            &mut store,
+            member_space_id,
+            1_700_000_001_000,
+        )
+        .expect("leave member space");
+
+        assert_eq!(result.left_space_id, member_space_id.to_string());
+        assert!(result.credential_deleted);
+        assert!(!store.secrets.contains_key(&member_key_ref));
+        assert!(SpaceRepository::new(&connection)
+            .get(member_space_id)
+            .expect("old space query")
+            .is_none());
+        let fallback = SpaceRepository::new(&connection)
+            .get(Uuid::parse_str(&result.active_space_id).expect("fallback id"))
+            .expect("fallback query")
+            .expect("fallback space");
+        assert_eq!(fallback.local_role, LocalSpaceRole::Owner);
+        assert_eq!(
+            resolve_active_sync_space(&connection, 1_700_000_001_100)
+                .expect("active fallback")
+                .map(|value| value.to_string()),
+            Some(result.active_space_id)
+        );
+    }
+
+    #[test]
+    fn owner_space_cannot_use_member_leave_or_revoke_local_identity() {
+        let mut connection = open_in_memory_database().expect("database");
+        let mut store = MemorySecretStore::default();
+        let owner = create_sync_space(&mut connection, &mut store, "自己的空间", 1_700_000_000_000)
+            .expect("owner space");
+        let owner_space_id = Uuid::parse_str(&owner.space_id).expect("space id");
+        assert_eq!(
+            leave_member_space_in_database(
+                &mut connection,
+                &mut store,
+                owner_space_id,
+                1_700_000_001_000,
+            )
+            .unwrap_err(),
+            PairingError::MemberRoleRequired
+        );
+        let local_device_id = SettingsRepository::new(&connection)
+            .get(crate::storage::repositories::LOCAL_DEVICE_ID_KEY)
+            .expect("local id metadata")
+            .and_then(|value| Uuid::parse_str(&value).ok())
+            .expect("local device id");
+        assert_eq!(
+            revoke_device_and_rotate_space_key(
+                &mut connection,
+                &mut store,
+                local_device_id,
+                1_700_000_002_000,
+            )
+            .err(),
+            Some(PairingError::CannotRevokeLocalDevice)
+        );
     }
 
     #[test]
@@ -2622,7 +2909,7 @@ mod tests {
 
         let wrong_identity_hello = HelloPayload {
             identity_public_key: encode_base64url(&[7u8; 32]),
-            ..client_hello
+            ..client_hello.clone()
         };
         let wrong_identity_frame = serialize_pre_auth_envelope(&PreAuthEnvelope {
             message_type: MessageType::ClientHello,
@@ -2639,6 +2926,27 @@ mod tests {
                 &encode_base64url(&server_x25519.public_key()),
                 "018ff6f1-0000-7000-8000-000000000008",
                 1_700_000_001_000,
+            ),
+            Err(PairingError::InvalidClientHello)
+        );
+
+        let space_id = Uuid::parse_str(&space.space_id).expect("space id");
+        let devices = DeviceRepository::new(&connection);
+        let mut revoked = devices
+            .get_in_space(space_id, peer_device_id)
+            .expect("device query")
+            .expect("device");
+        revoked.device.trust_state = DeviceTrustState::Revoked;
+        revoked.revoked_at = Some(1_700_000_002_000);
+        devices.upsert(&revoked).expect("revoke device");
+        assert_eq!(
+            accept_trusted_device_client_hello(
+                &mut connection,
+                &mut store,
+                &client_hello_frame,
+                &encode_base64url(&server_x25519.public_key()),
+                "018ff6f1-0000-7000-8000-000000000009",
+                1_700_000_002_100,
             ),
             Err(PairingError::InvalidClientHello)
         );

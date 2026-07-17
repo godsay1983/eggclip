@@ -132,6 +132,7 @@ export interface SyncSpaceSummary {
   shortId: string;
   keyRefKind: "credential" | "unknown";
   createdAt: string;
+  localRole: "owner" | "member";
 }
 
 export interface PairingInvitationSummary {

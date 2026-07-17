@@ -13,6 +13,7 @@
   import { autostartSnapshot } from "$lib/stores/autostart";
   import { shellSnapshot } from "$lib/stores/shell";
   import type { AppSettings, ThemeMode } from "$lib/types/settings";
+  import type { SyncSpaceSummary } from "$lib/types/shell";
   import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
   import packageMetadata from "../../package.json";
@@ -28,9 +29,13 @@
     qrExpanded = false;
   }
 
-  async function deleteSyncSpace(spaceId: string): Promise<void> {
+  async function removeSyncSpace(space: SyncSpaceSummary): Promise<void> {
     try {
-      await shellSnapshot.deleteSyncSpace(spaceId);
+      if (space.localRole === "member") {
+        await shellSnapshot.leaveSyncSpace(space.id);
+      } else {
+        await shellSnapshot.deleteSyncSpace(space.id);
+      }
       pendingSpaceDeletionId = "";
     } catch (_) {
       // The store exposes the actionable backend error inside the space panel.
@@ -322,6 +327,7 @@
                   <strong>{space.displayName}</strong>
                   <p>
                     #{space.shortId} ·
+                    {space.localRole === "owner" ? "协调端" : "成员端"} ·
                     {$shellSnapshot.devices.filter((device) =>
                       device.trustKind === "trusted" && device.spaceId === space.id).length}
                     台可信设备
@@ -334,14 +340,16 @@
                       : "可用"}
                   </span>
                   <div class="space-card-controls">
-                    <button
-                      class="text-button"
-                      type="button"
-                      disabled={$shellSnapshot.syncSpace.state === "inviting"}
-                      on:click={() => shellSnapshot.createPairingInvitation(space.id)}
-                    >
-                      添加设备
-                    </button>
+                    {#if space.localRole === "owner"}
+                      <button
+                        class="text-button"
+                        type="button"
+                        disabled={$shellSnapshot.syncSpace.state === "inviting"}
+                        on:click={() => shellSnapshot.createPairingInvitation(space.id)}
+                      >
+                        添加设备
+                      </button>
+                    {/if}
                     <button
                       class="text-button"
                       type="button"
@@ -363,22 +371,24 @@
                       class="text-button danger-action"
                       type="button"
                       disabled={$shellSnapshot.syncSpace.state === "loading" ||
-                        $shellSnapshot.syncSpace.spaces.length <= 1}
+                        (space.localRole === "owner" && $shellSnapshot.syncSpace.spaces.length <= 1)}
                       on:click={() => (pendingSpaceDeletionId = space.id)}
-                    >删除空间</button>
+                    >{space.localRole === "member" ? "离开空间" : "删除空间"}</button>
                   </div>
                 {/if}
                 {#if pendingSpaceDeletionId === space.id}
                   <div class="device-removal-confirmation space-deletion-confirmation" role="alert">
-                    <strong>确认删除“{space.displayName}”？</strong>
-                    <p>该空间、本地同步记录和旧密钥引用将被删除，操作无法撤销。有可信设备在线或尚未移除时会拒绝删除。</p>
+                    <strong>{space.localRole === "member" ? "确认离开" : "确认删除"}“{space.displayName}”？</strong>
+                    <p>{space.localRole === "member"
+                      ? "与协调端的可信连接、该空间的本地记录和密钥将被移除；再次加入需要新的邀请。"
+                      : "该空间、本地同步记录和旧密钥引用将被删除，操作无法撤销。有可信设备在线或尚未移除时会拒绝删除。"}</p>
                     <div>
                       <button
                         class="compact-danger-action"
                         type="button"
                         disabled={$shellSnapshot.syncSpace.state === "loading"}
-                        on:click={() => deleteSyncSpace(space.id)}
-                      >确认删除</button>
+                        on:click={() => removeSyncSpace(space)}
+                      >{space.localRole === "member" ? "确认离开" : "确认删除"}</button>
                       <button
                         class="text-button"
                         type="button"
@@ -448,6 +458,9 @@
           devices={$shellSnapshot.devices}
           onRename={(deviceId, name) => shellSnapshot.renameTrustedDevice(deviceId, name)}
           onRemove={(deviceId) => shellSnapshot.removeTrustedDevice(deviceId)}
+          canRemove={(device) =>
+            $shellSnapshot.syncSpace.spaces.some((space) =>
+              space.id === device.spaceId && space.localRole === "owner")}
         />
       </div>
       {:else}

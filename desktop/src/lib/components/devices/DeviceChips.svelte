@@ -5,6 +5,7 @@
   export let devices: DeviceSummary[] = [];
   export let onRename: (deviceId: string, name: string) => Promise<void> | void = () => {};
   export let onRemove: (deviceId: string) => Promise<unknown> | unknown = () => {};
+  export let canRemove: (device: DeviceSummary) => boolean = () => true;
 
   let editingDeviceId = "";
   let editingName = "";
@@ -138,12 +139,14 @@
                     editingName = device.name;
                   }}
                 >重命名</button>
-                <button
-                  class="text-button danger-action"
-                  type="button"
-                  disabled={busyDeviceId === device.id}
-                  on:click={() => (pendingRemovalDeviceId = device.id)}
-                >{busyDeviceId === device.id ? "处理中…" : "移除并轮换密钥"}</button>
+                {#if canRemove(device)}
+                  <button
+                    class="text-button danger-action"
+                    type="button"
+                    disabled={busyDeviceId === device.id}
+                    on:click={() => (pendingRemovalDeviceId = device.id)}
+                  >{busyDeviceId === device.id ? "处理中…" : "移除并轮换密钥"}</button>
+                {/if}
               {/if}
             </div>
             {#if pendingRemovalDeviceId === device.id}

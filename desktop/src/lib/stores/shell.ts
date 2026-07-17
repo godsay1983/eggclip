@@ -17,6 +17,7 @@ import {
   listClipboardHistoryPreview,
   listTrustedDevices,
   listLocalSyncSpaces,
+  leaveMemberSyncSpace,
   loadActiveSyncSpaceId,
   loadPocRecentEndpoint,
   onAuthenticatedLocalBroadcast,
@@ -28,6 +29,7 @@ import {
   onPocDiscoveryError,
   onPocPeerConnected,
   onPocPeerDisconnected,
+  onSpaceKeyRotated,
   readSystemClipboardText,
   removeTrustedDevice as removeTrustedDeviceApi,
   renameTrustedDevice as renameTrustedDeviceApi,
@@ -264,6 +266,20 @@ export const shellSnapshot = {
             `来自可信设备 ${deviceLabel}；已通过认证加密会话接收。`,
           );
           void refreshHistorySummaryState();
+        }),
+        onSpaceKeyRotated((event) => {
+          void Promise.all([
+            shellSnapshot.refreshSyncSpaces(),
+            refreshHistorySummaryState(),
+          ]);
+          snapshot.update((state) => ({
+            ...state,
+            connection: {
+              state: "online",
+              title: "空间密钥已更新",
+              description: `同步空间密钥已安全轮换至 v${event.keyVersion}，旧密钥绑定的历史已清理。`,
+            },
+          }));
         }),
         onPocClipboardText((current, peer) => {
           if (!pocReceiveEnabled) {
@@ -576,6 +592,50 @@ export const shellSnapshot = {
           ...state.syncSpace,
           state: "error",
           errorMessage: error instanceof Error ? error.message : "无法删除同步空间",
+        },
+      }));
+      throw error;
+    }
+  },
+  async leaveSyncSpace(spaceId: string) {
+    snapshot.update((state) => ({
+      ...state,
+      syncSpace: {
+        ...state.syncSpace,
+        state: "loading",
+        errorMessage: null,
+      },
+    }));
+    try {
+      const result = await leaveMemberSyncSpace(spaceId);
+      const spaces = await listLocalSyncSpaces();
+      await Promise.all([refreshTrustedDeviceState(), refreshHistorySummaryState()]);
+      snapshot.update((state) => ({
+        ...state,
+        syncSpace: {
+          state: "ready",
+          spaces,
+          activeSpaceId: result.activeSpaceId,
+          hmacDiagnostic: null,
+          invitation: null,
+          invitationCopiedAt: null,
+          errorMessage: result.credentialDeleted
+            ? null
+            : "已离开空间，但系统凭据库中的旧密钥引用未能清理",
+        },
+        connection: {
+          state: "offline",
+          title: "已离开同步空间",
+          description: "可信连接和该空间的本地记录已移除，后续需要新邀请才能再次加入。",
+        },
+      }));
+    } catch (error) {
+      snapshot.update((state) => ({
+        ...state,
+        syncSpace: {
+          ...state.syncSpace,
+          state: "error",
+          errorMessage: error instanceof Error ? error.message : "无法离开同步空间",
         },
       }));
       throw error;

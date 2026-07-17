@@ -267,6 +267,7 @@ async fn attach_formal_connection<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
+    validate_current_formal_target(&app, space_id, device_id)?;
     let peer = format!("trusted-outbound:{space_id}:{device_id}:{}", Uuid::now_v7());
     let (mut writer, reader) = websocket.split();
     let (outgoing_tx, mut outgoing_rx) = mpsc::unbounded_channel::<Message>();
@@ -331,6 +332,33 @@ where
     };
     let _ = app.emit("transport://trusted-outbound-connection", summary.clone());
     Ok(summary)
+}
+
+fn validate_current_formal_target(
+    app: &AppHandle,
+    space_id: Uuid,
+    device_id: Uuid,
+) -> Result<(), String> {
+    let path = database_path(app)?;
+    let connection = open_database(path).map_err(|_| "无法打开本地数据库".to_string())?;
+    let space = SpaceRepository::new(&connection)
+        .get(space_id)
+        .map_err(|_| "无法读取同步空间".to_string())?
+        .ok_or_else(|| "同步空间已离开或删除".to_string())?;
+    let coordinator = DeviceRepository::new(&connection)
+        .get_in_space(space_id, device_id)
+        .map_err(|_| "无法读取可信设备".to_string())?
+        .ok_or_else(|| "可信协调端已移除".to_string())?;
+    if space.space.state != SpaceState::Active
+        || space.local_role != crate::sync::LocalSpaceRole::Member
+        || space.encrypted_space_key_ref.is_none()
+        || coordinator.device.trust_state != DeviceTrustState::Trusted
+        || coordinator.revoked_at.is_some()
+        || coordinator.route.role != crate::sync::TrustedRouteRole::DialCoordinator
+    {
+        return Err("可信连接目标已失效".to_string());
+    }
+    Ok(())
 }
 
 async fn complete_initial_pairing<S, Store>(

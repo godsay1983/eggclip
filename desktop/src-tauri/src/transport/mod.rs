@@ -459,7 +459,11 @@ pub fn remove_trusted_device(
         device_id,
         now_ms()?,
     )
-    .map_err(|error| format!("无法移除可信设备：{error}"))?;
+    .map_err(|error| match error {
+        PairingError::OwnerRoleRequired => "成员端不能移除其他设备或轮换空间密钥".to_owned(),
+        PairingError::CannotRevokeLocalDevice => "不能移除本机设备".to_owned(),
+        _ => format!("无法移除可信设备：{error}"),
+    })?;
 
     disconnect_authenticated_device(&app, device_id, "deviceRevoked");
     let delivered_peers = broadcast_space_key_rotation(
@@ -2202,6 +2206,10 @@ fn handle_remote_sync_heads(
     let remote: SyncHeadsPayload = serde_json::from_value(payload.clone()).map_err(|_| ())?;
     remote.validate().map_err(|_| ())?;
     let (space_id, peer_device_id) = authenticated_peer_context(app, peer)?;
+    let settings = load_authenticated_inbound_settings(app)?;
+    if !authenticated_backfill_enabled(&settings) {
+        return Ok(true);
+    }
     let path = database_path(app).map_err(|_| ())?;
     let connection = open_database(path).map_err(|_| ())?;
     let updated_at = now_ms().map_err(|_| ())?;
@@ -2228,8 +2236,22 @@ fn handle_remote_sync_heads(
         .into_iter()
         .map(|head| (head.origin_device_id.to_string(), head.latest_origin_seq))
         .collect();
-    let ranges: Vec<RequestRange> = remote
-        .heads
+    let ranges = missing_ranges_from_heads(&remote.heads, &local_latest);
+    if ranges.is_empty() {
+        return Ok(true);
+    }
+    let request = RequestRangePayload { ranges };
+    request.validate().map_err(|_| ())?;
+    let value = serde_json::to_value(request).map_err(|_| ())?;
+    send_authenticated_business_payload(app, peer, MessageType::RequestRange, &value)?;
+    Ok(false)
+}
+
+fn missing_ranges_from_heads(
+    remote_heads: &std::collections::BTreeMap<String, u64>,
+    local_latest: &HashMap<String, u64>,
+) -> Vec<RequestRange> {
+    remote_heads
         .iter()
         .filter_map(|(origin, latest)| {
             let local_seq = local_latest.get(origin).copied().unwrap_or(0);
@@ -2240,15 +2262,7 @@ fn handle_remote_sync_heads(
             })
         })
         .take(MAX_BATCH_ITEMS)
-        .collect();
-    if ranges.is_empty() {
-        return Ok(true);
-    }
-    let request = RequestRangePayload { ranges };
-    request.validate().map_err(|_| ())?;
-    let value = serde_json::to_value(request).map_err(|_| ())?;
-    send_authenticated_business_payload(app, peer, MessageType::RequestRange, &value)?;
-    Ok(false)
+        .collect()
 }
 
 fn handle_inbound_item_batch(
@@ -2260,22 +2274,40 @@ fn handle_inbound_item_batch(
     batch.validate().map_err(|_| ())?;
     let (space_id, _) = authenticated_peer_context(app, peer)?;
     let settings = load_authenticated_inbound_settings(app)?;
-    let received_at = now_ms().map_err(|_| ())?;
-    let mut acked = Vec::new();
-    for item in &batch.items {
-        if Uuid::parse_str(&item.space_id).map_err(|_| ())? != space_id {
-            return Err(());
-        }
-        match persist_authenticated_remote_history_if_possible(app, item, received_at, &settings)? {
-            AuthenticatedRemoteHistoryOutcome::Inserted
-            | AuthenticatedRemoteHistoryOutcome::Duplicate => {
-                acked.push(item.item_id.clone());
-            }
-            AuthenticatedRemoteHistoryOutcome::Conflict => return Err(()),
-            AuthenticatedRemoteHistoryOutcome::SkippedByPolicy
-            | AuthenticatedRemoteHistoryOutcome::SkippedMissingTrustGraph => return Err(()),
-        }
+    if !authenticated_backfill_enabled(&settings) {
+        return Ok(());
     }
+    let received_at = now_ms().map_err(|_| ())?;
+    let path = database_path(app).map_err(|_| ())?;
+    let connection = open_database(path).map_err(|_| ())?;
+    #[cfg(windows)]
+    let secret_store = crate::secret_store::WindowsCredentialSecretStore;
+    #[cfg(not(windows))]
+    let secret_store = crate::secret_store::UnavailableSecretStore;
+    let mut space_key = load_space_key(&connection, &secret_store, space_id).map_err(|_| ())?;
+    let mut acked = Vec::new();
+    let result = (|| -> Result<(), ()> {
+        for item in &batch.items {
+            validate_authenticated_batch_item(&connection, space_id, item, &space_key)?;
+            match persist_authenticated_remote_history_if_possible(
+                app,
+                item,
+                received_at,
+                &settings,
+            )? {
+                AuthenticatedRemoteHistoryOutcome::Inserted
+                | AuthenticatedRemoteHistoryOutcome::Duplicate => {
+                    acked.push(item.item_id.clone());
+                }
+                AuthenticatedRemoteHistoryOutcome::Conflict => return Err(()),
+                AuthenticatedRemoteHistoryOutcome::SkippedByPolicy
+                | AuthenticatedRemoteHistoryOutcome::SkippedMissingTrustGraph => return Err(()),
+            }
+        }
+        Ok(())
+    })();
+    space_key.fill(0);
+    result?;
     let _ = app.emit("transport://retention-gaps", batch.gaps.clone());
     if acked.is_empty() {
         return Ok(());
@@ -2284,6 +2316,37 @@ fn handle_inbound_item_batch(
     ack.validate().map_err(|_| ())?;
     let value = serde_json::to_value(ack).map_err(|_| ())?;
     send_authenticated_business_payload(app, peer, MessageType::ItemAck, &value)
+}
+
+fn authenticated_backfill_enabled(settings: &AppSettings) -> bool {
+    let policy = crate::sync::inbound_clipboard_policy_with_settings(
+        crate::sync::InboundClipboardEventKind::ItemBatch,
+        settings,
+    );
+    policy.update_history && settings.history_enabled && settings.history_limit > 0
+}
+
+fn validate_authenticated_batch_item(
+    connection: &rusqlite::Connection,
+    space_id: Uuid,
+    item: &ProtocolClipboardItem,
+    space_key: &[u8; crate::pairing::SPACE_KEY_BYTES],
+) -> Result<(), ()> {
+    if Uuid::parse_str(&item.space_id).map_err(|_| ())? != space_id {
+        return Err(());
+    }
+    let origin_device_id = Uuid::parse_str(&item.origin_device_id).map_err(|_| ())?;
+    let origin = DeviceRepository::new(connection)
+        .get_in_space(space_id, origin_device_id)
+        .map_err(|_| ())?
+        .ok_or(())?;
+    if origin.device.trust_state != DeviceTrustState::Trusted || origin.revoked_at.is_some() {
+        return Err(());
+    }
+    if content_hmac_digest(space_key, &item.content).map_err(|_| ())? != item.content_digest {
+        return Err(());
+    }
+    Ok(())
 }
 
 fn respond_to_request_range(
@@ -2701,6 +2764,27 @@ fn disconnect_authenticated_device(app: &AppHandle, device_id: Uuid, reason: &'s
                 .filter_map(|(peer, session)| {
                     (session.device_id == device_id).then(|| peer.clone())
                 })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    for peer in peers {
+        close_authenticated_session_with_reason(app, &peer, reason, true);
+    }
+}
+
+pub(crate) fn disconnect_authenticated_space(
+    app: &AppHandle,
+    space_id: Uuid,
+    reason: &'static str,
+) {
+    let peers = app
+        .state::<PocTransportRuntime>()
+        .authenticated_sessions
+        .lock()
+        .map(|sessions| {
+            sessions
+                .iter()
+                .filter_map(|(peer, session)| (session.space_id == space_id).then(|| peer.clone()))
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
@@ -3388,6 +3472,111 @@ mod tests {
             Some(AuthenticatedRemoteHistoryOutcome::Inserted),
             false,
         ));
+    }
+
+    #[test]
+    fn offline_backfill_respects_sync_receive_and_history_settings() {
+        assert!(authenticated_backfill_enabled(&AppSettings::default()));
+        for settings in [
+            AppSettings {
+                sync_enabled: false,
+                ..AppSettings::default()
+            },
+            AppSettings {
+                auto_receive_enabled: false,
+                ..AppSettings::default()
+            },
+            AppSettings {
+                history_enabled: false,
+                ..AppSettings::default()
+            },
+            AppSettings {
+                history_limit: 0,
+                ..AppSettings::default()
+            },
+        ] {
+            assert!(!authenticated_backfill_enabled(&settings));
+        }
+    }
+
+    #[test]
+    fn missing_ranges_are_computed_for_both_sides_without_touching_clipboard() {
+        let origin_a = Uuid::now_v7().to_string();
+        let origin_b = Uuid::now_v7().to_string();
+        let remote =
+            std::collections::BTreeMap::from([(origin_a.clone(), 8), (origin_b.clone(), 3)]);
+        let local = HashMap::from([(origin_a.clone(), 5), (origin_b, 3)]);
+
+        let ranges = missing_ranges_from_heads(&remote, &local);
+
+        assert_eq!(ranges.len(), 1);
+        assert_eq!(ranges[0].origin_device_id, origin_a);
+        assert_eq!(ranges[0].from_seq, 6);
+        assert_eq!(ranges[0].to_seq, 8);
+    }
+
+    #[test]
+    fn offline_batch_requires_trusted_origin_and_current_space_hmac() {
+        let connection = crate::storage::open_in_memory_database().expect("database");
+        let space_id = Uuid::now_v7();
+        let origin_device_id = Uuid::now_v7();
+        SpaceRepository::new(&connection)
+            .upsert(&crate::storage::repositories::SpaceRecord {
+                space: crate::sync::Space {
+                    space_id,
+                    display_name: "离线同步".to_owned(),
+                    key_version: 1,
+                    state: SpaceState::Active,
+                    created_at: 1,
+                },
+                local_role: crate::sync::LocalSpaceRole::Member,
+                encrypted_space_key_ref: Some("credential://test".to_owned()),
+                updated_at: 1,
+            })
+            .expect("space");
+        DeviceRepository::new(&connection)
+            .upsert(&DeviceRecord {
+                device: Device {
+                    device_id: origin_device_id,
+                    space_id,
+                    display_name: "协调端".to_owned(),
+                    identity_public_key_ref: "trusted-key".to_owned(),
+                    trust_state: DeviceTrustState::Trusted,
+                    connection_state: DeviceConnectionState::Online,
+                    last_seen_at: Some(1),
+                },
+                route: TrustedDeviceRoute::default(),
+                paired_at: Some(1),
+                revoked_at: None,
+            })
+            .expect("member");
+        let space_key = [0x41; crate::pairing::SPACE_KEY_BYTES];
+        let content = "断线期间产生的文本";
+        let mut item = ProtocolClipboardItem {
+            item_id: Uuid::now_v7().to_string(),
+            space_id: space_id.to_string(),
+            origin_device_id: origin_device_id.to_string(),
+            origin_seq: 3,
+            hlc: "0000018bcfe56864-0001".to_owned(),
+            content_type: ProtocolContentType::TextPlain,
+            content_length: content.len(),
+            content_digest: content_hmac_digest(&space_key, content).expect("digest"),
+            created_at: 1,
+            content: content.to_owned(),
+        };
+        assert!(
+            validate_authenticated_batch_item(&connection, space_id, &item, &space_key).is_ok()
+        );
+
+        item.content_digest = content_hmac_digest(&space_key, "篡改").expect("digest");
+        assert!(
+            validate_authenticated_batch_item(&connection, space_id, &item, &space_key).is_err()
+        );
+        item.content_digest = content_hmac_digest(&space_key, content).expect("digest");
+        item.space_id = Uuid::now_v7().to_string();
+        assert!(
+            validate_authenticated_batch_item(&connection, space_id, &item, &space_key).is_err()
+        );
     }
 
     #[test]
