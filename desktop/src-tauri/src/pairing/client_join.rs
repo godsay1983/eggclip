@@ -22,6 +22,7 @@ use crate::{
 };
 
 const INITIAL_KEY_DELIVERY: &str = "pairing-v1";
+const ROTATED_KEY_DELIVERY: &str = "rotation-v1";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum PairingJoinCommitError {
@@ -75,7 +76,6 @@ pub(crate) struct PairingClientReadySession {
 }
 
 pub(crate) struct PairingClientPendingJoin {
-    pub(super) invitation_id: Uuid,
     pub(super) space_id: Uuid,
     pub(super) expected_key_version: u32,
     pub(super) coordinator_device_id: Uuid,
@@ -89,10 +89,6 @@ pub(crate) struct PairingClientPendingJoin {
 }
 
 impl PairingClientPendingJoin {
-    pub(crate) fn set_connected_endpoint(&mut self, host: Ipv4Addr, port: u16) {
-        self.connected_endpoint = Some((host, port));
-    }
-
     pub(crate) fn accept_initial_space_key<S: SecretBytesStore>(
         mut self,
         frame: &str,
@@ -177,6 +173,90 @@ struct InitialSpaceKeyPayload {
     key_version: u32,
     space_key: String,
     delivery: String,
+}
+
+pub(crate) fn accept_trusted_space_key_rotation<S: SecretBytesStore>(
+    payload: serde_json::Value,
+    connection: &mut Connection,
+    secret_store: &mut S,
+    expected_space_id: Uuid,
+    accepted_at: u64,
+) -> Result<u32, PairingJoinCommitError> {
+    let mut payload: InitialSpaceKeyPayload = serde_json::from_value(payload)
+        .map_err(|_| PairingJoinCommitError::InvalidSpaceKeyPayload)?;
+    if payload.space_id != expected_space_id.to_string()
+        || payload.delivery != ROTATED_KEY_DELIVERY
+        || payload.key_version == 0
+    {
+        payload.space_key.zeroize();
+        return Err(PairingJoinCommitError::InvalidSpaceKeyPayload);
+    }
+    let decoded_result = decode_base64url(&payload.space_key);
+    payload.space_key.zeroize();
+    let mut decoded = decoded_result.map_err(|_| PairingJoinCommitError::InvalidSpaceKeyPayload)?;
+    let key_result = fixed_bytes::<SPACE_KEY_BYTES>(&decoded, "spaceKey");
+    decoded.zeroize();
+    let mut space_key = key_result.map_err(|_| PairingJoinCommitError::InvalidSpaceKeyPayload)?;
+    let result = commit_trusted_space_key_rotation(
+        connection,
+        secret_store,
+        expected_space_id,
+        payload.key_version,
+        accepted_at,
+        &space_key,
+    );
+    space_key.zeroize();
+    result
+}
+
+fn commit_trusted_space_key_rotation<S: SecretBytesStore>(
+    connection: &mut Connection,
+    secret_store: &mut S,
+    space_id: Uuid,
+    key_version: u32,
+    accepted_at: u64,
+    space_key: &[u8; SPACE_KEY_BYTES],
+) -> Result<u32, PairingJoinCommitError> {
+    let mut current = SpaceRepository::new(connection)
+        .get(space_id)
+        .map_err(|_| PairingJoinCommitError::Database)?
+        .ok_or(PairingJoinCommitError::SpaceConflict)?;
+    if current.space.state != SpaceState::Active
+        || current.local_role != LocalSpaceRole::Member
+        || current.encrypted_space_key_ref.is_none()
+        || key_version <= current.space.key_version
+    {
+        return Err(PairingJoinCommitError::SpaceKeyVersionMismatch);
+    }
+    let previous_key_ref = current
+        .encrypted_space_key_ref
+        .clone()
+        .ok_or(PairingJoinCommitError::SpaceConflict)?;
+    let next_key_ref = space_key_ref(space_id, key_version);
+    match secret_store
+        .load_secret(&next_key_ref)
+        .map_err(|_| PairingJoinCommitError::CredentialStore)?
+    {
+        Some(existing) if existing.as_slice() != space_key => {
+            return Err(PairingJoinCommitError::CredentialConflict)
+        }
+        Some(_) => {}
+        None => secret_store
+            .save_secret(&next_key_ref, space_key)
+            .map_err(|_| PairingJoinCommitError::CredentialStore)?,
+    }
+
+    current.space.key_version = key_version;
+    current.encrypted_space_key_ref = Some(next_key_ref.clone());
+    current.updated_at = accepted_at;
+    if SpaceRepository::new(connection).upsert(&current).is_err() {
+        let _ = secret_store.delete_secret(&next_key_ref);
+        return Err(PairingJoinCommitError::Database);
+    }
+    if previous_key_ref != next_key_ref {
+        let _ = secret_store.delete_secret(&previous_key_ref);
+    }
+    Ok(key_version)
 }
 
 struct JoinedSpaceCommitInput {
@@ -373,7 +453,6 @@ mod tests {
 
     fn pending_join(space_id: Uuid, key_version: u32) -> PairingClientPendingJoin {
         PairingClientPendingJoin {
-            invitation_id: Uuid::now_v7(),
             space_id,
             expected_key_version: key_version,
             coordinator_device_id: Uuid::parse_str("018ff6f0-0a3b-7815-a4db-3eb6e23d9338")
@@ -669,5 +748,70 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM space_members", [], |row| row.get(0))
             .expect("member count");
         assert_eq!(member_count, 0);
+    }
+
+    #[test]
+    fn trusted_rotation_advances_member_key_and_removes_previous_credential() {
+        let space_id = Uuid::now_v7();
+        let old_ref = space_key_ref(space_id, 2);
+        let next_ref = space_key_ref(space_id, 4);
+        let mut connection = open_in_memory_database().expect("database");
+        SpaceRepository::new(&connection)
+            .upsert(&SpaceRecord {
+                space: Space {
+                    space_id,
+                    display_name: "互联空间".to_string(),
+                    key_version: 2,
+                    state: SpaceState::Active,
+                    created_at: NOW_MS,
+                },
+                local_role: LocalSpaceRole::Member,
+                encrypted_space_key_ref: Some(old_ref.clone()),
+                updated_at: NOW_MS,
+            })
+            .expect("member space");
+        let mut store = TestSecretStore::default();
+        store
+            .secrets
+            .insert(old_ref.clone(), vec![0x22; SPACE_KEY_BYTES]);
+        let next_key = [0x44; SPACE_KEY_BYTES];
+        let payload = json!({
+            "spaceId": space_id,
+            "keyVersion": 4,
+            "spaceKey": encode_base64url(&next_key),
+            "delivery": "rotation-v1",
+        });
+
+        assert_eq!(
+            accept_trusted_space_key_rotation(
+                payload.clone(),
+                &mut connection,
+                &mut store,
+                space_id,
+                NOW_MS + 100,
+            ),
+            Ok(4)
+        );
+        let updated = SpaceRepository::new(&connection)
+            .get(space_id)
+            .expect("space query")
+            .expect("space");
+        assert_eq!(updated.space.key_version, 4);
+        assert_eq!(
+            updated.encrypted_space_key_ref.as_deref(),
+            Some(next_ref.as_str())
+        );
+        assert_eq!(store.secrets.get(&next_ref), Some(&next_key.to_vec()));
+        assert!(!store.secrets.contains_key(&old_ref));
+        assert_eq!(
+            accept_trusted_space_key_rotation(
+                payload,
+                &mut connection,
+                &mut store,
+                space_id,
+                NOW_MS + 101,
+            ),
+            Err(PairingJoinCommitError::SpaceKeyVersionMismatch)
+        );
     }
 }

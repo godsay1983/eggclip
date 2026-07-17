@@ -1,11 +1,12 @@
 pub(crate) mod outbound;
+pub(crate) mod reconnect;
 mod session;
 
 use std::{
     collections::{HashMap, HashSet},
     net::Ipv4Addr,
     str::FromStr,
-    sync::Mutex,
+    sync::{atomic::AtomicBool, Mutex},
     time::Duration,
 };
 
@@ -81,6 +82,7 @@ pub struct PocTransportRuntime {
     authenticated_sessions: Mutex<HashMap<String, AuthenticatedPeerSession>>,
     formal_outbound_peers: Mutex<HashMap<String, mpsc::UnboundedSender<Message>>>,
     formal_connecting: Mutex<HashSet<String>>,
+    reconnect_task_started: AtomicBool,
     diagnostics: Mutex<PocTransportDiagnostics>,
 }
 
@@ -363,6 +365,7 @@ pub async fn start_poc_transport(
     port: Option<u16>,
 ) -> Result<PocTransportStatus, String> {
     if let Some(status) = current_running_status(&app, &runtime) {
+        reconnect::start_trusted_reconnect_task(app);
         return Ok(status);
     }
 
@@ -425,6 +428,8 @@ pub async fn start_poc_transport(
     tauri::async_runtime::spawn(async move {
         run_poc_server(server_app, listener, shutdown_rx).await;
     });
+
+    reconnect::start_trusted_reconnect_task(app.clone());
 
     let _ = app.emit("transport://poc-status", status.clone());
     Ok(status)
@@ -1741,7 +1746,10 @@ fn dispatch_authenticated_payload(
             return send_authenticated_business_payload(app, peer, MessageType::Pong, payload)
         }
         MessageType::Pong => return Ok(()),
-        MessageType::DeviceRevoked | MessageType::SpaceKeyRotated => return Err(()),
+        MessageType::SpaceKeyRotated => {
+            return handle_inbound_space_key_rotation(app, peer, payload)
+        }
+        MessageType::DeviceRevoked => return Err(()),
         _ => return Err(()),
     }
     let (protocol_item, clipboard_item) =
@@ -1788,6 +1796,46 @@ fn dispatch_authenticated_payload(
     ack.validate().map_err(|_| ())?;
     let value = serde_json::to_value(ack).map_err(|_| ())?;
     send_authenticated_business_payload(app, peer, MessageType::ItemAck, &value)
+}
+
+fn handle_inbound_space_key_rotation(
+    app: &AppHandle,
+    peer: &str,
+    payload: &serde_json::Value,
+) -> Result<(), ()> {
+    let runtime = app.state::<PocTransportRuntime>();
+    let space_id = runtime
+        .authenticated_sessions
+        .lock()
+        .map_err(|_| ())?
+        .get(peer)
+        .and_then(|entry| {
+            (entry.connection_kind == AuthenticatedConnectionKind::FormalOutbound)
+                .then_some(entry.space_id)
+        })
+        .ok_or(())?;
+    let path = database_path(app).map_err(|_| ())?;
+    let mut connection = open_database(path).map_err(|_| ())?;
+    #[cfg(windows)]
+    let mut store = crate::secret_store::WindowsCredentialSecretStore;
+    #[cfg(not(windows))]
+    let mut store = crate::secret_store::UnavailableSecretStore;
+    let key_version = crate::pairing::client_join::accept_trusted_space_key_rotation(
+        payload.clone(),
+        &mut connection,
+        &mut store,
+        space_id,
+        now_ms().map_err(|_| ())?,
+    )
+    .map_err(|_| ())?;
+    let _ = app.emit(
+        "transport://space-key-rotated",
+        serde_json::json!({
+            "spaceId": space_id,
+            "keyVersion": key_version,
+        }),
+    );
+    Ok(())
 }
 
 fn authenticated_peer_context(app: &AppHandle, peer: &str) -> Result<(Uuid, Uuid), ()> {

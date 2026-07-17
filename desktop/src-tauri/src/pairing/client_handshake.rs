@@ -27,6 +27,8 @@ use crate::{
         AuthProofPayload, AuthRole, AuthTranscriptInput, Capability, HelloPayload, MessageType,
         PreAuthEnvelope, SignatureAlgorithm, HANDSHAKE_TIMEOUT_SECONDS,
     },
+    storage::repositories::{DeviceRecord, SpaceRecord},
+    sync::{DeviceTrustState, SpaceState, TrustedRouteRole},
     transport::{
         AuthenticatedTransportSession, HandshakeFrame, HandshakeFrameOutcome,
         HandshakeTransportSession,
@@ -34,6 +36,7 @@ use crate::{
 };
 
 const PAIRING_CONTEXT_PREFIX: &str = "pairing-invitation:v2:";
+const TRUSTED_DEVICE_CONTEXT_PREFIX: &str = "trusted-device:";
 const FIRST_CLIENT_BUSINESS_COUNTER: u64 = 0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,6 +72,7 @@ pub(crate) enum PairingClientHandshakeError {
     ServerAuthenticationFailed,
     RemoteRejected(PairingClientRemoteRejectCode),
     Timeout,
+    #[cfg(test)]
     ConnectionClosed,
     UnexpectedFrame,
     ProtocolRejected,
@@ -90,6 +94,7 @@ impl fmt::Display for PairingClientHandshakeError {
             }
             Self::RemoteRejected(code) => write!(formatter, "remote rejected pairing: {code:?}"),
             Self::Timeout => formatter.write_str("pairing handshake timed out"),
+            #[cfg(test)]
             Self::ConnectionClosed => formatter.write_str("pairing connection closed"),
             Self::UnexpectedFrame => formatter.write_str("unexpected pairing frame"),
             Self::ProtocolRejected => formatter.write_str("pairing protocol frame rejected"),
@@ -111,16 +116,32 @@ pub(crate) enum PairingClientHandshakeEvent {
     SendAuthProof(String),
     ServerProofVerified,
     AwaitingSpaceKey(PairingClientPendingJoin),
+    TrustedReady(TrustedClientReadySession),
+}
+
+pub(crate) struct TrustedClientReadySession {
+    pub space_id: Uuid,
+    pub coordinator_device_id: Uuid,
+    pub key_version: u32,
+    pub transport: AuthenticatedTransportSession,
+}
+
+enum PairingClientHandshakeMode {
+    InitialJoin {
+        expected_space_key_version: u32,
+        issuer_device_name: String,
+    },
+    TrustedReconnect {
+        key_version: u32,
+    },
 }
 
 pub(crate) struct PairingClientHandshake {
     state: PairingClientHandshakeState,
     inbound: HandshakeTransportSession,
     deadline_ms: u64,
-    invitation_id: Uuid,
+    mode: PairingClientHandshakeMode,
     space_id: String,
-    expected_space_key_version: u32,
-    issuer_device_name: String,
     issuer_device_id: String,
     issuer_identity_public_key: String,
     pairing_context: String,
@@ -224,10 +245,11 @@ impl PairingClientHandshake {
                 deadline_ms: invitation
                     .expires_at_ms
                     .min(now_ms.saturating_add(HANDSHAKE_TIMEOUT_SECONDS.saturating_mul(1000))),
-                invitation_id: invitation.invitation_id,
+                mode: PairingClientHandshakeMode::InitialJoin {
+                    expected_space_key_version: invitation.space_key_version,
+                    issuer_device_name: invitation.issuer_device_name.clone(),
+                },
                 space_id: invitation.space_id.to_string(),
-                expected_space_key_version: invitation.space_key_version,
-                issuer_device_name: invitation.issuer_device_name.clone(),
                 issuer_device_id: invitation.issuer_device_id.to_string(),
                 issuer_identity_public_key: invitation.issuer_identity_public_key.clone(),
                 pairing_context,
@@ -246,10 +268,88 @@ impl PairingClientHandshake {
         })
     }
 
+    pub(crate) fn start_from_trusted_device<S: IdentitySecretStore>(
+        space: &SpaceRecord,
+        coordinator: &DeviceRecord,
+        connection: &mut Connection,
+        secret_store: &mut S,
+        now_ms: u64,
+    ) -> Result<PairingClientHandshakeStarted, PairingClientHandshakeError> {
+        if space.space.state != SpaceState::Active
+            || space.encrypted_space_key_ref.is_none()
+            || coordinator.device.space_id != space.space.space_id
+            || coordinator.device.trust_state != DeviceTrustState::Trusted
+            || coordinator.revoked_at.is_some()
+            || coordinator.route.role != TrustedRouteRole::DialCoordinator
+            || space.space.key_version == 0
+        {
+            return Err(PairingClientHandshakeError::IdentityUnavailable);
+        }
+        let ephemeral_secret = random_x25519_secret()?;
+        let (identity, identity_private_seed) =
+            load_signing_identity(connection, secret_store, now_ms)?;
+        let space_id = space.space.space_id.to_string();
+        let pairing_context = format!(
+            "{TRUSTED_DEVICE_CONTEXT_PREFIX}{space_id}:key-v{}",
+            space.space.key_version
+        );
+        let local_ephemeral_public_key = encode_base64url(&ephemeral_secret.public_key());
+        let client_hello = HelloPayload {
+            space_id: space_id.clone(),
+            device_id: identity.device_id.clone(),
+            identity_public_key: identity.identity_public_key.clone(),
+            ephemeral_public_key: local_ephemeral_public_key.clone(),
+            capabilities: vec![
+                Capability::TextPlain,
+                Capability::SyncHeads,
+                Capability::ItemBatch,
+                Capability::ItemLive,
+            ],
+            pairing_context: Some(pairing_context.clone()),
+            pairing_proof: None,
+        };
+        client_hello
+            .validate()
+            .map_err(|_| PairingClientHandshakeError::ProtocolRejected)?;
+        let client_hello_frame = serialize_pre_auth_envelope(&PreAuthEnvelope {
+            message_type: MessageType::ClientHello,
+            message_id: Uuid::now_v7().to_string(),
+            session_counter: 0,
+            payload: serde_json::to_value(client_hello)
+                .map_err(|_| PairingClientHandshakeError::ProtocolRejected)?,
+        })
+        .map_err(|_| PairingClientHandshakeError::ProtocolRejected)?;
+
+        Ok(PairingClientHandshakeStarted {
+            client_hello_frame,
+            handshake: Self {
+                state: PairingClientHandshakeState::WaitingServerHello,
+                inbound: HandshakeTransportSession::new(),
+                deadline_ms: now_ms.saturating_add(HANDSHAKE_TIMEOUT_SECONDS.saturating_mul(1000)),
+                mode: PairingClientHandshakeMode::TrustedReconnect {
+                    key_version: space.space.key_version,
+                },
+                space_id,
+                issuer_device_id: coordinator.device.device_id.to_string(),
+                issuer_identity_public_key: coordinator.device.identity_public_key_ref.clone(),
+                pairing_context,
+                local_device_id: identity.device_id,
+                local_identity_public_key: identity.identity_public_key,
+                local_identity_private_seed: Some(identity_private_seed),
+                local_ephemeral_public_key,
+                local_ephemeral_secret: Some(ephemeral_secret),
+                server_ephemeral_public_key: None,
+                session_keys: None,
+                connected_endpoint: None,
+            },
+        })
+    }
+
     pub(crate) fn set_connected_endpoint(&mut self, host: std::net::Ipv4Addr, port: u16) {
         self.connected_endpoint = Some((host, port));
     }
 
+    #[cfg(test)]
     pub(crate) fn state(&self) -> PairingClientHandshakeState {
         self.state
     }
@@ -261,6 +361,7 @@ impl PairingClientHandshake {
         self.fail(PairingClientHandshakeError::Timeout)
     }
 
+    #[cfg(test)]
     pub(crate) fn connection_closed<T>(&mut self) -> Result<T, PairingClientHandshakeError> {
         self.fail(PairingClientHandshakeError::ConnectionClosed)
     }
@@ -480,22 +581,39 @@ impl PairingClientHandshake {
             .map_err(|_| PairingClientHandshakeError::ProtocolRejected)?;
         let local_device_id = Uuid::parse_str(&self.local_device_id)
             .map_err(|_| PairingClientHandshakeError::ProtocolRejected)?;
-        self.state = PairingClientHandshakeState::WaitingInitialSpaceKey;
-        Ok(PairingClientHandshakeEvent::AwaitingSpaceKey(
-            PairingClientPendingJoin {
-                invitation_id: self.invitation_id,
-                space_id,
-                expected_key_version: self.expected_space_key_version,
-                coordinator_device_id,
-                coordinator_device_name: self.issuer_device_name.clone(),
-                coordinator_identity_public_key: self.issuer_identity_public_key.clone(),
-                local_device_id,
-                local_identity_public_key: self.local_identity_public_key.clone(),
-                connected_endpoint: self.connected_endpoint,
-                deadline_ms: self.deadline_ms,
-                transport,
-            },
-        ))
+        match &self.mode {
+            PairingClientHandshakeMode::InitialJoin {
+                expected_space_key_version,
+                issuer_device_name,
+            } => {
+                self.state = PairingClientHandshakeState::WaitingInitialSpaceKey;
+                Ok(PairingClientHandshakeEvent::AwaitingSpaceKey(
+                    PairingClientPendingJoin {
+                        space_id,
+                        expected_key_version: *expected_space_key_version,
+                        coordinator_device_id,
+                        coordinator_device_name: issuer_device_name.clone(),
+                        coordinator_identity_public_key: self.issuer_identity_public_key.clone(),
+                        local_device_id,
+                        local_identity_public_key: self.local_identity_public_key.clone(),
+                        connected_endpoint: self.connected_endpoint,
+                        deadline_ms: self.deadline_ms,
+                        transport,
+                    },
+                ))
+            }
+            PairingClientHandshakeMode::TrustedReconnect { key_version } => {
+                self.state = PairingClientHandshakeState::WaitingInitialSpaceKey;
+                Ok(PairingClientHandshakeEvent::TrustedReady(
+                    TrustedClientReadySession {
+                        space_id,
+                        coordinator_device_id,
+                        key_version: *key_version,
+                        transport,
+                    },
+                ))
+            }
+        }
     }
 
     fn fail<T>(
@@ -764,6 +882,71 @@ mod tests {
             )
             .expect("proof"),
             text("proof")
+        );
+    }
+
+    #[test]
+    fn trusted_reconnect_hello_binds_saved_device_and_current_key_version() {
+        let mut connection = open_in_memory_database().expect("client database");
+        let mut store = TestSecretStore::default();
+        let space_id = Uuid::now_v7();
+        let coordinator_id = Uuid::now_v7();
+        let coordinator_identity = Ed25519Identity::from_seed([0x33; 32]);
+        let space = SpaceRecord {
+            space: crate::sync::Space {
+                space_id,
+                display_name: "互联空间".to_string(),
+                key_version: 7,
+                state: SpaceState::Active,
+                created_at: NOW_MS,
+            },
+            local_role: crate::sync::LocalSpaceRole::Member,
+            encrypted_space_key_ref: Some("credential://space/v7".to_string()),
+            updated_at: NOW_MS,
+        };
+        let coordinator = DeviceRecord {
+            device: crate::sync::Device {
+                device_id: coordinator_id,
+                space_id,
+                display_name: "Windows A".to_string(),
+                identity_public_key_ref: encode_base64url(&coordinator_identity.public_key()),
+                trust_state: DeviceTrustState::Trusted,
+                connection_state: crate::sync::DeviceConnectionState::Offline,
+                last_seen_at: None,
+            },
+            route: crate::storage::repositories::TrustedDeviceRoute {
+                role: TrustedRouteRole::DialCoordinator,
+                last_successful_host: Some("192.168.1.8".to_string()),
+                last_successful_port: Some(31415),
+            },
+            paired_at: Some(NOW_MS),
+            revoked_at: None,
+        };
+
+        let started = PairingClientHandshake::start_from_trusted_device(
+            &space,
+            &coordinator,
+            &mut connection,
+            &mut store,
+            NOW_MS + 10,
+        )
+        .expect("trusted reconnect starts");
+        let ProtocolEnvelope::PreAuth(envelope) =
+            parse_envelope(&started.client_hello_frame).expect("client hello frame")
+        else {
+            panic!("trusted reconnect hello must be pre-auth");
+        };
+        let hello: HelloPayload =
+            serde_json::from_value(envelope.payload).expect("client hello payload");
+        assert_eq!(hello.space_id, space_id.to_string());
+        assert_eq!(
+            hello.pairing_context.as_deref(),
+            Some(format!("trusted-device:{space_id}:key-v7").as_str())
+        );
+        assert!(hello.pairing_proof.is_none());
+        assert_eq!(
+            started.handshake.issuer_device_id,
+            coordinator_id.to_string()
         );
     }
 
