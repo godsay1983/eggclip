@@ -835,6 +835,10 @@ impl ProtocolInboundSession {
         self.gate.fail()
     }
 
+    pub fn mark_ready(&mut self) -> Result<ProtocolSessionState, ProtocolError> {
+        self.gate.mark_ready()
+    }
+
     pub fn accept_envelope(
         &mut self,
         envelope: &ProtocolEnvelope,

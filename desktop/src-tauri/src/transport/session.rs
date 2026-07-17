@@ -227,6 +227,15 @@ impl AuthenticatedTransportSession {
         self.closed
     }
 
+    pub fn mark_ready(&mut self) -> Result<ProtocolSessionState, TransportFrameError> {
+        if self.closed {
+            return Err(TransportFrameError::SessionClosed);
+        }
+        self.inbound
+            .mark_ready()
+            .map_err(TransportFrameError::ProtocolRejected)
+    }
+
     pub fn close(&mut self) {
         self.fail_and_scrub_keys();
     }
@@ -293,6 +302,14 @@ impl AuthenticatedTransportSession {
     }
 
     pub fn accept_text_frame(&mut self, text: &str) -> Result<Value, TransportFrameError> {
+        self.accept_typed_text_frame(text)
+            .map(|(_, payload)| payload)
+    }
+
+    pub fn accept_typed_text_frame(
+        &mut self,
+        text: &str,
+    ) -> Result<(MessageType, Value), TransportFrameError> {
         if self.closed {
             return Err(TransportFrameError::SessionClosed);
         }
@@ -316,7 +333,10 @@ impl AuthenticatedTransportSession {
         Ok(())
     }
 
-    fn accept_text_frame_inner(&mut self, text: &str) -> Result<Value, TransportFrameError> {
+    fn accept_text_frame_inner(
+        &mut self,
+        text: &str,
+    ) -> Result<(MessageType, Value), TransportFrameError> {
         let envelope = parse_envelope(text)?;
         self.inbound.accept_envelope(&envelope)?;
         let encrypted = match envelope {
@@ -327,7 +347,7 @@ impl AuthenticatedTransportSession {
         if encrypted.message_type == MessageType::Error {
             return Err(TransportFrameError::RemoteError);
         }
-        Ok(payload)
+        Ok((encrypted.message_type, payload))
     }
 
     fn decrypt_envelope(&self, envelope: &EncryptedEnvelope) -> Result<Value, TransportFrameError> {

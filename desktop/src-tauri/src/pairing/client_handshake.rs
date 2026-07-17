@@ -8,6 +8,7 @@ use zeroize::Zeroize;
 use super::{
     build_pairing_secret_proof_from_secret,
     client::ParsedPairingInvitation,
+    client_join::PairingClientPendingJoin,
     join_runtime::{PairingJoinRuntime, PairingJoinRuntimeError},
 };
 use crate::{
@@ -40,7 +41,7 @@ pub(crate) enum PairingClientHandshakeState {
     WaitingServerHello,
     WaitingServerProof,
     WaitingAuthOk,
-    Authenticated,
+    WaitingInitialSpaceKey,
     Failed,
 }
 
@@ -106,24 +107,20 @@ pub(crate) struct PairingClientHandshakeStarted {
     pub client_hello_frame: String,
 }
 
-pub(crate) struct PairingClientAuthenticatedSession {
-    pub space_id: String,
-    pub peer_device_id: String,
-    pub peer_identity_public_key: String,
-    pub transport: AuthenticatedTransportSession,
-}
-
 pub(crate) enum PairingClientHandshakeEvent {
     SendAuthProof(String),
     ServerProofVerified,
-    Authenticated(PairingClientAuthenticatedSession),
+    AwaitingSpaceKey(PairingClientPendingJoin),
 }
 
 pub(crate) struct PairingClientHandshake {
     state: PairingClientHandshakeState,
     inbound: HandshakeTransportSession,
     deadline_ms: u64,
+    invitation_id: Uuid,
     space_id: String,
+    expected_space_key_version: u32,
+    issuer_device_name: String,
     issuer_device_id: String,
     issuer_identity_public_key: String,
     pairing_context: String,
@@ -134,6 +131,7 @@ pub(crate) struct PairingClientHandshake {
     local_ephemeral_secret: Option<X25519Secret>,
     server_ephemeral_public_key: Option<String>,
     session_keys: Option<SessionKeys>,
+    connected_endpoint: Option<(std::net::Ipv4Addr, u16)>,
 }
 
 impl PairingClientHandshake {
@@ -226,7 +224,10 @@ impl PairingClientHandshake {
                 deadline_ms: invitation
                     .expires_at_ms
                     .min(now_ms.saturating_add(HANDSHAKE_TIMEOUT_SECONDS.saturating_mul(1000))),
+                invitation_id: invitation.invitation_id,
                 space_id: invitation.space_id.to_string(),
+                expected_space_key_version: invitation.space_key_version,
+                issuer_device_name: invitation.issuer_device_name.clone(),
                 issuer_device_id: invitation.issuer_device_id.to_string(),
                 issuer_identity_public_key: invitation.issuer_identity_public_key.clone(),
                 pairing_context,
@@ -237,8 +238,16 @@ impl PairingClientHandshake {
                 local_ephemeral_secret: Some(ephemeral_secret),
                 server_ephemeral_public_key: None,
                 session_keys: None,
+                connected_endpoint: invitation
+                    .endpoints
+                    .first()
+                    .map(|endpoint| (endpoint.host, endpoint.port)),
             },
         })
+    }
+
+    pub(crate) fn set_connected_endpoint(&mut self, host: std::net::Ipv4Addr, port: u16) {
+        self.connected_endpoint = Some((host, port));
     }
 
     pub(crate) fn state(&self) -> PairingClientHandshakeState {
@@ -264,7 +273,8 @@ impl PairingClientHandshake {
         self.check_timeout(now_ms)?;
         if matches!(
             self.state,
-            PairingClientHandshakeState::Authenticated | PairingClientHandshakeState::Failed
+            PairingClientHandshakeState::WaitingInitialSpaceKey
+                | PairingClientHandshakeState::Failed
         ) {
             return self.fail(PairingClientHandshakeError::UnexpectedFrame);
         }
@@ -464,12 +474,25 @@ impl PairingClientHandshake {
             session_keys.client_to_server,
             FIRST_CLIENT_BUSINESS_COUNTER,
         );
-        self.state = PairingClientHandshakeState::Authenticated;
-        Ok(PairingClientHandshakeEvent::Authenticated(
-            PairingClientAuthenticatedSession {
-                space_id: self.space_id.clone(),
-                peer_device_id: self.issuer_device_id.clone(),
-                peer_identity_public_key: self.issuer_identity_public_key.clone(),
+        let space_id = Uuid::parse_str(&self.space_id)
+            .map_err(|_| PairingClientHandshakeError::ProtocolRejected)?;
+        let coordinator_device_id = Uuid::parse_str(&self.issuer_device_id)
+            .map_err(|_| PairingClientHandshakeError::ProtocolRejected)?;
+        let local_device_id = Uuid::parse_str(&self.local_device_id)
+            .map_err(|_| PairingClientHandshakeError::ProtocolRejected)?;
+        self.state = PairingClientHandshakeState::WaitingInitialSpaceKey;
+        Ok(PairingClientHandshakeEvent::AwaitingSpaceKey(
+            PairingClientPendingJoin {
+                invitation_id: self.invitation_id,
+                space_id,
+                expected_key_version: self.expected_space_key_version,
+                coordinator_device_id,
+                coordinator_device_name: self.issuer_device_name.clone(),
+                coordinator_identity_public_key: self.issuer_identity_public_key.clone(),
+                local_device_id,
+                local_identity_public_key: self.local_identity_public_key.clone(),
+                connected_endpoint: self.connected_endpoint,
+                deadline_ms: self.deadline_ms,
                 transport,
             },
         ))
@@ -745,7 +768,7 @@ mod tests {
     }
 
     #[test]
-    fn rust_client_and_server_complete_mutual_auth_and_exchange_encrypted_frames() {
+    fn rust_client_and_server_complete_mutual_auth_then_wait_for_initial_space_key() {
         let (mut client, accepted) = advance_to_server_proof();
         assert_eq!(
             client.state(),
@@ -760,46 +783,17 @@ mod tests {
         let event = client
             .accept_server_frame(&accepted.auth_ok_frame, NOW_MS + 70)
             .expect("auth ok");
-        let PairingClientHandshakeEvent::Authenticated(mut authenticated) = event else {
-            panic!("client should become authenticated");
+        let PairingClientHandshakeEvent::AwaitingSpaceKey(pending) = event else {
+            panic!("client should wait for the initial space key");
         };
-        assert_eq!(client.state(), PairingClientHandshakeState::Authenticated);
-        assert_eq!(authenticated.space_id, accepted.space_id);
-        assert_eq!(authenticated.peer_device_id.len(), 36);
-        assert_eq!(authenticated.peer_identity_public_key.len(), 43);
-        assert_eq!(authenticated.transport.next_outbound_counter(), 0);
-
-        let mut server_transport = AuthenticatedTransportSession::new(
-            SessionDirection::ClientToServer,
-            accepted.session_keys.client_to_server,
-            SessionDirection::ServerToClient,
-            accepted.session_keys.server_to_client,
-            5,
-        );
-        let client_frame = authenticated
-            .transport
-            .encode_business_frame(MessageType::Ping, Uuid::now_v7().to_string(), &json!({}))
-            .expect("client encrypted frame");
         assert_eq!(
-            server_transport
-                .accept_text_frame(&client_frame)
-                .expect("server decrypts client frame"),
-            json!({})
+            client.state(),
+            PairingClientHandshakeState::WaitingInitialSpaceKey
         );
-        let server_frame = server_transport
-            .encode_business_frame(
-                MessageType::Pong,
-                Uuid::now_v7().to_string(),
-                &json!({ "ready": true }),
-            )
-            .expect("server encrypted frame");
-        assert_eq!(
-            authenticated
-                .transport
-                .accept_text_frame(&server_frame)
-                .expect("client decrypts server frame"),
-            json!({ "ready": true })
-        );
+        assert_eq!(pending.space_id.to_string(), accepted.space_id);
+        assert_eq!(pending.coordinator_device_id.to_string().len(), 36);
+        assert_eq!(pending.coordinator_identity_public_key.len(), 43);
+        assert_eq!(pending.transport.next_outbound_counter(), 0);
     }
 
     #[test]

@@ -15,6 +15,8 @@ use uuid::Uuid;
 pub mod client;
 #[allow(dead_code)] // Wired to the outbound WebSocket lifecycle in W2W-06.
 pub(crate) mod client_handshake;
+#[allow(dead_code)] // Wired to the outbound WebSocket lifecycle in W2W-06.
+pub(crate) mod client_join;
 mod join_runtime;
 
 pub use join_runtime::PairingJoinRuntime;
