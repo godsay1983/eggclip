@@ -148,13 +148,22 @@ mod tests {
             .expect("space should insert");
         connection
             .execute(
-                "INSERT INTO devices(
-                    device_id, space_id, display_name, identity_public_key, trust_state,
-                    connection_state, paired_at, last_seen_at, revoked_at
-                 ) VALUES(?1, ?2, '本机', 'test-public-key', 'trusted', 'offline', 1700000000000, NULL, NULL)",
+                "INSERT INTO device_identities(device_id, identity_public_key)
+                 VALUES(?1, 'test-public-key')",
+                params![device_id],
+            )
+            .expect("device identity should insert");
+        connection
+            .execute(
+                "INSERT INTO space_members(
+                    space_id, device_id, display_name, trust_state, connection_state,
+                    route_role, last_successful_host, last_successful_port,
+                    paired_at, last_seen_at, revoked_at
+                 ) VALUES(?2, ?1, '本机', 'trusted', 'offline', 'acceptOnly', NULL, NULL,
+                    1700000000000, NULL, NULL)",
                 params![device_id, space_id],
             )
-            .expect("device should insert");
+            .expect("space member should insert");
         for seq in 1..=3 {
             let item_id = Uuid::now_v7().to_string();
             let timestamp = 1_700_000_000_000_i64 + seq;

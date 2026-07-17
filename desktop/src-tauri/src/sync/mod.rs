@@ -55,6 +55,20 @@ pub enum SpaceState {
     Archived,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LocalSpaceRole {
+    Owner,
+    Member,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TrustedRouteRole {
+    AcceptOnly,
+    DialCoordinator,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyncModelError {
     EmptyText,

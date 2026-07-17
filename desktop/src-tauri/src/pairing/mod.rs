@@ -38,11 +38,15 @@ use crate::{
     storage::{
         open_database,
         repositories::{
-            DeviceRepository, PairingInvitationRecord, PairingInvitationRepository,
+            DeviceRecord, DeviceRepository, PairingInvitationRecord, PairingInvitationRepository,
             PairingInvitationState, SettingsRepository, SpaceRecord, SpaceRepository,
+            TrustedDeviceRoute,
         },
     },
-    sync::{content_hmac_digest, DeviceConnectionState, DeviceTrustState, Space, SpaceState},
+    sync::{
+        content_hmac_digest, Device, DeviceConnectionState, DeviceTrustState, LocalSpaceRole,
+        Space, SpaceState,
+    },
 };
 
 pub const SPACE_KEY_BYTES: usize = 32;
@@ -510,6 +514,10 @@ pub fn create_sync_space<S: SecretBytesStore>(
     now_ms: u64,
 ) -> Result<SyncSpaceSummary, PairingError> {
     let display_name = normalize_space_display_name(display_name)?;
+    let local_identity = ensure_local_device_identity(connection, secret_store, now_ms)
+        .map_err(pairing_identity_error)?;
+    let local_device_id = Uuid::parse_str(&local_identity.device_id)
+        .map_err(|_| PairingError::Identity("local device id is not a UUID".to_string()))?;
     let space_id = Uuid::now_v7();
     let key_version = INITIAL_SPACE_KEY_VERSION;
     let mut space_key = random_space_key()?;
@@ -528,11 +536,28 @@ pub fn create_sync_space<S: SecretBytesStore>(
             state: SpaceState::Active,
             created_at: now_ms,
         },
+        local_role: LocalSpaceRole::Owner,
         encrypted_space_key_ref: Some(space_key_ref.clone()),
         updated_at: now_ms,
     };
     SpaceRepository::new(connection)
         .upsert(&record)
+        .map_err(|error| PairingError::Database(error.to_string()))?;
+    DeviceRepository::new(connection)
+        .upsert(&DeviceRecord {
+            device: Device {
+                device_id: local_device_id,
+                space_id,
+                display_name: local_device_display_name(),
+                identity_public_key_ref: local_identity.identity_public_key,
+                trust_state: DeviceTrustState::Trusted,
+                connection_state: DeviceConnectionState::Offline,
+                last_seen_at: None,
+            },
+            route: TrustedDeviceRoute::default(),
+            paired_at: Some(now_ms),
+            revoked_at: None,
+        })
         .map_err(|error| PairingError::Database(error.to_string()))?;
 
     Ok(SyncSpaceSummary {
@@ -565,12 +590,18 @@ pub fn delete_sync_space_in_database<S: SecretBytesStore>(
     if spaces.len() <= 1 {
         return Err(PairingError::LastSpaceCannotDelete);
     }
+    let local_device_id = SettingsRepository::new(connection)
+        .get(crate::storage::repositories::LOCAL_DEVICE_ID_KEY)
+        .map_err(|error| PairingError::Database(error.to_string()))?
+        .and_then(|value| Uuid::parse_str(&value).ok());
     let has_trusted_device = DeviceRepository::new(connection)
         .list_by_space(space_id)
         .map_err(|error| PairingError::Database(error.to_string()))?
         .into_iter()
         .any(|record| {
-            record.device.trust_state == DeviceTrustState::Trusted && record.revoked_at.is_none()
+            Some(record.device.device_id) != local_device_id
+                && record.device.trust_state == DeviceTrustState::Trusted
+                && record.revoked_at.is_none()
         });
     if has_trusted_device {
         return Err(PairingError::SpaceHasTrustedDevices);
@@ -680,9 +711,10 @@ pub fn list_trusted_devices(app: tauri::AppHandle) -> Result<Vec<TrustedDeviceSu
         list_trusted_devices_in_database(&connection).map_err(|error| error.to_string())?;
     let authenticated_peers = crate::transport::authenticated_device_peers(&app);
     for device in &mut devices {
-        let authenticated_peer = Uuid::parse_str(&device.device_id)
+        let authenticated_peer = Uuid::parse_str(&device.space_id)
             .ok()
-            .and_then(|device_id| authenticated_peers.get(&device_id));
+            .zip(Uuid::parse_str(&device.device_id).ok())
+            .and_then(|key| authenticated_peers.get(&key));
         if let Some(peer) = authenticated_peer {
             device.connection_state = "online".to_owned();
             device.endpoint = Some(peer.clone());
@@ -696,7 +728,7 @@ pub fn reset_trusted_device_connection_states(app: &tauri::AppHandle) -> Result<
     let connection = open_database(path).map_err(|error| format!("无法打开本地数据库：{error}"))?;
     connection
         .execute(
-            "UPDATE devices
+            "UPDATE space_members
              SET connection_state = 'offline'
              WHERE trust_state = 'trusted' AND revoked_at IS NULL",
             [],
@@ -755,7 +787,7 @@ pub fn rename_trusted_device_in_database(
     let normalized = normalize_device_display_name(display_name)?;
     let repository = DeviceRepository::new(connection);
     let mut record = repository
-        .get(device_id)
+        .get_unique_by_device_id(device_id)
         .map_err(|error| PairingError::Database(error.to_string()))?
         .ok_or(PairingError::InvalidInvitation)?;
     if record.device.trust_state != DeviceTrustState::Trusted || record.revoked_at.is_some() {
@@ -775,7 +807,7 @@ pub(crate) fn revoke_device_and_rotate_space_key<S: SecretBytesStore>(
     revoked_at: u64,
 ) -> Result<SpaceKeyRotationMaterial, PairingError> {
     let current_device = DeviceRepository::new(connection)
-        .get(device_id)
+        .get_unique_by_device_id(device_id)
         .map_err(|error| PairingError::Database(error.to_string()))?
         .ok_or(PairingError::InvalidInvitation)?;
     if current_device.device.trust_state != DeviceTrustState::Trusted
@@ -1289,7 +1321,7 @@ pub fn accept_trusted_device_client_hello<S: SecretBytesStore>(
         return Err(PairingError::InvalidClientHello);
     }
     let device = DeviceRepository::new(connection)
-        .get(client_device_id)
+        .get_in_space(context_space_id, client_device_id)
         .map_err(|error| PairingError::Database(error.to_string()))?
         .ok_or(PairingError::InvalidClientHello)?;
     if device.device.space_id != context_space_id
@@ -2066,7 +2098,7 @@ mod tests {
         assert_eq!(second.space_id, first.space_id);
         assert_eq!(second.created_at_ms, first.created_at_ms);
         assert_eq!(spaces.len(), 1);
-        assert_eq!(store.secrets.len(), 1);
+        assert_eq!(store.secrets.len(), 2);
     }
 
     #[test]
@@ -2094,7 +2126,7 @@ mod tests {
         assert_eq!(default.display_name, DEFAULT_SPACE_DISPLAY_NAME);
         assert_eq!(spaces.len(), 1);
         assert_eq!(spaces[0].space_id, default.space_id);
-        assert_eq!(store.secrets.len(), 1);
+        assert_eq!(store.secrets.len(), 2);
     }
 
     #[test]
@@ -2469,6 +2501,7 @@ mod tests {
                     connection_state: crate::sync::DeviceConnectionState::Offline,
                     last_seen_at: None,
                 },
+                route: crate::storage::repositories::TrustedDeviceRoute::default(),
                 paired_at: Some(1_700_000_000_000),
                 revoked_at: None,
             })
@@ -2631,6 +2664,7 @@ mod tests {
                     connection_state: DeviceConnectionState::Online,
                     last_seen_at: Some(1_700_000_001_000),
                 },
+                route: crate::storage::repositories::TrustedDeviceRoute::default(),
                 paired_at: Some(1_700_000_000_500),
                 revoked_at: None,
             })
@@ -2665,7 +2699,7 @@ mod tests {
             2
         );
         let revoked = DeviceRepository::new(&connection)
-            .get(device_id)
+            .get_in_space(space_id, device_id)
             .unwrap()
             .unwrap();
         assert_eq!(revoked.device.trust_state, DeviceTrustState::Revoked);

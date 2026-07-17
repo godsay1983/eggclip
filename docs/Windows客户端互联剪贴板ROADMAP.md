@@ -69,13 +69,13 @@
 
 ## 5. M2：空间落库与正式连接
 
-### [ ] W2W-04 调整空间角色和成员数据模型
+### [x] W2W-04 调整空间角色和成员数据模型
 
-- [ ] 新增本机空间角色：`owner` 或 `member`；既有本机创建空间迁移为 `owner`。
-- [ ] 将全局设备身份与 `(spaceId, deviceId)` 空间成员关系分离，或实现等价的复合成员主键。
-- [ ] 新增可信路由：`acceptOnly` 或 `dialCoordinator`，以及最后成功地址。
-- [ ] 更新 device、clipboard、sync head repository 的查询键和外键。
-- [ ] migration 支持旧数据库升级、空数据库创建和重复运行，验证行数、索引和外键。
+- [x] 新增本机空间角色：`owner` 或 `member`；既有本机创建空间迁移为 `owner`。
+- [x] 将全局设备身份与 `(spaceId, deviceId)` 空间成员关系分离，或实现等价的复合成员主键。
+- [x] 新增可信路由：`acceptOnly` 或 `dialCoordinator`，以及最后成功地址。
+- [x] 更新 device、clipboard、sync head repository 的查询键和外键。
+- [x] migration 支持旧数据库升级、空数据库创建和重复运行，验证行数、索引和外键。
 
 完成标准：同一本机身份可以安全参与现有空间和加入空间，成员、剪贴板来源及同步头不会串空间。
 

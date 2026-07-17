@@ -28,6 +28,7 @@ use crate::{
             ClipboardItemRecord, ClipboardRepository, DeviceRecord, DeviceRepository,
             LocalClipboardPersistInput, LocalIdentityRepository, PairingInvitationRepository,
             SettingsRepository, SpaceRepository, SyncHeadRecord, SyncHeadRepository,
+            TrustedDeviceRoute,
         },
     },
     sync::{
@@ -74,14 +75,14 @@ pub struct PocTransportRuntime {
     diagnostics: Mutex<PocTransportDiagnostics>,
 }
 
-pub(crate) fn authenticated_device_peers(app: &AppHandle) -> HashMap<Uuid, String> {
+pub(crate) fn authenticated_device_peers(app: &AppHandle) -> HashMap<(Uuid, Uuid), String> {
     app.state::<PocTransportRuntime>()
         .authenticated_sessions
         .lock()
         .map(|sessions| {
             sessions
                 .iter()
-                .map(|(peer, session)| (session.device_id, peer.clone()))
+                .map(|(peer, session)| ((session.space_id, session.device_id), peer.clone()))
                 .collect()
         })
         .unwrap_or_default()
@@ -1504,9 +1505,11 @@ fn mark_trusted_device_connected(
     let path = database_path(app).map_err(|_| ())?;
     let connection = open_database(path).map_err(|_| ())?;
     let repository = DeviceRepository::new(&connection);
-    let mut record = repository.get(peer_device_id).map_err(|_| ())?.ok_or(())?;
-    if record.device.space_id != space_id
-        || record.device.trust_state != DeviceTrustState::Trusted
+    let mut record = repository
+        .get_in_space(space_id, peer_device_id)
+        .map_err(|_| ())?
+        .ok_or(())?;
+    if record.device.trust_state != DeviceTrustState::Trusted
         || record.revoked_at.is_some()
         || record.device.identity_public_key_ref != accepted.peer_identity_public_key
     {
@@ -1517,11 +1520,14 @@ fn mark_trusted_device_connected(
     repository.upsert(&record).map_err(|_| ())
 }
 
-fn mark_trusted_device_offline(app: &AppHandle, device_id: Uuid) -> Result<(), ()> {
+fn mark_trusted_device_offline(app: &AppHandle, space_id: Uuid, device_id: Uuid) -> Result<(), ()> {
     let path = database_path(app).map_err(|_| ())?;
     let connection = open_database(path).map_err(|_| ())?;
     let repository = DeviceRepository::new(&connection);
-    let mut record = repository.get(device_id).map_err(|_| ())?.ok_or(())?;
+    let mut record = repository
+        .get_in_space(space_id, device_id)
+        .map_err(|_| ())?
+        .ok_or(())?;
     if record.device.trust_state != DeviceTrustState::Trusted || record.revoked_at.is_some() {
         return Err(());
     }
@@ -1621,6 +1627,7 @@ fn persist_trusted_pairing_device_in_connection(
                 connection_state: DeviceConnectionState::Online,
                 last_seen_at: Some(accepted_at),
             },
+            route: TrustedDeviceRoute::default(),
             paired_at: Some(accepted_at),
             revoked_at: None,
         })
@@ -2010,7 +2017,7 @@ fn persist_authenticated_remote_history_if_possible(
         .map_err(|_| ())?
         .is_none()
         || DeviceRepository::new(&connection)
-            .get(origin_device_id)
+            .get_in_space(space_id, origin_device_id)
             .map_err(|_| ())?
             .is_none()
     {
@@ -2312,9 +2319,9 @@ fn close_authenticated_session_with_reason(
         .and_then(|mut sessions| {
             let mut removed = sessions.remove(peer)?;
             removed.session.close();
-            let device_still_online = sessions
-                .values()
-                .any(|candidate| candidate.device_id == removed.device_id);
+            let device_still_online = sessions.values().any(|candidate| {
+                candidate.device_id == removed.device_id && candidate.space_id == removed.space_id
+            });
             Some((removed.device_id, removed.space_id, device_still_online))
         });
     let Some((device_id, space_id, device_still_online)) = removed else {
@@ -2331,7 +2338,7 @@ fn close_authenticated_session_with_reason(
         }
     }
     if !device_still_online {
-        let _ = mark_trusted_device_offline(app, device_id);
+        let _ = mark_trusted_device_offline(app, space_id, device_id);
     }
     let _ = app.emit(
         "transport://authenticated-connection",
@@ -2585,6 +2592,7 @@ mod tests {
                     state: crate::sync::SpaceState::Active,
                     created_at: 1_700_000_000_000,
                 },
+                local_role: crate::sync::LocalSpaceRole::Owner,
                 encrypted_space_key_ref: Some("credential://space-key".to_owned()),
                 updated_at: 1_700_000_000_000,
             })
@@ -2635,7 +2643,7 @@ mod tests {
         assert_eq!(invitation.consumed_by_device_id, Some(peer_device_id));
 
         let device = DeviceRepository::new(&connection)
-            .get(peer_device_id)
+            .get_in_space(space_id, peer_device_id)
             .expect("device query should succeed")
             .expect("device should exist");
         assert_eq!(device.device.space_id, space_id);

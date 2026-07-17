@@ -195,17 +195,25 @@ fn ensure_local_history_space_and_device(
     connection
         .execute(
             "INSERT OR IGNORE INTO spaces(
-              space_id, display_name, encrypted_space_key_ref, key_version, state, created_at, updated_at
-            ) VALUES (?1, '本机历史', NULL, 1, 'active', ?2, ?2)",
+              space_id, display_name, encrypted_space_key_ref, key_version, state,
+              created_at, updated_at, local_role
+            ) VALUES (?1, '本机历史', NULL, 1, 'active', ?2, ?2, 'owner')",
             rusqlite::params![space_id.to_string(), now_ms],
         )
         .map_err(|error| format!("无法初始化本机历史空间：{error}"))?;
     connection
         .execute(
-            "INSERT OR IGNORE INTO devices(
-              device_id, space_id, display_name, identity_public_key, trust_state,
-              connection_state, paired_at, last_seen_at, revoked_at
-            ) VALUES (?1, ?2, '本机', 'local-history://identity', 'trusted', 'offline', ?3, NULL, NULL)",
+            "INSERT OR IGNORE INTO device_identities(device_id, identity_public_key)
+             VALUES (?1, 'local-history://identity')",
+            rusqlite::params![local_device_id.to_string()],
+        )
+        .map_err(|error| format!("无法初始化本机历史设备身份：{error}"))?;
+    connection
+        .execute(
+            "INSERT OR IGNORE INTO space_members(
+              space_id, device_id, display_name, trust_state, connection_state,
+              route_role, paired_at, last_seen_at, revoked_at
+            ) VALUES (?2, ?1, '本机', 'trusted', 'offline', 'acceptOnly', ?3, NULL, NULL)",
             rusqlite::params![local_device_id.to_string(), space_id.to_string(), now_ms],
         )
         .map_err(|error| format!("无法初始化本机历史设备：{error}"))?;
@@ -283,13 +291,22 @@ mod tests {
             .expect("space should insert");
         connection
             .execute(
-                "INSERT INTO devices(
-                    device_id, space_id, display_name, identity_public_key, trust_state,
-                    connection_state, paired_at, last_seen_at, revoked_at
-                 ) VALUES(?1, ?2, '本机', 'test-public-key', 'trusted', 'offline', 1700000000000, NULL, NULL)",
+                "INSERT INTO device_identities(device_id, identity_public_key)
+                 VALUES(?1, 'test-public-key')",
+                params![device_id],
+            )
+            .expect("device identity should insert");
+        connection
+            .execute(
+                "INSERT INTO space_members(
+                    space_id, device_id, display_name, trust_state, connection_state,
+                    route_role, last_successful_host, last_successful_port,
+                    paired_at, last_seen_at, revoked_at
+                 ) VALUES(?2, ?1, '本机', 'trusted', 'offline', 'acceptOnly', NULL, NULL,
+                    1700000000000, NULL, NULL)",
                 params![device_id, space_id],
             )
-            .expect("device should insert");
+            .expect("space member should insert");
         connection
             .execute(
                 "INSERT INTO clipboard_items(

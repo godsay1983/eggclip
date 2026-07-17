@@ -5,18 +5,20 @@ use crate::sync::{
     broadcast_local_clipboard_after_commit, build_local_clipboard_item, deduplicate_clipboard_item,
     new_uuid_v7, AppSettings, ClipboardDedupDecision, ClipboardItem, ContentType, Device,
     DeviceConnectionState, DeviceTrustState, HlcTimestamp, LocalClipboardBroadcastOutcome,
-    LocalClipboardBroadcaster, LocalClipboardItemInput, Space, SpaceState, SyncHead,
-    SyncModelError,
+    LocalClipboardBroadcaster, LocalClipboardItemInput, LocalSpaceRole, Space, SpaceState,
+    SyncHead, SyncModelError, TrustedRouteRole,
 };
 
 pub const LOCAL_DEVICE_ID_KEY: &str = "localDeviceId";
 pub const NEXT_ORIGIN_SEQ_KEY: &str = "nextOriginSeq";
 pub const INITIAL_ORIGIN_SEQ: u64 = 1;
 const MILLIS_PER_DAY: u64 = 24 * 60 * 60 * 1_000;
+const LOCAL_HISTORY_IDENTITY_PLACEHOLDER: &str = "local-history://identity";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpaceRecord {
     pub space: Space,
+    pub local_role: LocalSpaceRole,
     pub encrypted_space_key_ref: Option<String>,
     pub updated_at: u64,
 }
@@ -44,8 +46,26 @@ pub struct PairingInvitationRecord {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeviceRecord {
     pub device: Device,
+    pub route: TrustedDeviceRoute,
     pub paired_at: Option<u64>,
     pub revoked_at: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrustedDeviceRoute {
+    pub role: TrustedRouteRole,
+    pub last_successful_host: Option<String>,
+    pub last_successful_port: Option<u16>,
+}
+
+impl Default for TrustedDeviceRoute {
+    fn default() -> Self {
+        Self {
+            role: TrustedRouteRole::AcceptOnly,
+            last_successful_host: None,
+            last_successful_port: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -203,14 +223,15 @@ impl<'a> SpaceRepository<'a> {
     pub fn upsert(&self, record: &SpaceRecord) -> rusqlite::Result<()> {
         self.connection.execute(
             "INSERT INTO spaces(
-              space_id, display_name, encrypted_space_key_ref, key_version, state, created_at, updated_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+              space_id, display_name, encrypted_space_key_ref, key_version, state, created_at, updated_at, local_role
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
             ON CONFLICT(space_id) DO UPDATE SET
               display_name = excluded.display_name,
               encrypted_space_key_ref = excluded.encrypted_space_key_ref,
               key_version = excluded.key_version,
               state = excluded.state,
-              updated_at = excluded.updated_at",
+              updated_at = excluded.updated_at,
+              local_role = excluded.local_role",
             params![
                 record.space.space_id.to_string(),
                 record.space.display_name,
@@ -219,6 +240,7 @@ impl<'a> SpaceRepository<'a> {
                 space_state_to_db(record.space.state),
                 u64_to_i64(record.space.created_at)?,
                 u64_to_i64(record.updated_at)?,
+                local_space_role_to_db(record.local_role),
             ],
         )?;
         Ok(())
@@ -227,7 +249,7 @@ impl<'a> SpaceRepository<'a> {
     pub fn get(&self, space_id: Uuid) -> rusqlite::Result<Option<SpaceRecord>> {
         self.connection
             .query_row(
-                "SELECT space_id, display_name, encrypted_space_key_ref, key_version, state, created_at, updated_at
+                "SELECT space_id, display_name, encrypted_space_key_ref, key_version, state, created_at, updated_at, local_role
                  FROM spaces WHERE space_id = ?1",
                 params![space_id.to_string()],
                 row_to_space_record,
@@ -237,7 +259,7 @@ impl<'a> SpaceRepository<'a> {
 
     pub fn list(&self) -> rusqlite::Result<Vec<SpaceRecord>> {
         let mut statement = self.connection.prepare(
-            "SELECT space_id, display_name, encrypted_space_key_ref, key_version, state, created_at, updated_at
+            "SELECT space_id, display_name, encrypted_space_key_ref, key_version, state, created_at, updated_at, local_role
              FROM spaces ORDER BY created_at DESC, space_id DESC",
         )?;
         let records = statement.query_map([], row_to_space_record)?.collect();
@@ -349,56 +371,155 @@ impl<'a> DeviceRepository<'a> {
     }
 
     pub fn upsert(&self, record: &DeviceRecord) -> rusqlite::Result<()> {
-        self.connection.execute(
-            "INSERT INTO devices(
-              device_id, space_id, display_name, identity_public_key, trust_state,
-              connection_state, paired_at, last_seen_at, revoked_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
-            ON CONFLICT(device_id) DO UPDATE SET
-              display_name = excluded.display_name,
-              identity_public_key = excluded.identity_public_key,
-              trust_state = excluded.trust_state,
-              connection_state = excluded.connection_state,
-              last_seen_at = excluded.last_seen_at,
-              revoked_at = excluded.revoked_at",
-            params![
-                record.device.device_id.to_string(),
-                record.device.space_id.to_string(),
-                record.device.display_name,
-                record.device.identity_public_key_ref,
-                trust_state_to_db(record.device.trust_state),
-                connection_state_to_db(record.device.connection_state),
-                option_u64_to_i64(record.paired_at)?,
-                option_u64_to_i64(record.device.last_seen_at)?,
-                option_u64_to_i64(record.revoked_at)?,
-            ],
-        )?;
-        Ok(())
+        validate_trusted_route(&record.route)?;
+        if self.connection.is_autocommit() {
+            let transaction = self.connection.unchecked_transaction()?;
+            upsert_device_record(&transaction, record)?;
+            transaction.commit()
+        } else {
+            upsert_device_record(self.connection, record)
+        }
     }
 
-    pub fn get(&self, device_id: Uuid) -> rusqlite::Result<Option<DeviceRecord>> {
+    pub fn get_in_space(
+        &self,
+        space_id: Uuid,
+        device_id: Uuid,
+    ) -> rusqlite::Result<Option<DeviceRecord>> {
         self.connection
             .query_row(
-                "SELECT device_id, space_id, display_name, identity_public_key, trust_state,
-                  connection_state, paired_at, last_seen_at, revoked_at
-                 FROM devices WHERE device_id = ?1",
-                params![device_id.to_string()],
+                "SELECT m.device_id, m.space_id, m.display_name, i.identity_public_key,
+                  m.trust_state, m.connection_state, m.paired_at, m.last_seen_at, m.revoked_at,
+                  m.route_role, m.last_successful_host, m.last_successful_port
+                 FROM space_members m
+                 JOIN device_identities i ON i.device_id = m.device_id
+                 WHERE m.space_id = ?1 AND m.device_id = ?2",
+                params![space_id.to_string(), device_id.to_string()],
                 row_to_device_record,
             )
             .optional()
     }
 
+    pub fn get_unique_by_device_id(
+        &self,
+        device_id: Uuid,
+    ) -> rusqlite::Result<Option<DeviceRecord>> {
+        let mut statement = self.connection.prepare(
+            "SELECT m.device_id, m.space_id, m.display_name, i.identity_public_key,
+              m.trust_state, m.connection_state, m.paired_at, m.last_seen_at, m.revoked_at,
+              m.route_role, m.last_successful_host, m.last_successful_port
+             FROM space_members m
+             JOIN device_identities i ON i.device_id = m.device_id
+             WHERE m.device_id = ?1
+             ORDER BY m.space_id
+             LIMIT 2",
+        )?;
+        let records = statement
+            .query_map(params![device_id.to_string()], row_to_device_record)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        match records.len() {
+            0 => Ok(None),
+            1 => Ok(records.into_iter().next()),
+            _ => Err(text_error(0, "device belongs to multiple spaces")),
+        }
+    }
+
     pub fn list_by_space(&self, space_id: Uuid) -> rusqlite::Result<Vec<DeviceRecord>> {
         let mut statement = self.connection.prepare(
-            "SELECT device_id, space_id, display_name, identity_public_key, trust_state,
-              connection_state, paired_at, last_seen_at, revoked_at
-             FROM devices WHERE space_id = ?1 ORDER BY display_name, device_id",
+            "SELECT m.device_id, m.space_id, m.display_name, i.identity_public_key,
+              m.trust_state, m.connection_state, m.paired_at, m.last_seen_at, m.revoked_at,
+              m.route_role, m.last_successful_host, m.last_successful_port
+             FROM space_members m
+             JOIN device_identities i ON i.device_id = m.device_id
+             WHERE m.space_id = ?1
+             ORDER BY m.display_name, m.device_id",
         )?;
         let records = statement
             .query_map(params![space_id.to_string()], row_to_device_record)?
             .collect();
         records
     }
+
+    pub fn list_dial_coordinators(&self) -> rusqlite::Result<Vec<DeviceRecord>> {
+        let mut statement = self.connection.prepare(
+            "SELECT m.device_id, m.space_id, m.display_name, i.identity_public_key,
+              m.trust_state, m.connection_state, m.paired_at, m.last_seen_at, m.revoked_at,
+              m.route_role, m.last_successful_host, m.last_successful_port
+             FROM space_members m
+             JOIN device_identities i ON i.device_id = m.device_id
+             JOIN spaces s ON s.space_id = m.space_id
+             WHERE m.route_role = 'dialCoordinator'
+               AND m.trust_state = 'trusted'
+               AND m.revoked_at IS NULL
+               AND s.state = 'active'
+             ORDER BY m.space_id, m.device_id",
+        )?;
+        let records = statement.query_map([], row_to_device_record)?.collect();
+        records
+    }
+}
+
+fn upsert_device_record(connection: &Connection, record: &DeviceRecord) -> rusqlite::Result<()> {
+    connection.execute(
+        "INSERT OR IGNORE INTO device_identities(device_id, identity_public_key)
+         VALUES (?1, ?2)",
+        params![
+            record.device.device_id.to_string(),
+            record.device.identity_public_key_ref,
+        ],
+    )?;
+    let mut stored_identity: String = connection.query_row(
+        "SELECT identity_public_key FROM device_identities WHERE device_id = ?1",
+        params![record.device.device_id.to_string()],
+        |row| row.get(0),
+    )?;
+    if stored_identity == LOCAL_HISTORY_IDENTITY_PLACEHOLDER
+        && record.device.identity_public_key_ref != LOCAL_HISTORY_IDENTITY_PLACEHOLDER
+    {
+        connection.execute(
+            "UPDATE device_identities SET identity_public_key = ?2
+             WHERE device_id = ?1 AND identity_public_key = ?3",
+            params![
+                record.device.device_id.to_string(),
+                record.device.identity_public_key_ref,
+                LOCAL_HISTORY_IDENTITY_PLACEHOLDER,
+            ],
+        )?;
+        stored_identity = record.device.identity_public_key_ref.clone();
+    }
+    if stored_identity != record.device.identity_public_key_ref {
+        return Err(text_error(0, "device identity public key mismatch"));
+    }
+    connection.execute(
+        "INSERT INTO space_members(
+          space_id, device_id, display_name, trust_state, connection_state,
+          route_role, last_successful_host, last_successful_port,
+          paired_at, last_seen_at, revoked_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+        ON CONFLICT(space_id, device_id) DO UPDATE SET
+          display_name = excluded.display_name,
+          trust_state = excluded.trust_state,
+          connection_state = excluded.connection_state,
+          route_role = excluded.route_role,
+          last_successful_host = excluded.last_successful_host,
+          last_successful_port = excluded.last_successful_port,
+          last_seen_at = excluded.last_seen_at,
+          revoked_at = excluded.revoked_at",
+        params![
+            record.device.space_id.to_string(),
+            record.device.device_id.to_string(),
+            record.device.display_name,
+            trust_state_to_db(record.device.trust_state),
+            connection_state_to_db(record.device.connection_state),
+            trusted_route_role_to_db(record.route.role),
+            record.route.last_successful_host,
+            record.route.last_successful_port.map(i64::from),
+            option_u64_to_i64(record.paired_at)?,
+            option_u64_to_i64(record.device.last_seen_at)?,
+            option_u64_to_i64(record.revoked_at)?,
+        ],
+    )?;
+    Ok(())
 }
 
 pub struct ClipboardRepository<'a> {
@@ -444,9 +565,11 @@ impl<'a> ClipboardRepository<'a> {
                 deduplicate_clipboard_item(&existing.item, &record.item),
             ));
         }
-        if let Some(existing) =
-            self.get_by_origin_sequence(record.item.origin_device_id, record.item.origin_seq)?
-        {
+        if let Some(existing) = self.get_by_origin_sequence(
+            record.item.space_id,
+            record.item.origin_device_id,
+            record.item.origin_seq,
+        )? {
             return Ok(dedup_decision_to_insert_outcome(
                 deduplicate_clipboard_item(&existing.item, &record.item),
             ));
@@ -461,9 +584,11 @@ impl<'a> ClipboardRepository<'a> {
                 deduplicate_clipboard_item(&existing.item, &record.item),
             ));
         }
-        if let Some(existing) =
-            self.get_by_origin_sequence(record.item.origin_device_id, record.item.origin_seq)?
-        {
+        if let Some(existing) = self.get_by_origin_sequence(
+            record.item.space_id,
+            record.item.origin_device_id,
+            record.item.origin_seq,
+        )? {
             return Ok(dedup_decision_to_insert_outcome(
                 deduplicate_clipboard_item(&existing.item, &record.item),
             ));
@@ -485,6 +610,7 @@ impl<'a> ClipboardRepository<'a> {
 
     pub fn get_by_origin_sequence(
         &self,
+        space_id: Uuid,
         origin_device_id: Uuid,
         origin_seq: u64,
     ) -> rusqlite::Result<Option<ClipboardItemRecord>> {
@@ -492,8 +618,13 @@ impl<'a> ClipboardRepository<'a> {
             .query_row(
                 "SELECT item_id, space_id, origin_device_id, origin_seq, hlc, content_type,
                   content_length, content_digest, encrypted_content, created_at, received_at, expires_at, deleted_at
-                 FROM clipboard_items WHERE origin_device_id = ?1 AND origin_seq = ?2",
-                params![origin_device_id.to_string(), u64_to_i64(origin_seq)?],
+                 FROM clipboard_items
+                 WHERE space_id = ?1 AND origin_device_id = ?2 AND origin_seq = ?3",
+                params![
+                    space_id.to_string(),
+                    origin_device_id.to_string(),
+                    u64_to_i64(origin_seq)?
+                ],
                 row_to_clipboard_record,
             )
             .optional()
@@ -987,6 +1118,7 @@ fn row_to_space_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<SpaceRecord>
         },
         encrypted_space_key_ref: row.get(2)?,
         updated_at: i64_to_u64(row.get(6)?, 6)?,
+        local_role: db_to_local_space_role(row.get::<_, String>(7)?, 7)?,
     })
 }
 
@@ -1022,6 +1154,14 @@ fn row_to_device_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<DeviceRecor
         },
         paired_at: option_i64_to_u64(row.get(6)?, 6)?,
         revoked_at: option_i64_to_u64(row.get(8)?, 8)?,
+        route: TrustedDeviceRoute {
+            role: db_to_trusted_route_role(row.get::<_, String>(9)?, 9)?,
+            last_successful_host: row.get(10)?,
+            last_successful_port: row
+                .get::<_, Option<i64>>(11)?
+                .map(|port| port.try_into().map_err(|_| int_error(11)))
+                .transpose()?,
+        },
     })
 }
 
@@ -1077,6 +1217,21 @@ fn db_to_space_state(value: String, column: usize) -> rusqlite::Result<SpaceStat
     }
 }
 
+fn local_space_role_to_db(value: LocalSpaceRole) -> &'static str {
+    match value {
+        LocalSpaceRole::Owner => "owner",
+        LocalSpaceRole::Member => "member",
+    }
+}
+
+fn db_to_local_space_role(value: String, column: usize) -> rusqlite::Result<LocalSpaceRole> {
+    match value.as_str() {
+        "owner" => Ok(LocalSpaceRole::Owner),
+        "member" => Ok(LocalSpaceRole::Member),
+        _ => Err(text_error(column, "invalid local space role")),
+    }
+}
+
 fn pairing_invitation_state_to_db(value: PairingInvitationState) -> &'static str {
     match value {
         PairingInvitationState::Active => "active",
@@ -1128,6 +1283,29 @@ fn db_to_connection_state(value: String, column: usize) -> rusqlite::Result<Devi
         "online" => Ok(DeviceConnectionState::Online),
         "authFailed" => Ok(DeviceConnectionState::AuthFailed),
         _ => Err(text_error(column, "invalid connection state")),
+    }
+}
+
+fn trusted_route_role_to_db(value: TrustedRouteRole) -> &'static str {
+    match value {
+        TrustedRouteRole::AcceptOnly => "acceptOnly",
+        TrustedRouteRole::DialCoordinator => "dialCoordinator",
+    }
+}
+
+fn db_to_trusted_route_role(value: String, column: usize) -> rusqlite::Result<TrustedRouteRole> {
+    match value.as_str() {
+        "acceptOnly" => Ok(TrustedRouteRole::AcceptOnly),
+        "dialCoordinator" => Ok(TrustedRouteRole::DialCoordinator),
+        _ => Err(text_error(column, "invalid trusted route role")),
+    }
+}
+
+fn validate_trusted_route(route: &TrustedDeviceRoute) -> rusqlite::Result<()> {
+    match (&route.last_successful_host, route.last_successful_port) {
+        (None, None) => Ok(()),
+        (Some(host), Some(port)) if !host.trim().is_empty() && port > 0 => Ok(()),
+        _ => Err(text_error(0, "invalid trusted route endpoint")),
     }
 }
 
@@ -1252,6 +1430,7 @@ mod tests {
                 state: SpaceState::Active,
                 created_at: 1_700_000_000_000,
             },
+            local_role: LocalSpaceRole::Owner,
             encrypted_space_key_ref: Some("credential://space-key".to_string()),
             updated_at: 1_700_000_000_000,
         })?;
@@ -1269,6 +1448,7 @@ mod tests {
                     connection_state: DeviceConnectionState::Offline,
                     last_seen_at: None,
                 },
+                route: TrustedDeviceRoute::default(),
                 paired_at: Some(1_700_000_000_000),
                 revoked_at: None,
             })?;
@@ -1298,7 +1478,7 @@ mod tests {
         );
 
         let device = devices
-            .get(local_device_id)
+            .get_in_space(space_id, local_device_id)
             .expect("device query should succeed")
             .expect("device should exist");
         assert_eq!(
@@ -1358,6 +1538,146 @@ mod tests {
             .expect("sync head query should succeed");
         assert_eq!(heads.len(), 1);
         assert_eq!(heads[0].head.latest_origin_seq, 1);
+    }
+
+    #[test]
+    fn scopes_one_global_device_identity_to_independent_space_memberships() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let shared_device_id = Uuid::now_v7();
+        let first_space_id = Uuid::now_v7();
+        let second_space_id = Uuid::now_v7();
+        let spaces = SpaceRepository::new(&connection);
+        for (space_id, local_role) in [
+            (first_space_id, LocalSpaceRole::Owner),
+            (second_space_id, LocalSpaceRole::Member),
+        ] {
+            spaces
+                .upsert(&SpaceRecord {
+                    space: Space {
+                        space_id,
+                        display_name: format!("空间 {space_id}"),
+                        key_version: 1,
+                        state: SpaceState::Active,
+                        created_at: 1_700_000_000_000,
+                    },
+                    local_role,
+                    encrypted_space_key_ref: Some(format!("credential://space/{space_id}")),
+                    updated_at: 1_700_000_000_000,
+                })
+                .expect("space should persist");
+        }
+
+        let devices = DeviceRepository::new(&connection);
+        devices
+            .upsert(&DeviceRecord {
+                device: Device {
+                    device_id: shared_device_id,
+                    space_id: first_space_id,
+                    display_name: "协调端 A".to_string(),
+                    identity_public_key_ref: "same-global-public-key".to_string(),
+                    trust_state: DeviceTrustState::Trusted,
+                    connection_state: DeviceConnectionState::Offline,
+                    last_seen_at: None,
+                },
+                route: TrustedDeviceRoute::default(),
+                paired_at: Some(1_700_000_000_010),
+                revoked_at: None,
+            })
+            .expect("first membership");
+        devices
+            .upsert(&DeviceRecord {
+                device: Device {
+                    device_id: shared_device_id,
+                    space_id: second_space_id,
+                    display_name: "协调端 B".to_string(),
+                    identity_public_key_ref: "same-global-public-key".to_string(),
+                    trust_state: DeviceTrustState::Trusted,
+                    connection_state: DeviceConnectionState::Offline,
+                    last_seen_at: None,
+                },
+                route: TrustedDeviceRoute {
+                    role: TrustedRouteRole::DialCoordinator,
+                    last_successful_host: Some("192.168.10.20".to_string()),
+                    last_successful_port: Some(4567),
+                },
+                paired_at: Some(1_700_000_000_020),
+                revoked_at: None,
+            })
+            .expect("second membership");
+
+        assert_eq!(
+            spaces.get(first_space_id).unwrap().unwrap().local_role,
+            LocalSpaceRole::Owner
+        );
+        assert_eq!(
+            spaces.get(second_space_id).unwrap().unwrap().local_role,
+            LocalSpaceRole::Member
+        );
+        assert!(devices
+            .get_in_space(first_space_id, shared_device_id)
+            .unwrap()
+            .is_some());
+        let second = devices
+            .get_in_space(second_space_id, shared_device_id)
+            .unwrap()
+            .expect("second membership");
+        assert_eq!(second.route.role, TrustedRouteRole::DialCoordinator);
+        assert_eq!(
+            second.route.last_successful_host.as_deref(),
+            Some("192.168.10.20")
+        );
+        assert!(devices.get_unique_by_device_id(shared_device_id).is_err());
+        assert_eq!(devices.list_dial_coordinators().unwrap(), vec![second]);
+
+        let mismatched_identity = DeviceRecord {
+            device: Device {
+                device_id: shared_device_id,
+                space_id: second_space_id,
+                display_name: "冒充设备".to_string(),
+                identity_public_key_ref: "different-public-key".to_string(),
+                trust_state: DeviceTrustState::Trusted,
+                connection_state: DeviceConnectionState::Offline,
+                last_seen_at: None,
+            },
+            route: TrustedDeviceRoute::default(),
+            paired_at: None,
+            revoked_at: None,
+        };
+        assert!(devices.upsert(&mismatched_identity).is_err());
+
+        let clipboard = ClipboardRepository::new(&connection);
+        for space_id in [first_space_id, second_space_id] {
+            let item = build_local_clipboard_item(
+                LocalClipboardItemInput {
+                    item_id: Uuid::now_v7(),
+                    space_id,
+                    origin_device_id: shared_device_id,
+                    origin_seq: 1,
+                    hlc: HlcTimestamp::new(1_700_000_000_100, 0),
+                    created_at: 1_700_000_000_100,
+                    hmac_key: space_id.as_bytes(),
+                },
+                format!("空间 {space_id} 的事件"),
+            )
+            .expect("item");
+            clipboard
+                .insert(&ClipboardItemRecord {
+                    item,
+                    encrypted_content: vec![1, 2, 3],
+                    received_at: 1_700_000_000_100,
+                    expires_at: 1_700_604_800_100,
+                    deleted_at: None,
+                })
+                .expect("space-scoped origin sequence should insert");
+        }
+        assert!(clipboard
+            .get_by_origin_sequence(first_space_id, shared_device_id, 1)
+            .unwrap()
+            .is_some());
+        assert!(clipboard
+            .get_by_origin_sequence(second_space_id, shared_device_id, 1)
+            .unwrap()
+            .is_some());
     }
 
     #[test]
