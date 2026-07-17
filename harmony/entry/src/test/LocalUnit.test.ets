@@ -3161,6 +3161,27 @@ export default function localUnitTest() {
       expect(storage.records.length).assertEqual(0);
     });
 
+    it('acceptsLiveRelayFromTrustedCoordinatorWithoutForgingOriginMembership', 0, async () => {
+      const storage = new FakeInboundItemLiveStorageGateway();
+      storage.missingDeviceId = '018ff6f0-0a3b-7815-a4db-3eb6e23d9338';
+      const crypto = new FakeSpaceKeyAesGcmGateway();
+      const service = new InboundItemLiveService(storage, crypto, new FakeSecureRandomGateway());
+      const item = JSON.parse(CLIPBOARD_ITEM_FIXTURE) as JsonObject;
+
+      const result = await service.accept({
+        payload: item,
+        expectedSpaceId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
+        expectedPeerDeviceId: '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
+        allowTrustedPeerRelay: true,
+        nowMs: 1781946001123
+      });
+
+      expect(result.status).assertEqual(InboundItemLiveStatus.RELAYED);
+      expect(crypto.encryptCalls).assertEqual(0);
+      expect(storage.records.length).assertEqual(0);
+      expect(storage.retentionCalls).assertEqual(0);
+    });
+
     it('honorsInboundReceivePolicyBeforeWritingItemLiveHistory', 0, async () => {
       const storage = new FakeInboundItemLiveStorageGateway();
       storage.settings.autoReceiveEnabled = false;
@@ -3425,6 +3446,7 @@ class FakeInboundItemLiveStorageGateway implements InboundItemLiveStorageGateway
   records: ClipboardItemRecord[] = [];
   retentionCalls: number = 0;
   decision: ClipboardDedupDecision = ClipboardDedupDecision.NEW;
+  missingDeviceId: string = '';
 
   async loadSettings(): Promise<AppSettings> {
     return this.settings;
@@ -3445,9 +3467,10 @@ class FakeInboundItemLiveStorageGateway implements InboundItemLiveStorageGateway
     };
   }
 
-  async loadDevice(_: string): Promise<DeviceRecord | null> {
+  async loadDevice(deviceId: string): Promise<DeviceRecord | null> {
+    if (deviceId === this.missingDeviceId) return null;
     const device: DomainDevice = {
-      deviceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
+      deviceId,
       spaceId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
       displayName: '测试桌面端',
       identityPublicKeyRef: FAKE_LOCAL_IDENTITY_PUBLIC_KEY,

@@ -29,6 +29,7 @@ const MILLIS_PER_DAY: number = 24 * 60 * 60 * 1000;
 
 export enum InboundItemLiveStatus {
   STORED = 'stored',
+  RELAYED = 'relayed',
   DUPLICATE = 'duplicate',
   IGNORED_BY_POLICY = 'ignoredByPolicy',
   REJECTED = 'rejected',
@@ -39,6 +40,7 @@ export interface InboundItemLiveInput {
   payload: JsonObject;
   expectedSpaceId: string;
   expectedPeerDeviceId: string;
+  allowTrustedPeerRelay?: boolean;
   eventKind?: InboundClipboardEventKind;
   nowMs: number;
 }
@@ -90,31 +92,49 @@ export class InboundItemLiveService {
       return rejected('spaceId');
     }
     const eventKind = input.eventKind ?? InboundClipboardEventKind.ITEM_LIVE;
-    if (eventKind === InboundClipboardEventKind.ITEM_LIVE &&
-      item.originDeviceId !== input.expectedPeerDeviceId) {
+    const isRelayedLive = eventKind === InboundClipboardEventKind.ITEM_LIVE &&
+      item.originDeviceId !== input.expectedPeerDeviceId;
+    if (isRelayedLive && input.allowTrustedPeerRelay !== true) {
       return rejected('originDeviceId');
     }
 
     let settings: AppSettings;
     let space: SpaceRecord | null;
     let device: DeviceRecord | null;
+    let relay: DeviceRecord | null = null;
     try {
       settings = await this.storage.loadSettings();
       space = await this.storage.loadSpace(item.spaceId);
       device = await this.storage.loadDevice(item.originDeviceId);
+      if (isRelayedLive) {
+        relay = await this.storage.loadDevice(input.expectedPeerDeviceId);
+      }
     } catch (_) {
       return failed('loadTrustedState');
     }
     if (space === null || !isActiveSpaceWithKey(space, item.spaceId)) {
       return rejected('space');
     }
-    if (!isTrustedDeviceForSpace(device, item.originDeviceId, item.spaceId)) {
+    if (isRelayedLive && !isTrustedDeviceForSpace(relay, input.expectedPeerDeviceId, item.spaceId)) {
+      return rejected('relayDevice');
+    }
+    if (!isRelayedLive && !isTrustedDeviceForSpace(device, item.originDeviceId, item.spaceId)) {
       return rejected('device');
     }
 
     const policy = inboundClipboardPolicy(eventKind, settings);
     if (!policy.updateHistory) {
       return { status: InboundItemLiveStatus.IGNORED_BY_POLICY };
+    }
+    // Joined members do not yet receive a complete member roster. A trusted
+    // coordinator may therefore relay a live event whose original device is
+    // unknown locally. Keep it available to the UI without fabricating a
+    // trusted-device row or violating the clipboard history foreign key.
+    if (isRelayedLive && device === null) {
+      return { status: InboundItemLiveStatus.RELAYED };
+    }
+    if (!isTrustedDeviceForSpace(device, item.originDeviceId, item.spaceId)) {
+      return rejected('device');
     }
 
     const encryptedContent = await this.encryptForLocalStorage(

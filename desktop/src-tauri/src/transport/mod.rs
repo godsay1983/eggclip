@@ -3,11 +3,11 @@ pub(crate) mod reconnect;
 mod session;
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     net::Ipv4Addr,
     str::FromStr,
     sync::{atomic::AtomicBool, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use crate::{
@@ -40,8 +40,8 @@ use crate::{
         },
     },
     sync::{
-        AppSettings, ContentType as SyncContentType, Device, DeviceConnectionState,
-        DeviceTrustState, HlcTimestamp, SpaceState, SyncHead,
+        content_hmac_digest, AppSettings, ContentType as SyncContentType, Device,
+        DeviceConnectionState, DeviceTrustState, HlcTimestamp, SpaceState, SyncHead,
     },
 };
 use futures_util::{SinkExt, StreamExt};
@@ -73,6 +73,8 @@ const POC_CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
 const AUTHENTICATED_HEARTBEAT_INTERVAL: Duration =
     Duration::from_secs(crate::protocol::HEARTBEAT_INTERVAL_SECONDS);
 const POC_RECENT_ENDPOINT_KEY: &str = "pocRecentEndpoint";
+const LIVE_EVENT_CACHE_CAPACITY: usize = 4_096;
+const LIVE_EVENT_CACHE_TTL: Duration = Duration::from_secs(10 * 60);
 
 #[derive(Default)]
 pub struct PocTransportRuntime {
@@ -83,7 +85,121 @@ pub struct PocTransportRuntime {
     formal_outbound_peers: Mutex<HashMap<String, mpsc::UnboundedSender<Message>>>,
     formal_connecting: Mutex<HashSet<String>>,
     reconnect_task_started: AtomicBool,
+    live_event_dedup: Mutex<LiveEventDedupCache>,
     diagnostics: Mutex<PocTransportDiagnostics>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct LiveEventKey {
+    space_id: Uuid,
+    origin_device_id: Uuid,
+    origin_seq: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ValidatedLiveEvent {
+    key: LiveEventKey,
+    allow_missing_origin_history: bool,
+}
+
+#[derive(Debug, Clone)]
+struct LiveEventCacheEntry {
+    content_digest: String,
+    seen_at: Instant,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LiveEventDedupDecision {
+    New,
+    Duplicate,
+    Conflict,
+}
+
+#[derive(Debug)]
+struct LiveEventDedupCache {
+    capacity: usize,
+    ttl: Duration,
+    entries: HashMap<LiveEventKey, LiveEventCacheEntry>,
+    order: VecDeque<(LiveEventKey, Instant)>,
+}
+
+impl Default for LiveEventDedupCache {
+    fn default() -> Self {
+        Self::new(LIVE_EVENT_CACHE_CAPACITY, LIVE_EVENT_CACHE_TTL)
+    }
+}
+
+impl LiveEventDedupCache {
+    fn new(capacity: usize, ttl: Duration) -> Self {
+        Self {
+            capacity: capacity.max(1),
+            ttl,
+            entries: HashMap::new(),
+            order: VecDeque::new(),
+        }
+    }
+
+    fn observe(
+        &mut self,
+        key: LiveEventKey,
+        content_digest: &str,
+        now: Instant,
+    ) -> LiveEventDedupDecision {
+        self.prune(now);
+        if let Some(existing) = self.entries.get(&key) {
+            return if existing.content_digest == content_digest {
+                LiveEventDedupDecision::Duplicate
+            } else {
+                LiveEventDedupDecision::Conflict
+            };
+        }
+        while self.entries.len() >= self.capacity {
+            self.evict_oldest();
+        }
+        self.entries.insert(
+            key,
+            LiveEventCacheEntry {
+                content_digest: content_digest.to_string(),
+                seen_at: now,
+            },
+        );
+        self.order.push_back((key, now));
+        LiveEventDedupDecision::New
+    }
+
+    fn forget(&mut self, key: LiveEventKey, content_digest: &str) {
+        if self
+            .entries
+            .get(&key)
+            .is_some_and(|entry| entry.content_digest == content_digest)
+        {
+            self.entries.remove(&key);
+            self.order.retain(|(entry_key, _)| *entry_key != key);
+        }
+    }
+
+    fn prune(&mut self, now: Instant) {
+        while self
+            .order
+            .front()
+            .is_some_and(|(_, seen_at)| now.saturating_duration_since(*seen_at) >= self.ttl)
+        {
+            self.evict_oldest();
+        }
+    }
+
+    fn evict_oldest(&mut self) {
+        let Some((key, seen_at)) = self.order.pop_front() else {
+            return;
+        };
+        if self
+            .entries
+            .get(&key)
+            .is_some_and(|entry| entry.seen_at == seen_at)
+        {
+            self.entries.remove(&key);
+        }
+    }
 }
 
 pub(crate) fn authenticated_device_peers(app: &AppHandle) -> HashMap<(Uuid, Uuid), String> {
@@ -122,6 +238,13 @@ struct AuthenticatedPeerSession {
 enum AuthenticatedConnectionKind {
     Inbound,
     FormalOutbound,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct AuthenticatedPeerContext {
+    space_id: Uuid,
+    device_id: Uuid,
+    connection_kind: AuthenticatedConnectionKind,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -940,9 +1063,20 @@ fn broadcast_authenticated_item_live(
     space_id: Uuid,
     payload: &serde_json::Value,
 ) -> usize {
+    broadcast_authenticated_item_live_excluding(app, space_id, payload, None)
+}
+
+fn broadcast_authenticated_item_live_excluding(
+    app: &AppHandle,
+    space_id: Uuid,
+    payload: &serde_json::Value,
+    excluded_peer: Option<&str>,
+) -> usize {
     let runtime = app.state::<PocTransportRuntime>();
     let (frames, stale_sessions) = match runtime.authenticated_sessions.lock() {
-        Ok(mut sessions) => encode_authenticated_item_live_frames(&mut sessions, space_id, payload),
+        Ok(mut sessions) => {
+            encode_authenticated_item_live_frames(&mut sessions, space_id, payload, excluded_peer)
+        }
         Err(_) => return 0,
     };
     for peer in stale_sessions {
@@ -967,11 +1101,12 @@ fn encode_authenticated_item_live_frames(
     sessions: &mut HashMap<String, AuthenticatedPeerSession>,
     space_id: Uuid,
     payload: &serde_json::Value,
+    excluded_peer: Option<&str>,
 ) -> (Vec<(String, Message)>, Vec<String>) {
     let mut frames = Vec::new();
     let mut stale_sessions = Vec::new();
     for (peer, entry) in sessions.iter_mut() {
-        if entry.space_id != space_id {
+        if entry.space_id != space_id || excluded_peer == Some(peer.as_str()) {
             continue;
         }
         match entry.session.encode_business_message(
@@ -1747,7 +1882,7 @@ fn dispatch_authenticated_payload(
             let _ = app.emit("transport://item-ack", ack);
             return Ok(());
         }
-        MessageType::ItemLive => {}
+        MessageType::ItemLive => return handle_inbound_item_live(app, peer, payload),
         MessageType::Ping => {
             return send_authenticated_business_payload(app, peer, MessageType::Pong, payload)
         }
@@ -1758,51 +1893,191 @@ fn dispatch_authenticated_payload(
         MessageType::DeviceRevoked => return Err(()),
         _ => return Err(()),
     }
+}
+
+fn handle_inbound_item_live(
+    app: &AppHandle,
+    peer: &str,
+    payload: &serde_json::Value,
+) -> Result<(), ()> {
     let (protocol_item, clipboard_item) =
-        authenticated_clipboard_text_from_payload(message_type, payload)?;
+        authenticated_clipboard_text_from_payload(MessageType::ItemLive, payload)?;
+    let validated = validate_authenticated_live_item(app, peer, &protocol_item)?;
+    let event_key = validated.key;
     let settings = load_authenticated_inbound_settings(app)?;
-    let policy = crate::sync::apply_authenticated_inbound_item_with_settings(
-        app,
-        &clipboard_item,
+    let policy = crate::sync::inbound_clipboard_policy_with_settings(
         crate::sync::InboundClipboardEventKind::ItemLive,
         &settings,
-    )
-    .map_err(|_| ())?;
+    );
     if inbound_live_is_paused(&policy) {
         return Ok(());
     }
+    let decision = app
+        .state::<PocTransportRuntime>()
+        .live_event_dedup
+        .lock()
+        .map_err(|_| ())?
+        .observe(event_key, &protocol_item.content_digest, Instant::now());
+    match decision {
+        LiveEventDedupDecision::Conflict => return Err(()),
+        LiveEventDedupDecision::Duplicate => {
+            return send_authenticated_item_ack(app, peer, protocol_item.item_id)
+        }
+        LiveEventDedupDecision::New => {}
+    }
+
+    let processed = process_first_inbound_item_live(
+        app,
+        peer,
+        payload,
+        &protocol_item,
+        &clipboard_item,
+        &settings,
+        &policy,
+        event_key.space_id,
+        validated.allow_missing_origin_history,
+    );
+    if processed.is_err() {
+        if let Ok(mut cache) = app.state::<PocTransportRuntime>().live_event_dedup.lock() {
+            cache.forget(event_key, &protocol_item.content_digest);
+        }
+        return Err(());
+    }
+    send_authenticated_item_ack(app, peer, protocol_item.item_id)
+}
+
+fn process_first_inbound_item_live(
+    app: &AppHandle,
+    peer: &str,
+    payload: &serde_json::Value,
+    protocol_item: &ProtocolClipboardItem,
+    clipboard_item: &ClipboardText,
+    settings: &AppSettings,
+    policy: &crate::sync::InboundClipboardPolicy,
+    space_id: Uuid,
+    allow_missing_origin_history: bool,
+) -> Result<(), ()> {
+    crate::sync::apply_authenticated_inbound_item_with_settings(
+        app,
+        clipboard_item,
+        crate::sync::InboundClipboardEventKind::ItemLive,
+        settings,
+    )
+    .map_err(|_| ())?;
     let history_outcome = if policy.update_history {
-        let received_at = now_ms().map_err(|_| ())?;
-        Some(persist_authenticated_remote_history_if_possible(
+        persist_authenticated_remote_history_if_possible(
             app,
-            &protocol_item,
-            received_at,
-            &settings,
-        )?)
+            protocol_item,
+            now_ms().map_err(|_| ())?,
+            settings,
+        )?
     } else {
-        None
+        AuthenticatedRemoteHistoryOutcome::SkippedByPolicy
     };
-    let should_ack = inbound_live_should_ack(&policy, history_outcome);
-    let acked_item_id = protocol_item.item_id.clone();
+    if !inbound_live_should_ack(policy, Some(history_outcome), allow_missing_origin_history) {
+        return Err(());
+    }
+    broadcast_authenticated_item_live_excluding(app, space_id, payload, Some(peer));
     let _ = app.emit(
         "transport://authenticated-clipboard-text",
         AuthenticatedClipboardTextEvent {
             peer: peer.to_owned(),
-            item_id: protocol_item.item_id,
-            origin_device_id: protocol_item.origin_device_id,
+            item_id: protocol_item.item_id.clone(),
+            origin_device_id: protocol_item.origin_device_id.clone(),
             origin_seq: protocol_item.origin_seq,
-            item: clipboard_item,
+            item: clipboard_item.clone(),
         },
     );
-    if !should_ack {
-        return Ok(());
-    }
+    Ok(())
+}
+
+fn send_authenticated_item_ack(app: &AppHandle, peer: &str, item_id: String) -> Result<(), ()> {
     let ack = ItemAckPayload {
-        item_ids: vec![acked_item_id],
+        item_ids: vec![item_id],
     };
     ack.validate().map_err(|_| ())?;
     let value = serde_json::to_value(ack).map_err(|_| ())?;
     send_authenticated_business_payload(app, peer, MessageType::ItemAck, &value)
+}
+
+fn validate_authenticated_live_item(
+    app: &AppHandle,
+    peer: &str,
+    item: &ProtocolClipboardItem,
+) -> Result<ValidatedLiveEvent, ()> {
+    let context = authenticated_peer_context_detailed(app, peer)?;
+    let item_space_id = Uuid::parse_str(&item.space_id).map_err(|_| ())?;
+    let origin_device_id = Uuid::parse_str(&item.origin_device_id).map_err(|_| ())?;
+    if item.origin_seq == 0 {
+        return Err(());
+    }
+    let path = database_path(app).map_err(|_| ())?;
+    let mut connection = open_database(path).map_err(|_| ())?;
+    let local_device_id = LocalIdentityRepository::new(&mut connection)
+        .get_or_create_device_id(now_ms().map_err(|_| ())?)
+        .map_err(|_| ())?;
+    let devices = DeviceRepository::new(&connection);
+    let source = devices
+        .get_in_space(context.space_id, context.device_id)
+        .map_err(|_| ())?
+        .ok_or(())?;
+    if source.device.trust_state != DeviceTrustState::Trusted || source.revoked_at.is_some() {
+        return Err(());
+    }
+    let origin = devices
+        .get_in_space(context.space_id, origin_device_id)
+        .map_err(|_| ())?;
+    let origin_is_trusted = origin.as_ref().map(|origin| {
+        origin.device.trust_state == DeviceTrustState::Trusted && origin.revoked_at.is_none()
+    });
+    let allow_missing_origin_history = validate_live_event_route(
+        context,
+        item_space_id,
+        origin_device_id,
+        local_device_id,
+        origin_is_trusted,
+    )?;
+    #[cfg(windows)]
+    let secret_store = crate::secret_store::WindowsCredentialSecretStore;
+    #[cfg(not(windows))]
+    let secret_store = crate::secret_store::UnavailableSecretStore;
+    let mut space_key =
+        load_space_key(&connection, &secret_store, context.space_id).map_err(|_| ())?;
+    let expected_digest = content_hmac_digest(&space_key, &item.content).map_err(|_| ());
+    space_key.fill(0);
+    if expected_digest? != item.content_digest {
+        return Err(());
+    }
+    Ok(ValidatedLiveEvent {
+        key: LiveEventKey {
+            space_id: context.space_id,
+            origin_device_id,
+            origin_seq: item.origin_seq,
+        },
+        allow_missing_origin_history,
+    })
+}
+
+fn validate_live_event_route(
+    context: AuthenticatedPeerContext,
+    item_space_id: Uuid,
+    origin_device_id: Uuid,
+    local_device_id: Uuid,
+    origin_is_trusted: Option<bool>,
+) -> Result<bool, ()> {
+    if item_space_id != context.space_id || origin_device_id == local_device_id {
+        return Err(());
+    }
+    match (context.connection_kind, origin_is_trusted) {
+        (AuthenticatedConnectionKind::Inbound, Some(true))
+            if origin_device_id == context.device_id =>
+        {
+            Ok(false)
+        }
+        (AuthenticatedConnectionKind::FormalOutbound, Some(true)) => Ok(false),
+        (AuthenticatedConnectionKind::FormalOutbound, None) => Ok(true),
+        _ => Err(()),
+    }
 }
 
 fn inbound_live_is_paused(policy: &crate::sync::InboundClipboardPolicy) -> bool {
@@ -1818,6 +2093,7 @@ fn inbound_live_is_paused(policy: &crate::sync::InboundClipboardPolicy) -> bool 
 fn inbound_live_should_ack(
     policy: &crate::sync::InboundClipboardPolicy,
     history_outcome: Option<AuthenticatedRemoteHistoryOutcome>,
+    allow_missing_origin_history: bool,
 ) -> bool {
     if inbound_live_is_paused(policy) {
         return false;
@@ -1829,7 +2105,8 @@ fn inbound_live_should_ack(
                 | AuthenticatedRemoteHistoryOutcome::Duplicate
                 | AuthenticatedRemoteHistoryOutcome::SkippedByPolicy
         )
-    )
+    ) || (allow_missing_origin_history
+        && history_outcome == Some(AuthenticatedRemoteHistoryOutcome::SkippedMissingTrustGraph))
 }
 
 fn handle_inbound_space_key_rotation(
@@ -1873,13 +2150,25 @@ fn handle_inbound_space_key_rotation(
 }
 
 fn authenticated_peer_context(app: &AppHandle, peer: &str) -> Result<(Uuid, Uuid), ()> {
+    authenticated_peer_context_detailed(app, peer)
+        .map(|context| (context.space_id, context.device_id))
+}
+
+fn authenticated_peer_context_detailed(
+    app: &AppHandle,
+    peer: &str,
+) -> Result<AuthenticatedPeerContext, ()> {
     let runtime = app.state::<PocTransportRuntime>();
     let context = runtime
         .authenticated_sessions
         .lock()
         .map_err(|_| ())?
         .get(peer)
-        .map(|entry| (entry.space_id, entry.device_id))
+        .map(|entry| AuthenticatedPeerContext {
+            space_id: entry.space_id,
+            device_id: entry.device_id,
+            connection_kind: entry.connection_kind,
+        })
         .ok_or(());
     context
 }
@@ -2688,6 +2977,9 @@ mod tests {
             authenticated_clipboard_text_from_payload(MessageType::SyncHeads, &payload).is_err()
         );
         assert!(
+            authenticated_clipboard_text_from_payload(MessageType::ItemBatch, &payload).is_err()
+        );
+        assert!(
             authenticated_clipboard_text_from_payload(MessageType::ItemLive, &payload).is_err()
         );
 
@@ -2756,10 +3048,11 @@ mod tests {
     }
 
     #[test]
-    fn item_live_broadcast_encodes_for_inbound_and_formal_outbound_sessions() {
+    fn item_live_broadcast_excludes_source_and_encrypts_each_target_session() {
         let space_id = Uuid::now_v7();
         let inbound_peer = "windows-a-inbound".to_string();
         let outbound_peer = "windows-b-outbound".to_string();
+        let tablet_peer = "harmony-tablet-inbound".to_string();
         let mut inbound_session = AuthenticatedTransportSession::new(
             SessionDirection::ClientToServer,
             [0x11; 32],
@@ -2776,11 +3069,28 @@ mod tests {
             3,
         );
         outbound_session.mark_ready().expect("outbound ready");
+        let mut tablet_session = AuthenticatedTransportSession::new(
+            SessionDirection::ClientToServer,
+            [0x77; 32],
+            SessionDirection::ServerToClient,
+            [0x88; 32],
+            4,
+        );
+        tablet_session.mark_ready().expect("tablet ready");
         let mut sessions = HashMap::from([
             (
                 inbound_peer.clone(),
                 AuthenticatedPeerSession {
                     session: inbound_session,
+                    space_id,
+                    device_id: Uuid::now_v7(),
+                    connection_kind: AuthenticatedConnectionKind::Inbound,
+                },
+            ),
+            (
+                tablet_peer.clone(),
+                AuthenticatedPeerSession {
+                    session: tablet_session,
                     space_id,
                     device_id: Uuid::now_v7(),
                     connection_kind: AuthenticatedConnectionKind::Inbound,
@@ -2813,13 +3123,13 @@ mod tests {
         ]);
         let payload = serde_json::json!({ "content": "Windows 双向自动同步" });
         let (frames, stale) =
-            encode_authenticated_item_live_frames(&mut sessions, space_id, &payload);
+            encode_authenticated_item_live_frames(&mut sessions, space_id, &payload, None);
         assert!(stale.is_empty());
-        assert_eq!(frames.len(), 2);
+        assert_eq!(frames.len(), 3);
 
         let mut decoders = HashMap::from([
             (
-                inbound_peer,
+                inbound_peer.clone(),
                 AuthenticatedTransportSession::new(
                     SessionDirection::ServerToClient,
                     [0x22; 32],
@@ -2838,7 +3148,25 @@ mod tests {
                     0,
                 ),
             ),
+            (
+                tablet_peer,
+                AuthenticatedTransportSession::new(
+                    SessionDirection::ServerToClient,
+                    [0x88; 32],
+                    SessionDirection::ClientToServer,
+                    [0x77; 32],
+                    0,
+                ),
+            ),
         ]);
+        let ciphertexts = frames
+            .iter()
+            .map(|(_, frame)| match frame {
+                Message::Text(text) => text.to_string(),
+                _ => panic!("item live must use a text frame"),
+            })
+            .collect::<HashSet<_>>();
+        assert_eq!(ciphertexts.len(), 3);
         for (peer, frame) in frames {
             let Message::Text(text) = frame else {
                 panic!("item live must use a text frame");
@@ -2851,6 +3179,159 @@ mod tests {
             assert_eq!(message_type, MessageType::ItemLive);
             assert_eq!(decoded, payload);
         }
+
+        let (forwarded, stale) = encode_authenticated_item_live_frames(
+            &mut sessions,
+            space_id,
+            &payload,
+            Some(&inbound_peer),
+        );
+        assert!(stale.is_empty());
+        assert_eq!(forwarded.len(), 2);
+        assert!(forwarded.iter().all(|(peer, _)| peer != &inbound_peer));
+    }
+
+    #[test]
+    fn live_event_cache_is_bounded_and_rejects_digest_conflicts() {
+        let now = Instant::now();
+        let space_id = Uuid::now_v7();
+        let origin_device_id = Uuid::now_v7();
+        let first = LiveEventKey {
+            space_id,
+            origin_device_id,
+            origin_seq: 1,
+        };
+        let second = LiveEventKey {
+            origin_seq: 2,
+            ..first
+        };
+        let third = LiveEventKey {
+            origin_seq: 3,
+            ..first
+        };
+        let mut cache = LiveEventDedupCache::new(2, Duration::from_secs(60));
+
+        assert_eq!(
+            cache.observe(first, "digest-a", now),
+            LiveEventDedupDecision::New
+        );
+        assert_eq!(
+            cache.observe(first, "digest-a", now),
+            LiveEventDedupDecision::Duplicate
+        );
+        assert_eq!(
+            cache.observe(first, "digest-b", now),
+            LiveEventDedupDecision::Conflict
+        );
+        assert_eq!(
+            cache.observe(second, "digest-b", now),
+            LiveEventDedupDecision::New
+        );
+        assert_eq!(
+            cache.observe(third, "digest-c", now),
+            LiveEventDedupDecision::New
+        );
+        assert_eq!(cache.entries.len(), 2);
+        assert_eq!(
+            cache.observe(first, "digest-a", now),
+            LiveEventDedupDecision::New
+        );
+
+        cache.forget(first, "digest-a");
+        assert!(!cache.entries.contains_key(&first));
+        assert!(cache.order.iter().all(|(key, _)| key != &first));
+    }
+
+    #[test]
+    fn live_event_cache_expires_without_storing_clipboard_content() {
+        let now = Instant::now();
+        let key = LiveEventKey {
+            space_id: Uuid::now_v7(),
+            origin_device_id: Uuid::now_v7(),
+            origin_seq: 9,
+        };
+        let mut cache = LiveEventDedupCache::new(4, Duration::from_millis(10));
+
+        assert_eq!(
+            cache.observe(key, "digest-only", now),
+            LiveEventDedupDecision::New
+        );
+        assert_eq!(
+            cache.observe(key, "digest-only", now + Duration::from_millis(11)),
+            LiveEventDedupDecision::New
+        );
+        assert_eq!(cache.entries.len(), 1);
+        assert_eq!(
+            cache
+                .entries
+                .get(&key)
+                .map(|entry| entry.content_digest.as_str()),
+            Some("digest-only")
+        );
+    }
+
+    #[test]
+    fn live_route_allows_only_direct_origin_or_trusted_coordinator_relay() {
+        let space_id = Uuid::now_v7();
+        let source_device_id = Uuid::now_v7();
+        let local_device_id = Uuid::now_v7();
+        let relayed_origin = Uuid::now_v7();
+        let inbound = AuthenticatedPeerContext {
+            space_id,
+            device_id: source_device_id,
+            connection_kind: AuthenticatedConnectionKind::Inbound,
+        };
+        let coordinator = AuthenticatedPeerContext {
+            connection_kind: AuthenticatedConnectionKind::FormalOutbound,
+            ..inbound
+        };
+
+        assert_eq!(
+            validate_live_event_route(
+                inbound,
+                space_id,
+                source_device_id,
+                local_device_id,
+                Some(true),
+            ),
+            Ok(false)
+        );
+        assert!(validate_live_event_route(
+            inbound,
+            space_id,
+            relayed_origin,
+            local_device_id,
+            Some(true),
+        )
+        .is_err());
+        assert_eq!(
+            validate_live_event_route(coordinator, space_id, relayed_origin, local_device_id, None,),
+            Ok(true)
+        );
+        assert!(validate_live_event_route(
+            coordinator,
+            Uuid::now_v7(),
+            relayed_origin,
+            local_device_id,
+            None,
+        )
+        .is_err());
+        assert!(validate_live_event_route(
+            coordinator,
+            space_id,
+            local_device_id,
+            local_device_id,
+            Some(true),
+        )
+        .is_err());
+        assert!(validate_live_event_route(
+            coordinator,
+            space_id,
+            relayed_origin,
+            local_device_id,
+            Some(false),
+        )
+        .is_err());
     }
 
     #[test]
@@ -2861,11 +3342,23 @@ mod tests {
         );
         assert!(inbound_live_should_ack(
             &normal,
-            Some(AuthenticatedRemoteHistoryOutcome::SkippedByPolicy)
+            Some(AuthenticatedRemoteHistoryOutcome::SkippedByPolicy),
+            false,
         ));
         assert!(inbound_live_should_ack(
             &normal,
-            Some(AuthenticatedRemoteHistoryOutcome::Inserted)
+            Some(AuthenticatedRemoteHistoryOutcome::Inserted),
+            false,
+        ));
+        assert!(!inbound_live_should_ack(
+            &normal,
+            Some(AuthenticatedRemoteHistoryOutcome::SkippedMissingTrustGraph),
+            false,
+        ));
+        assert!(inbound_live_should_ack(
+            &normal,
+            Some(AuthenticatedRemoteHistoryOutcome::SkippedMissingTrustGraph),
+            true,
         ));
 
         let sync_disabled = crate::sync::inbound_clipboard_policy_with_settings(
@@ -2878,7 +3371,8 @@ mod tests {
         assert!(inbound_live_is_paused(&sync_disabled));
         assert!(!inbound_live_should_ack(
             &sync_disabled,
-            Some(AuthenticatedRemoteHistoryOutcome::SkippedByPolicy)
+            Some(AuthenticatedRemoteHistoryOutcome::SkippedByPolicy),
+            false,
         ));
 
         let receive_disabled = crate::sync::inbound_clipboard_policy_with_settings(
@@ -2891,7 +3385,8 @@ mod tests {
         assert!(inbound_live_is_paused(&receive_disabled));
         assert!(!inbound_live_should_ack(
             &receive_disabled,
-            Some(AuthenticatedRemoteHistoryOutcome::Inserted)
+            Some(AuthenticatedRemoteHistoryOutcome::Inserted),
+            false,
         ));
     }
 

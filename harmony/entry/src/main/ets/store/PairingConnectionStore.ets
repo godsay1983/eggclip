@@ -665,9 +665,15 @@ class PairingConnectionStore {
 
     if (frameResult.envelope.messageType === MessageType.ITEM_LIVE) {
       const received = await this.persistInboundItemLive(frameResult.decryptedPayload, Date.now());
+      const parsedItem = frameResult.decryptedPayload === undefined ? undefined :
+        new ProtocolParser().parseClipboardItem(JSON.stringify(frameResult.decryptedPayload)).item;
+      if (parsedItem !== undefined && (received.status === InboundItemLiveStatus.STORED ||
+        received.status === InboundItemLiveStatus.RELAYED ||
+        received.status === InboundItemLiveStatus.DUPLICATE)) {
+        const ackPayload = JSON.parse(JSON.stringify({ itemIds: [parsedItem.itemId] })) as JsonObject;
+        await this.sendAuthenticatedBusinessFrame(MessageType.ITEM_ACK, ackPayload);
+      }
       if (received.status === InboundItemLiveStatus.STORED) {
-        const parsedItem = frameResult.decryptedPayload === undefined ? undefined :
-          new ProtocolParser().parseClipboardItem(JSON.stringify(frameResult.decryptedPayload)).item;
         if (parsedItem !== undefined) {
           this.latestReceivedText = parsedItem.content;
           this.latestReceivedSource = `桌面端 #${shortId(parsedItem.originDeviceId)}`;
@@ -678,6 +684,19 @@ class PairingConnectionStore {
         this.markAuthenticatedActivity();
         this.title = '已安全保存桌面端文本';
         this.description = '内容已使用同步空间密钥加密写入最近记录；请到首页查看并按需复制到本机。';
+        this.emit();
+        return this.snapshot();
+      }
+      if (received.status === InboundItemLiveStatus.RELAYED) {
+        if (parsedItem !== undefined) {
+          this.latestReceivedText = parsedItem.content;
+          this.latestReceivedSource = `同空间设备 #${shortId(parsedItem.originDeviceId)}`;
+          this.latestReceivedAt = formatClockTime(Date.now());
+          this.latestReceivedByteLength = parsedItem.contentLength;
+        }
+        this.markAuthenticatedActivity();
+        this.title = '已接收同空间设备文本';
+        this.description = '内容由可信桌面端实时转发；可在首页查看并按需复制到本机。';
         this.emit();
         return this.snapshot();
       }
@@ -1120,6 +1139,7 @@ class PairingConnectionStore {
       payload,
       expectedSpaceId: this.pendingTrustDraft.spaceId,
       expectedPeerDeviceId: this.pendingTrustServerHello.deviceId,
+      allowTrustedPeerRelay: true,
       nowMs
     });
   }
