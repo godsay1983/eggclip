@@ -179,6 +179,9 @@
           "maxLength": 256,
           "pattern": "^[^\\r\\n]+$"
         },
+        "pairingProof": {
+          "$ref": "#/$defs/base64url"
+        },
         "capabilities": {
           "type": "array",
           "items": {

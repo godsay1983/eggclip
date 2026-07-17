@@ -152,7 +152,7 @@ function validatePayload(payload: PairingInvitationPayload, nowMs: number): Pair
   if (payload.app !== 'eggclip') {
     return invalidField('app');
   }
-  if (payload.version !== 1) {
+  if (payload.version !== 2) {
     return invalidField('version');
   }
   if (payload.kind !== 'pairingInvitation') {

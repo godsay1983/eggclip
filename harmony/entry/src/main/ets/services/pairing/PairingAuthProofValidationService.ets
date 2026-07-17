@@ -29,7 +29,16 @@ export interface PairingAuthProofValidationResult {
   field?: string;
 }
 
-export class PairingAuthProofValidationService {
+export interface PairingAuthProofValidator {
+  verifyPayloadSignatureAgainstTranscript(
+    payload: AuthProofPayload,
+    expectedRole: AuthRole,
+    transcript: PairingAuthTranscriptDraft,
+    remoteIdentityPublicKey: string
+  ): PairingAuthProofValidationResult;
+}
+
+export class PairingAuthProofValidationService implements PairingAuthProofValidator {
   private readonly crypto: CryptoVectorService = new CryptoVectorService();
 
   validatePayloadAgainstTranscript(

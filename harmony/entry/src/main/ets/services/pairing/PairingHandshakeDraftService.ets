@@ -7,6 +7,7 @@ import {
   canonicalAuthTranscript
 } from '../../models/ProtocolModels';
 import { PairingInvitationPayload } from './PairingInvitationService';
+import { PairingSecretProofService } from './PairingSecretProofService';
 
 const IDENTITY_PUBLIC_KEY_BYTES: number = 32;
 const EPHEMERAL_PUBLIC_KEY_BYTES: number = 32;
@@ -68,6 +69,7 @@ export interface TrustedDeviceHandshakeDraftInput {
 }
 
 export class PairingHandshakeDraftService {
+  private readonly secretProof: PairingSecretProofService = new PairingSecretProofService();
   buildTrustedDeviceHandshakeDraft(input: TrustedDeviceHandshakeDraftInput): PairingHandshakeDraftResult {
     if (!isUuid(input.spaceId) || !isUuid(input.remoteDeviceId) || !isUuid(input.localDeviceId)) {
       return invalidField('deviceOrSpaceId');
@@ -136,6 +138,7 @@ export class PairingHandshakeDraftService {
       return invalidField('localEphemeralPublicKey');
     }
 
+    const pairingContext = `pairing-invitation:v2:${input.invitation.invitationId}`;
     const clientHelloPayload: HelloPayload = {
       spaceId: input.invitation.spaceId,
       deviceId: input.localDeviceId,
@@ -147,8 +150,13 @@ export class PairingHandshakeDraftService {
         Capability.ITEM_BATCH,
         Capability.ITEM_LIVE
       ],
-      pairingContext: `pairing-invitation:v1:${input.invitation.invitationId}`
+      pairingContext
     };
+    const pairingProof = this.secretProof.build(input.invitation, clientHelloPayload);
+    if (!pairingProof.ok || pairingProof.proof === undefined) {
+      return invalidField('pairingSecret');
+    }
+    clientHelloPayload.pairingProof = pairingProof.proof;
 
     return {
       ok: true,
@@ -158,7 +166,7 @@ export class PairingHandshakeDraftService {
         spaceKeyVersion: input.invitation.spaceKeyVersion,
         remoteDeviceId: input.invitation.issuerDeviceId,
         remoteIdentityPublicKey: input.invitation.issuerIdentityPublicKey,
-        pairingContext: `pairing-invitation:v1:${input.invitation.invitationId}`,
+        pairingContext,
         clientHelloPayload,
         expiresAtMs: input.invitation.expiresAtMs
       }
@@ -207,6 +215,33 @@ export class PairingHandshakeDraftService {
         canonicalTranscript
       }
     };
+  }
+
+  buildServerAuthTranscriptDraft(
+    draft: PairingHandshakeDraft,
+    serverHelloPayload: HelloPayload
+  ): PairingAuthTranscriptDraftResult {
+    const clientTranscript = this.buildClientAuthTranscriptDraft(draft, serverHelloPayload);
+    if (!clientTranscript.ok || clientTranscript.transcript === undefined) {
+      return clientTranscript;
+    }
+    const client = clientTranscript.transcript.input;
+    const input: AuthTranscriptInput = {
+      role: AuthRole.SERVER,
+      spaceId: client.spaceId,
+      localDeviceId: client.remoteDeviceId,
+      remoteDeviceId: client.localDeviceId,
+      localIdentityPublicKey: client.remoteIdentityPublicKey,
+      remoteIdentityPublicKey: client.localIdentityPublicKey,
+      localEphemeralPublicKey: client.remoteEphemeralPublicKey,
+      remoteEphemeralPublicKey: client.localEphemeralPublicKey,
+      pairingContext: client.pairingContext
+    };
+    const canonicalTranscript = canonicalAuthTranscript(input);
+    if (canonicalTranscript === null) {
+      return invalidTranscriptField('transcript');
+    }
+    return { ok: true, transcript: { input, canonicalTranscript } };
   }
 }
 

@@ -13,6 +13,7 @@ import { Ed25519HuksIdentityError } from '../crypto/Ed25519HuksIdentityService';
 export enum PairingClientNetworkHandshakePhase {
   IDLE = 'idle',
   CLIENT_HELLO_READY = 'clientHelloReady',
+  WAITING_SERVER_AUTH_PROOF = 'waitingServerAuthProof',
   WAITING_AUTH_OK = 'waitingAuthOk',
   AUTHENTICATED = 'authenticated',
   FAILED = 'failed'
@@ -22,6 +23,7 @@ export enum PairingClientNetworkHandshakeError {
   INVALID_PHASE = 'invalidPhase',
   START_FAILED = 'startFailed',
   AUTH_PROOF_FAILED = 'authProofFailed',
+  SERVER_AUTH_PROOF_FAILED = 'serverAuthProofFailed',
   AUTH_OK_FAILED = 'authOkFailed'
 }
 
@@ -136,7 +138,7 @@ export class PairingClientNetworkHandshakeService {
       };
     }
 
-    this.phaseValue = PairingClientNetworkHandshakePhase.WAITING_AUTH_OK;
+    this.phaseValue = PairingClientNetworkHandshakePhase.WAITING_SERVER_AUTH_PROOF;
     return {
       ok: true,
       phase: this.phaseValue,
@@ -178,7 +180,7 @@ export class PairingClientNetworkHandshakeService {
       };
     }
 
-    this.phaseValue = PairingClientNetworkHandshakePhase.WAITING_AUTH_OK;
+    this.phaseValue = PairingClientNetworkHandshakePhase.WAITING_SERVER_AUTH_PROOF;
     return {
       ok: true,
       phase: this.phaseValue,
@@ -221,7 +223,7 @@ export class PairingClientNetworkHandshakeService {
       };
     }
 
-    this.phaseValue = PairingClientNetworkHandshakePhase.WAITING_AUTH_OK;
+    this.phaseValue = PairingClientNetworkHandshakePhase.WAITING_SERVER_AUTH_PROOF;
     return {
       ok: true,
       phase: this.phaseValue,
@@ -229,6 +231,30 @@ export class PairingClientNetworkHandshakeService {
       serverHello: proof.serverHello,
       transcriptSaltBase64Url: proof.transcriptSaltBase64Url
     };
+  }
+
+  acceptServerAuthProof(serverAuthProofFrame: string): PairingClientNetworkAuthenticatedResult {
+    if (this.session === null ||
+      this.phaseValue !== PairingClientNetworkHandshakePhase.WAITING_SERVER_AUTH_PROOF) {
+      return {
+        ok: false,
+        phase: this.phaseValue,
+        error: PairingClientNetworkHandshakeError.INVALID_PHASE
+      };
+    }
+    const accepted = this.handshake.acceptServerAuthProof(this.session, serverAuthProofFrame);
+    if (!accepted.ok) {
+      this.fail();
+      return {
+        ok: false,
+        phase: this.phaseValue,
+        error: PairingClientNetworkHandshakeError.SERVER_AUTH_PROOF_FAILED,
+        handshakeError: accepted.error,
+        field: accepted.field
+      };
+    }
+    this.phaseValue = PairingClientNetworkHandshakePhase.WAITING_AUTH_OK;
+    return { ok: true, phase: this.phaseValue };
   }
 
   acceptAuthOkAndCreateTransportSession(

@@ -563,7 +563,20 @@ class PairingConnectionStore {
       this.authProofSent = true;
       this.state = PairingConnectionState.WAITING_AUTH_OK;
       this.title = '已发送身份证明';
-      this.description = '正在等待桌面端确认 AUTH_OK。';
+      this.description = '正在验证桌面端身份证明。';
+      this.emit();
+      return this.snapshot();
+    }
+
+    if (frameResult.envelope.messageType === MessageType.AUTH_PROOF) {
+      const serverProof = this.networkHandshake.acceptServerAuthProof(message);
+      if (!serverProof.ok) {
+        this.fail('桌面端身份验证失败', this.describeNetworkFailure(serverProof.error));
+        return this.snapshot();
+      }
+      this.state = PairingConnectionState.WAITING_AUTH_OK;
+      this.title = '桌面端身份已确认';
+      this.description = '正在等待桌面端完成认证。';
       this.emit();
       return this.snapshot();
     }
@@ -1349,6 +1362,9 @@ class PairingConnectionStore {
     if (error === PairingClientNetworkHandshakeError.AUTH_PROOF_FAILED) {
       return '无法生成或发送 AUTH_PROOF，未创建可信设备。';
     }
+    if (error === PairingClientNetworkHandshakeError.SERVER_AUTH_PROOF_FAILED) {
+      return '桌面端身份签名无效或与邀请不一致，已拒绝建立连接。';
+    }
     if (error === PairingClientNetworkHandshakeError.AUTH_OK_FAILED) {
       return '桌面端确认失败或会话密钥派生失败。';
     }
@@ -1382,7 +1398,7 @@ class PairingConnectionStore {
       return '桌面端关闭配对握手';
     }
     if (this.state === PairingConnectionState.WAITING_AUTH_OK) {
-      return '桌面端关闭认证确认';
+      return '桌面端关闭身份认证';
     }
     if (this.state === PairingConnectionState.CONNECTING) {
       return '配对连接已关闭';
@@ -1397,7 +1413,7 @@ class PairingConnectionStore {
       return `${closeDetail} 这通常表示桌面端拒绝了 CLIENT_HELLO：请在桌面端重新生成邀请，确认邀请未过期、未被使用，并查看桌面端“帧诊断”的上次拒绝原因。`;
     }
     if (this.state === PairingConnectionState.WAITING_AUTH_OK) {
-      return `${closeDetail} 这通常表示桌面端拒绝了 AUTH_PROOF：请重新生成邀请并重新配对。`;
+      return `${closeDetail} 这通常表示双向身份证明未完成：请重新生成邀请并重新配对。`;
     }
     if (normalized.indexOf('link is down') >= 0 || normalized === '0:' || normalized === '0') {
       return `${closeDetail} 请确认手机和桌面端在同一局域网，桌面端 WebSocket 服务仍在运行，并优先填写桌面端显示的普通 Wi-Fi IPv4 地址。`;

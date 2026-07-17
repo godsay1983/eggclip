@@ -7,6 +7,7 @@ import {
   HMAC_SHA256_VECTOR,
   HKDF_SHA256_VECTOR,
   REPLAY_COUNTER_VECTOR,
+  PAIRING_SECRET_PROOF_VECTOR,
   SESSION_KEYS_VECTOR,
   X25519_SHARED_SECRET_VECTOR
 } from './ProtocolCryptoFixtures';
@@ -105,11 +106,14 @@ import {
 } from '../main/ets/services/crypto/SpaceKeyCryptoSelfTestService';
 import {
   PairingInvitationError,
+  PairingInvitationPayload,
   PairingInvitationService
 } from '../main/ets/services/pairing/PairingInvitationService';
+import { PairingSecretProofService } from '../main/ets/services/pairing/PairingSecretProofService';
 import {
   PairingHandshakeDraft,
   PairingHandshakeDraftError,
+  PairingAuthTranscriptDraft,
   PairingHandshakeDraftService
 } from '../main/ets/services/pairing/PairingHandshakeDraftService';
 import {
@@ -119,6 +123,8 @@ import {
 } from '../main/ets/services/pairing/PairingClientHandshakeSessionService';
 import {
   PairingAuthProofValidationError,
+  PairingAuthProofValidationResult,
+  PairingAuthProofValidator,
   PairingAuthProofValidationService
 } from '../main/ets/services/pairing/PairingAuthProofValidationService';
 import {
@@ -213,8 +219,10 @@ import {
 } from '../main/ets/models/DomainModels';
 import {
   AeadAlgorithm,
+  AuthProofPayload,
   AuthRole,
   Capability,
+  HelloPayload,
   ContentType,
   JsonObject,
   MessageType,
@@ -237,6 +245,20 @@ import {
   canonicalEncryptedAad
 } from '../main/ets/models/ProtocolModels';
 import { MAX_TEXT_BYTES } from '../main/ets/utils/TextLimits';
+
+interface PairingSecretProofVectorFixture {
+  invitationId: string;
+  spaceId: string;
+  issuerDeviceId: string;
+  issuerIdentityPublicKey: string;
+  clientDeviceId: string;
+  clientIdentityPublicKey: string;
+  clientEphemeralPublicKey: string;
+  pairingSecret: string;
+  verifier: string;
+  claim: string;
+  proof: string;
+}
 
 export default function localUnitTest() {
   describe('EggClipH1Boundaries', () => {
@@ -1490,7 +1512,46 @@ export default function localUnitTest() {
       expect(result.summary?.issuerDeviceName).assertEqual('桌面端 #11qYAYKx');
       expect(result.summary?.issuerShortFingerprint).assertEqual('11qYAYKx');
       expect(result.summary?.expiresInSeconds).assertEqual(300);
-      expect(result.summary?.confirmationCode).assertEqual('574920');
+      expect(result.summary?.confirmationCode).assertEqual('130762');
+    });
+
+    it('matchesSharedPairingSecretProofVectorAndBindsClientClaim', 0, () => {
+      const vector = JSON.parse(PAIRING_SECRET_PROOF_VECTOR) as PairingSecretProofVectorFixture;
+      const invitation: PairingInvitationPayload = {
+        app: 'eggclip',
+        version: 2,
+        kind: 'pairingInvitation',
+        invitationId: vector.invitationId,
+        spaceId: vector.spaceId,
+        spaceKeyVersion: 1,
+        issuerDeviceId: vector.issuerDeviceId,
+        issuerIdentityPublicKey: vector.issuerIdentityPublicKey,
+        pairingSecret: vector.pairingSecret,
+        expiresAtMs: 1700000300000
+      };
+      const hello: HelloPayload = {
+        spaceId: vector.spaceId,
+        deviceId: vector.clientDeviceId,
+        identityPublicKey: vector.clientIdentityPublicKey,
+        ephemeralPublicKey: vector.clientEphemeralPublicKey,
+        capabilities: [Capability.TEXT_PLAIN],
+        pairingContext: `pairing-invitation:v2:${vector.invitationId}`
+      };
+      const proof = new PairingSecretProofService().build(invitation, hello);
+      expect(proof.ok).assertEqual(true);
+      expect(proof.verifier).assertEqual(vector.verifier);
+      expect(proof.claim).assertEqual(vector.claim);
+      expect(proof.proof).assertEqual(vector.proof);
+      const reboundHello: HelloPayload = {
+        spaceId: hello.spaceId,
+        deviceId: '018ff6f0-4adf-7d31-a987-3ef2b25d0213',
+        identityPublicKey: hello.identityPublicKey,
+        ephemeralPublicKey: hello.ephemeralPublicKey,
+        capabilities: hello.capabilities.slice(),
+        pairingContext: hello.pairingContext
+      };
+      const rebound = new PairingSecretProofService().build(invitation, reboundHello);
+      expect(rebound.proof === vector.proof).assertEqual(false);
     });
 
     it('rejectsInvalidOrExpiredPairingInvitationUri', 0, () => {
@@ -1531,7 +1592,7 @@ export default function localUnitTest() {
       const parsed = store.parseCurrent(1700000000000);
 
       expect(parsed.state).assertEqual(PairingStoreState.READY);
-      expect(parsed.summary?.confirmationCode).assertEqual('574920');
+      expect(parsed.summary?.confirmationCode).assertEqual('130762');
       expect(parsed.statusText.indexOf('下一步') >= 0).assertEqual(true);
 
       const cleared = store.clear();
@@ -1553,7 +1614,7 @@ export default function localUnitTest() {
 
       expect(pending.state).assertEqual(PairingStoreState.PENDING);
       expect(pending.invitationText).assertEqual('');
-      expect(pending.summary?.confirmationCode).assertEqual('574920');
+      expect(pending.summary?.confirmationCode).assertEqual('130762');
       expect(pending.statusText.indexOf('邀请 secret 已从可见输入中清理') >= 0).assertEqual(true);
       expect(pending.error === null).assertEqual(true);
       expect(store.hasPendingHandshakeMaterial()).assertEqual(true);
@@ -1572,7 +1633,7 @@ export default function localUnitTest() {
 
       expect(completed.state).assertEqual(PairingStoreState.COMPLETED);
       expect(completed.invitationText).assertEqual('');
-      expect(completed.summary?.confirmationCode).assertEqual('574920');
+      expect(completed.summary?.confirmationCode).assertEqual('130762');
       expect(completed.statusText.indexOf('配对完成') >= 0).assertEqual(true);
       expect(store.hasPendingHandshakeMaterial()).assertEqual(false);
     });
@@ -1602,7 +1663,7 @@ export default function localUnitTest() {
       expect(draft.draft?.spaceId).assertEqual('018ff6ef-c394-7d08-8b99-4b7d10f2767a');
       expect(draft.draft?.remoteDeviceId).assertEqual('018ff6f0-0a3b-7815-a4db-3eb6e23d9338');
       expect(draft.draft?.pairingContext)
-        .assertEqual('pairing-invitation:v1:018ff6f0-1111-7222-8333-123456789abc');
+        .assertEqual('pairing-invitation:v2:018ff6f0-1111-7222-8333-123456789abc');
       expect(draft.draft?.clientHelloPayload.deviceId).assertEqual('018ff6f0-4adf-7d31-a987-3ef2b25d0212');
       expect(draft.draft?.clientHelloPayload.identityPublicKey)
         .assertEqual('11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo');
@@ -1715,7 +1776,7 @@ export default function localUnitTest() {
       const connection = new PairingConnectionStore(transport, identityService, network);
       connection.updateEndpoint('192.168.1.10', '4567');
       const material = pairingMaterialFixture();
-      if (material === null) {
+      if (material === null || material.draft === undefined) {
         expect(false).assertEqual(true);
         return;
       }
@@ -1771,12 +1832,12 @@ export default function localUnitTest() {
       );
       const signer = new FakePairingClientAuthProofSigner();
       const network = new PairingClientNetworkHandshakeService(
-        new PairingClientHandshakeSessionService(signer)
+        new PairingClientHandshakeSessionService(signer, new FakePairingServerAuthProofValidator())
       );
       const connection = new PairingConnectionStore(transport, identityService, network);
       connection.updateEndpoint('192.168.1.10', '4567');
       const material = pairingMaterialFixture();
-      if (material === null) {
+      if (material === null || material.draft === undefined) {
         expect(false).assertEqual(true);
         return;
       }
@@ -1787,8 +1848,8 @@ export default function localUnitTest() {
       });
       await Promise.resolve();
       const handshakeSession = new ProtocolHandshakeTransportSession();
-      const serverHello = handshakeSession.acceptTextFrame(SERVER_HELLO_FRAME_FOR_PAIRING_FIXTURE);
-      await connection.handleHandshakeTextFrame(SERVER_HELLO_FRAME_FOR_PAIRING_FIXTURE, serverHello);
+      const serverHello = handshakeSession.acceptTextFrame(SERVER_HELLO_FRAME_FOR_X25519_FIXTURE);
+      await connection.handleHandshakeTextFrame(SERVER_HELLO_FRAME_FOR_X25519_FIXTURE, serverHello);
 
       expect(transport.sentFrames.length).assertEqual(2);
       expect(transport.sentFrames[1].indexOf('AUTH_PROOF') >= 0).assertEqual(true);
@@ -1797,12 +1858,15 @@ export default function localUnitTest() {
       expect(connection.snapshot().state).assertEqual(PairingConnectionState.WAITING_AUTH_OK);
       expect(connection.snapshot().authProofSent).assertEqual(true);
 
-      const authOk = handshakeSession.acceptTextFrame(AUTH_OK_FIXTURE);
-      await connection.handleHandshakeTextFrame(AUTH_OK_FIXTURE, authOk);
-      expect(connection.snapshot().state).assertEqual(PairingConnectionState.AUTHENTICATED);
-      expect(connection.snapshot().authenticated).assertEqual(true);
+      const serverProofFrame = serverAuthProofFrame(material.draft, SERVER_HELLO_FRAME_FOR_X25519_FIXTURE);
+      expect(serverProofFrame.length > 0).assertEqual(true);
+      const serverProof = handshakeSession.acceptTextFrame(serverProofFrame);
+      await connection.handleHandshakeTextFrame(serverProofFrame, serverProof);
+      expect(connection.snapshot().state).assertEqual(PairingConnectionState.WAITING_AUTH_OK);
+      expect(connection.snapshot().title).assertEqual('桌面端身份已确认');
+      expect(connection.snapshot().authenticated).assertEqual(false);
       expect(connection.snapshot().syncReady).assertEqual(false);
-      expect(connection.snapshot().description.indexOf('初始化') >= 0).assertEqual(true);
+      expect(connection.snapshot().description.indexOf('等待桌面端完成认证') >= 0).assertEqual(true);
     });
 
     it('buildsClientHelloFrameFromPairingDraftForHandshakeTransport', 0, () => {
@@ -1847,7 +1911,7 @@ export default function localUnitTest() {
       expect(hello.payload?.spaceId).assertEqual(draft.draft.spaceId);
       expect(hello.payload?.deviceId).assertEqual('018ff6f0-4adf-7d31-a987-3ef2b25d0212');
       expect(hello.payload?.pairingContext)
-        .assertEqual('pairing-invitation:v1:018ff6f0-1111-7222-8333-123456789abc');
+        .assertEqual('pairing-invitation:v2:018ff6f0-1111-7222-8333-123456789abc');
 
       const session = new ProtocolHandshakeTransportSession();
       const accepted = session.acceptTextFrame(built.frame);
@@ -1874,7 +1938,7 @@ export default function localUnitTest() {
       const transcript = service.buildClientAuthTranscriptDraft(draft.draft, {
         spaceId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
         deviceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
-        identityPublicKey: '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaapcHUro',
+        identityPublicKey: '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo',
         ephemeralPublicKey: 'Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I',
         capabilities: [Capability.TEXT_PLAIN, Capability.SYNC_HEADS]
       });
@@ -1891,16 +1955,16 @@ export default function localUnitTest() {
       expect(transcriptValue.input.localIdentityPublicKey)
         .assertEqual('3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08');
       expect(transcriptValue.input.remoteIdentityPublicKey)
-        .assertEqual('11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaapcHUro');
+        .assertEqual('11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo');
       expect(transcriptValue.canonicalTranscript.indexOf('role=client') >= 0).assertEqual(true);
       expect(transcriptValue.canonicalTranscript.indexOf(
-        'pairingContext=pairing-invitation:v1:018ff6f0-1111-7222-8333-123456789abc'
+        'pairingContext=pairing-invitation:v2:018ff6f0-1111-7222-8333-123456789abc'
       ) >= 0).assertEqual(true);
 
       const wrongSpace = service.buildClientAuthTranscriptDraft(draft.draft, {
         spaceId: '018ff6f0-1111-7222-8333-123456789abc',
         deviceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
-        identityPublicKey: '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaapcHUro',
+        identityPublicKey: '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo',
         ephemeralPublicKey: 'Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I',
         capabilities: [Capability.TEXT_PLAIN]
       });
@@ -1975,7 +2039,7 @@ export default function localUnitTest() {
       const transcript = handshake.buildClientAuthTranscriptDraft(draft.draft, {
         spaceId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
         deviceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
-        identityPublicKey: '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaapcHUro',
+        identityPublicKey: '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo',
         ephemeralPublicKey: 'Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I',
         capabilities: [Capability.TEXT_PLAIN, Capability.SYNC_HEADS]
       });
@@ -2014,7 +2078,7 @@ export default function localUnitTest() {
       expect(proof.ok).assertEqual(true);
       expect(proof.payload?.role).assertEqual(AuthRole.CLIENT);
       expect(proof.payload?.signature).assertEqual(TEST_ED25519_SIGNATURE);
-      expect(proof.payload?.transcriptHash).assertEqual('V7r4hNyV_MTEfFFXqZQ8KipuV8u96rMSryE535SPmCQ');
+      expect(proof.payload?.transcriptHash).assertEqual('DxGqgJPHNY6WFt7DbOIM4ioDGf13IEuaYjJrGuAVquM');
 
       const session = new ProtocolHandshakeTransportSession();
       const accepted = session.acceptTextFrame(built.frame);
@@ -2040,7 +2104,7 @@ export default function localUnitTest() {
       const transcript = handshake.buildClientAuthTranscriptDraft(draft.draft, {
         spaceId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
         deviceId: '018ff6f0-0a3b-7815-a4db-3eb6e23d9338',
-        identityPublicKey: '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaapcHUro',
+        identityPublicKey: '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo',
         ephemeralPublicKey: 'Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I',
         capabilities: [Capability.TEXT_PLAIN, Capability.SYNC_HEADS]
       });
@@ -2172,7 +2236,10 @@ export default function localUnitTest() {
         return;
       }
 
-      const service = new PairingClientHandshakeSessionService();
+      const service = new PairingClientHandshakeSessionService(
+        new FakePairingClientAuthProofSigner(),
+        new FakePairingServerAuthProofValidator()
+      );
       const started = service.start(
         draft.draft,
         '018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01',
@@ -2211,7 +2278,7 @@ export default function localUnitTest() {
       store.confirmCodeMatched();
       const draft = store.buildPendingClientHandshakeDraft(
         '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
-        '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaapcHUro',
+        '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo',
         'hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo',
         1700000000000
       );
@@ -2220,7 +2287,10 @@ export default function localUnitTest() {
         return;
       }
 
-      const service = new PairingClientHandshakeSessionService();
+      const service = new PairingClientHandshakeSessionService(
+        new FakePairingClientAuthProofSigner(),
+        new FakePairingServerAuthProofValidator()
+      );
       const started = service.start(
         draft.draft,
         '018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01',
@@ -2258,7 +2328,7 @@ export default function localUnitTest() {
       store.confirmCodeMatched();
       const draft = store.buildPendingClientHandshakeDraft(
         '018ff6f0-4adf-7d31-a987-3ef2b25d0212',
-        '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaapcHUro',
+        '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo',
         'hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo',
         1700000000000
       );
@@ -2349,7 +2419,10 @@ export default function localUnitTest() {
         return;
       }
 
-      const service = new PairingClientHandshakeSessionService();
+      const service = new PairingClientHandshakeSessionService(
+        new FakePairingClientAuthProofSigner(),
+        new FakePairingServerAuthProofValidator()
+      );
       const started = service.start(draft.draft, '018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01', 0);
       if (!started.ok || started.session === undefined) {
         expect(false).assertEqual(true);
@@ -2363,6 +2436,10 @@ export default function localUnitTest() {
         2
       );
       expect(authProof.ok).assertEqual(true);
+      expect(service.acceptServerAuthProof(
+        started.session,
+        serverAuthProofFrame(draft.draft, SERVER_HELLO_FRAME_FOR_PAIRING_FIXTURE)
+      ).ok).assertEqual(true);
 
       const authenticated = service.acceptAuthOkAndCreateTransportSession(
         started.session,
@@ -2375,6 +2452,47 @@ export default function localUnitTest() {
       expect(authenticated.sessionKeys?.serverToClientKey).assertEqual('TSo91xPhGNnQb2KPW6xyjJJFeHsimcUss0Rm2Tnbo2M');
       expect(authenticated.transportSession?.state()).assertEqual(ProtocolSessionState.AUTHENTICATED);
       expect(authenticated.transportSession?.isClosed()).assertEqual(false);
+    });
+
+    it('requiresValidServerAuthProofBeforeAcceptingAuthOk', 0, () => {
+      const draft = pairingDraftFixture();
+      if (draft === null) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      const service = new PairingClientHandshakeSessionService(
+        new FakePairingClientAuthProofSigner(),
+        new FakePairingServerAuthProofValidator()
+      );
+      const started = service.start(draft, '018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01', 0);
+      if (!started.ok || started.session === undefined) {
+        expect(false).assertEqual(true);
+        return;
+      }
+      const clientProof = service.acceptServerHelloAndBuildAuthProof(
+        started.session,
+        SERVER_HELLO_FRAME_FOR_PAIRING_FIXTURE,
+        TEST_ED25519_SIGNATURE,
+        '018ff6f1-1d2a-725d-8d1a-894d2f5b0a42',
+        2
+      );
+      expect(clientProof.ok).assertEqual(true);
+
+      const earlyAuthOk = service.acceptAuthOkAndCreateTransportSession(
+        started.session,
+        AUTH_OK_FIXTURE,
+        'Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I',
+        'RWdnQ2xpcCB2MSB0ZXN0IGhhbmRzaGFrZSBzYWx0'
+      );
+      expect(earlyAuthOk.ok).assertEqual(false);
+      expect(earlyAuthOk.error).assertEqual(PairingClientHandshakeError.SERVER_AUTH_PROOF_REQUIRED);
+
+      const tamperedProof = serverAuthProofFrame(draft, SERVER_HELLO_FRAME_FOR_PAIRING_FIXTURE)
+        .replace('Dkhen_', 'Akhen_');
+      const rejected = service.acceptServerAuthProof(started.session, tamperedProof);
+      expect(rejected.ok).assertEqual(false);
+      expect(rejected.error).assertEqual(PairingClientHandshakeError.SERVER_AUTH_PROOF_INVALID);
+      expect(rejected.validationError).assertEqual(PairingAuthProofValidationError.SIGNATURE_VERIFY_FAILED);
     });
 
     it('createsProtocolTransportSessionFromEphemeralX25519WhenPlatformSupportsIt', 0, () => {
@@ -2392,7 +2510,10 @@ export default function localUnitTest() {
         return;
       }
 
-      const service = new PairingClientHandshakeSessionService();
+      const service = new PairingClientHandshakeSessionService(
+        new FakePairingClientAuthProofSigner(),
+        new FakePairingServerAuthProofValidator()
+      );
       const started = service.start(
         draft.draft,
         '018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01',
@@ -2411,6 +2532,10 @@ export default function localUnitTest() {
         2
       );
       expect(authProof.ok).assertEqual(true);
+      expect(service.acceptServerAuthProof(
+        started.session,
+        serverAuthProofFrame(draft.draft, SERVER_HELLO_FRAME_FOR_X25519_FIXTURE)
+      ).ok).assertEqual(true);
 
       const authenticated = service.acceptAuthOkAndCreateTransportSessionFromEphemeral(
         started.session,
@@ -2433,7 +2558,10 @@ export default function localUnitTest() {
         expect(false).assertEqual(true);
         return;
       }
-      const service = new PairingClientHandshakeSessionService();
+      const service = new PairingClientHandshakeSessionService(
+        new FakePairingClientAuthProofSigner(),
+        new FakePairingServerAuthProofValidator()
+      );
       const started = service.start(draft, '018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01', 0);
       if (!started.ok || started.session === undefined) {
         expect(false).assertEqual(true);
@@ -2447,6 +2575,10 @@ export default function localUnitTest() {
         2
       );
       expect(authProof.ok).assertEqual(true);
+      expect(service.acceptServerAuthProof(
+        started.session,
+        serverAuthProofFrame(draft, SERVER_HELLO_FRAME_FOR_X25519_FIXTURE)
+      ).ok).assertEqual(true);
 
       const authenticated = service.acceptAuthOkAndCreateTransportSessionFromEphemeral(
         started.session,
@@ -2473,7 +2605,10 @@ export default function localUnitTest() {
         return;
       }
 
-      const service = new PairingClientHandshakeSessionService();
+      const service = new PairingClientHandshakeSessionService(
+        new FakePairingClientAuthProofSigner(),
+        new FakePairingServerAuthProofValidator()
+      );
       const started = service.start(
         draft.draft,
         '018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01',
@@ -2493,6 +2628,10 @@ export default function localUnitTest() {
       );
       expect(authProof.ok).assertEqual(true);
       expect((authProof.transcriptSaltBase64Url?.length ?? 0) > 0).assertEqual(true);
+      expect(service.acceptServerAuthProof(
+        started.session,
+        serverAuthProofFrame(draft.draft, SERVER_HELLO_FRAME_FOR_X25519_FIXTURE)
+      ).ok).assertEqual(true);
 
       const authenticated = service.acceptAuthOkAndCreateTransportSessionFromRememberedTranscript(
         started.session,
@@ -2543,7 +2682,12 @@ export default function localUnitTest() {
         expect(false).assertEqual(true);
         return;
       }
-      const service = new PairingClientNetworkHandshakeService();
+      const service = new PairingClientNetworkHandshakeService(
+        new PairingClientHandshakeSessionService(
+          new FakePairingClientAuthProofSigner(),
+          new FakePairingServerAuthProofValidator()
+        )
+      );
 
       const started = service.start(draft, '018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01', 0);
       expect(started.ok).assertEqual(true);
@@ -2557,8 +2701,13 @@ export default function localUnitTest() {
         2
       );
       expect(proof.ok).assertEqual(true);
-      expect(proof.phase).assertEqual(PairingClientNetworkHandshakePhase.WAITING_AUTH_OK);
+      expect(proof.phase).assertEqual(PairingClientNetworkHandshakePhase.WAITING_SERVER_AUTH_PROOF);
       expect((proof.outgoingFrame?.indexOf('AUTH_PROOF') ?? -1) >= 0).assertEqual(true);
+      const serverProof = service.acceptServerAuthProof(
+        serverAuthProofFrame(draft, SERVER_HELLO_FRAME_FOR_PAIRING_FIXTURE)
+      );
+      expect(serverProof.ok).assertEqual(true);
+      expect(serverProof.phase).assertEqual(PairingClientNetworkHandshakePhase.WAITING_AUTH_OK);
 
       const authenticated = service.acceptAuthOkAndCreateTransportSession(
         AUTH_OK_FIXTURE,
@@ -2579,7 +2728,7 @@ export default function localUnitTest() {
       }
       const signer = new FakePairingClientAuthProofSigner();
       const service = new PairingClientNetworkHandshakeService(
-        new PairingClientHandshakeSessionService(signer)
+        new PairingClientHandshakeSessionService(signer, new FakePairingServerAuthProofValidator())
       );
 
       const started = service.start(draft, '018ff6f0-2b1f-7cc5-b5d0-7e82c5f70f01', 0);
@@ -2594,7 +2743,7 @@ export default function localUnitTest() {
       );
 
       expect(proof.ok).assertEqual(true);
-      expect(proof.phase).assertEqual(PairingClientNetworkHandshakePhase.WAITING_AUTH_OK);
+      expect(proof.phase).assertEqual(PairingClientNetworkHandshakePhase.WAITING_SERVER_AUTH_PROOF);
       expect(signer.privateKeyRef).assertEqual('huks://eggclip/local-identity/ed25519/v1');
       expect((proof.outgoingFrame?.indexOf('AUTH_PROOF') ?? -1) >= 0).assertEqual(true);
       expect(proof.outgoingFrame?.indexOf('huks://eggclip/local-identity/ed25519/v1') ?? 0).assertEqual(-1);
@@ -2606,7 +2755,12 @@ export default function localUnitTest() {
         expect(false).assertEqual(true);
         return;
       }
-      const service = new PairingClientNetworkHandshakeService();
+      const service = new PairingClientNetworkHandshakeService(
+        new PairingClientHandshakeSessionService(
+          new FakePairingClientAuthProofSigner(),
+          new FakePairingServerAuthProofValidator()
+        )
+      );
 
       const started = service.start(
         draft,
@@ -2623,6 +2777,9 @@ export default function localUnitTest() {
       );
       expect(proof.ok).assertEqual(true);
       expect((proof.transcriptSaltBase64Url?.length ?? 0) > 0).assertEqual(true);
+      expect(service.acceptServerAuthProof(
+        serverAuthProofFrame(draft, SERVER_HELLO_FRAME_FOR_X25519_FIXTURE)
+      ).ok).assertEqual(true);
 
       const authenticated = service.acceptAuthOkAndCreateTransportSessionFromRememberedTranscript(
         AUTH_OK_FIXTURE
@@ -2706,7 +2863,7 @@ export default function localUnitTest() {
       expect(parsed.state).assertEqual(PairingStoreState.READY);
       expect(parsed.invitationText).assertEqual(PAIRING_INVITATION_FIXTURE);
       expect(parsed.summary?.spaceShortId).assertEqual('10f2767a');
-      expect(parsed.summary?.confirmationCode).assertEqual('574920');
+      expect(parsed.summary?.confirmationCode).assertEqual('130762');
 
       const expired = store.importInvitationText(PAIRING_INVITATION_FIXTURE, 1700000300000);
       expect(expired.state).assertEqual(PairingStoreState.ERROR);
@@ -3443,6 +3600,32 @@ class FakePairingClientAuthProofSigner implements PairingClientAuthProofSigner {
   }
 }
 
+class FakePairingServerAuthProofValidator implements PairingAuthProofValidator {
+  verifyPayloadSignatureAgainstTranscript(
+    payload: AuthProofPayload,
+    expectedRole: AuthRole,
+    transcript: PairingAuthTranscriptDraft,
+    remoteIdentityPublicKey: string
+  ): PairingAuthProofValidationResult {
+    const shape = new PairingAuthProofValidationService()
+      .validatePayloadAgainstTranscript(payload, expectedRole, transcript);
+    if (!shape.ok) return shape;
+    const expectedSignature = serverAuthProofSignature(
+      transcript.input.remoteIdentityPublicKey,
+      transcript.input.localEphemeralPublicKey
+    );
+    if (remoteIdentityPublicKey !== transcript.input.localIdentityPublicKey ||
+      expectedSignature.length === 0 || payload.signature !== expectedSignature) {
+      return {
+        ok: false,
+        error: PairingAuthProofValidationError.SIGNATURE_VERIFY_FAILED,
+        field: 'signature'
+      };
+    }
+    return { ok: true };
+  }
+}
+
 class FakePairingWebSocketTransportService extends WebSocketTransportService {
   sentFrames: string[] = [];
   connectedEndpoint: string = '';
@@ -3571,6 +3754,52 @@ function pairingDraftFixture(): PairingHandshakeDraft | null {
   return draft.ok && draft.draft !== undefined ? draft.draft : null;
 }
 
+function serverAuthProofFrame(
+  draft: PairingHandshakeDraft,
+  serverHelloFrame: string
+): string {
+  const parser = new ProtocolParser();
+  const envelope = parser.parseEnvelope(serverHelloFrame);
+  const serverHello = parser.parseHelloPayload(envelope.envelope?.payload);
+  if (!serverHello.ok || serverHello.payload === undefined) return '';
+  const transcript = new PairingHandshakeDraftService()
+    .buildServerAuthTranscriptDraft(draft, serverHello.payload);
+  if (!transcript.ok || transcript.transcript === undefined) return '';
+  const signature = serverAuthProofSignature(
+    draft.clientHelloPayload.identityPublicKey,
+    serverHello.payload.ephemeralPublicKey
+  );
+  if (signature.length === 0) return '';
+  const frame = new ProtocolFrameBuilderService().buildAuthProofFrame(
+    AuthRole.SERVER,
+    transcript.transcript.canonicalTranscript,
+    signature,
+    '018ff6f1-2d2a-725d-8d1a-894d2f5b0a43',
+    3
+  );
+  return frame.ok ? frame.frame ?? '' : '';
+}
+
+function serverAuthProofSignature(clientIdentityPublicKey: string, serverEphemeralPublicKey: string): string {
+  if (clientIdentityPublicKey === '3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08') {
+    if (serverEphemeralPublicKey === 'Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I') {
+      return 'Dkhen_0izxf7UiTfsR3G8OMkeZlmc3_hHbrUulWleqSHR5qy13fU_UmKfj4xUvJqeEDX7vWbdDBb1uJst6wfCA';
+    }
+    if (serverEphemeralPublicKey === '3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08') {
+      return 'qlkErZkC7rsPLlQKa46Yc5BfzB70TuiOiPYMHKUvA-yLM93b1zT_QbGiSuxJkg2BAb1brY4CGPIJSf8qpzeBDg';
+    }
+  }
+  if (clientIdentityPublicKey === '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo') {
+    if (serverEphemeralPublicKey === 'Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I') {
+      return '-iGNKJQCjfdqKSBo7eIDq5DmsbHBemI8ObJmte4dHEMj7fcn0pafjGd6mp9iGQBm97Yhsi4CfEYIylII6T30DA';
+    }
+    if (serverEphemeralPublicKey === '3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08') {
+      return 'KbteWArU3Lr9SwMWNcduS18z9kqoOmicWN0YZUBbxT23FhLCLYniOeHrJ7G-FaRto4G_ePkAHxvzC6Azad_YDw';
+    }
+  }
+  return '';
+}
+
 function pairingMaterialFixture(): PairingGeneratedHandshakeMaterialResult | null {
   const draft = pairingDraftFixture();
   if (draft === null) {
@@ -3587,9 +3816,9 @@ function pairingMaterialFixture(): PairingGeneratedHandshakeMaterialResult | nul
   };
 }
 
-const PAIRING_INVITATION_FIXTURE: string = 'eggclip://pair?p=eyJhcHAiOiJlZ2djbGlwIiwidmVyc2lvbiI6MSwia2luZCI6InBhaXJpbmdJbnZpdGF0aW9uIiwiaW52aXRhdGlvbklkIjoiMDE4ZmY2ZjAtMTExMS03MjIyLTgzMzMtMTIzNDU2Nzg5YWJjIiwic3BhY2VJZCI6IjAxOGZmNmVmLWMzOTQtN2QwOC04Yjk5LTRiN2QxMGYyNzY3YSIsInNwYWNlS2V5VmVyc2lvbiI6MSwiaXNzdWVyRGV2aWNlSWQiOiIwMThmZjZmMC0wYTNiLTc4MTUtYTRkYi0zZWI2ZTIzZDkzMzgiLCJpc3N1ZXJJZGVudGl0eVB1YmxpY0tleSI6IjExcVlBWUt4Q3JmVlNfN1R5V1FIT2c3aGN2UGFwaU1scndJYWFwY0hVcm8iLCJwYWlyaW5nU2VjcmV0IjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsImV4cGlyZXNBdE1zIjoxNzAwMDAwMzAwMDAwfQ';
+const PAIRING_INVITATION_FIXTURE: string = 'eggclip://pair?p=eyJhcHAiOiJlZ2djbGlwIiwidmVyc2lvbiI6Miwia2luZCI6InBhaXJpbmdJbnZpdGF0aW9uIiwiaW52aXRhdGlvbklkIjoiMDE4ZmY2ZjAtMTExMS03MjIyLTgzMzMtMTIzNDU2Nzg5YWJjIiwic3BhY2VJZCI6IjAxOGZmNmVmLWMzOTQtN2QwOC04Yjk5LTRiN2QxMGYyNzY3YSIsInNwYWNlS2V5VmVyc2lvbiI6MSwiaXNzdWVyRGV2aWNlSWQiOiIwMThmZjZmMC0wYTNiLTc4MTUtYTRkYi0zZWI2ZTIzZDkzMzgiLCJpc3N1ZXJJZGVudGl0eVB1YmxpY0tleSI6IjExcVlBWUt4Q3JmVlNfN1R5V1FIT2c3aGN2UGFwaU1scndJYWFQY0hVUm8iLCJwYWlyaW5nU2VjcmV0IjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsImV4cGlyZXNBdE1zIjoxNzAwMDAwMzAwMDAwfQ';
 
-const BAD_PAIRING_SECRET_INVITATION_FIXTURE: string = 'eggclip://pair?p=eyJhcHAiOiJlZ2djbGlwIiwidmVyc2lvbiI6MSwia2luZCI6InBhaXJpbmdJbnZpdGF0aW9uIiwic3BhY2VJZCI6IjAxOGZmNmVmLWMzOTQtN2QwOC04Yjk5LTRiN2QxMGYyNzY3YSIsInNwYWNlS2V5VmVyc2lvbiI6MSwiaXNzdWVyRGV2aWNlSWQiOiIwMThmZjZmMC0wYTNiLTc4MTUtYTRkYi0zZWI2ZTIzZDkzMzgiLCJpc3N1ZXJJZGVudGl0eVB1YmxpY0tleSI6IjExcVlBWUt4Q3JmVlNfN1R5V1FIT2c3aGN2UGFwaU1scndJYWFQY0hVUm8iLCJwYWlyaW5nU2VjcmV0IjoiQUEiLCJleHBpcmVzQXRNcyI6MTcwMDAwMDMwMDAwMH0';
+const BAD_PAIRING_SECRET_INVITATION_FIXTURE: string = 'eggclip://pair?p=eyJhcHAiOiJlZ2djbGlwIiwidmVyc2lvbiI6Miwia2luZCI6InBhaXJpbmdJbnZpdGF0aW9uIiwic3BhY2VJZCI6IjAxOGZmNmVmLWMzOTQtN2QwOC04Yjk5LTRiN2QxMGYyNzY3YSIsInNwYWNlS2V5VmVyc2lvbiI6MSwiaXNzdWVyRGV2aWNlSWQiOiIwMThmZjZmMC0wYTNiLTc4MTUtYTRkYi0zZWI2ZTIzZDkzMzgiLCJpc3N1ZXJJZGVudGl0eVB1YmxpY0tleSI6IjExcVlBWUt4Q3JmVlNfN1R5V1FIT2c3aGN2UGFwaU1scndJYWFQY0hVUm8iLCJwYWlyaW5nU2VjcmV0IjoiQUEiLCJleHBpcmVzQXRNcyI6MTcwMDAwMDMwMDAwMH0';
 
 interface PairingInvitationFixturePayload {
   app: string;
@@ -3608,7 +3837,7 @@ interface PairingInvitationFixturePayload {
 function basePairingInvitationPayload(issuerDeviceName?: string): PairingInvitationFixturePayload {
   const payload: PairingInvitationFixturePayload = {
     app: 'eggclip',
-    version: 1,
+    version: 2,
     kind: 'pairingInvitation',
     invitationId: '018ff6f0-1111-7222-8333-123456789abc',
     spaceId: '018ff6ef-c394-7d08-8b99-4b7d10f2767a',
@@ -3644,13 +3873,13 @@ const AUTH_PROOF_TRANSCRIPT: string = 'EggClip v1 auth transcript\nrole=client\n
 
 const TEST_ED25519_SIGNATURE: string = 'AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8wMTIzNDU2Nzg5Ojs8PT4_QA';
 
-const SERVER_HELLO_FRAME_FOR_PAIRING_FIXTURE: string = '{"version":1,"type":"SERVER_HELLO","messageId":"018ff6f1-0000-7000-8000-000000000001","sessionCounter":1,"payload":{"spaceId":"018ff6ef-c394-7d08-8b99-4b7d10f2767a","deviceId":"018ff6f0-0a3b-7815-a4db-3eb6e23d9338","identityPublicKey":"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaapcHUro","ephemeralPublicKey":"Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I","capabilities":["textPlain","syncHeads"]}}';
+const SERVER_HELLO_FRAME_FOR_PAIRING_FIXTURE: string = '{"version":1,"type":"SERVER_HELLO","messageId":"018ff6f1-0000-7000-8000-000000000001","sessionCounter":1,"payload":{"spaceId":"018ff6ef-c394-7d08-8b99-4b7d10f2767a","deviceId":"018ff6f0-0a3b-7815-a4db-3eb6e23d9338","identityPublicKey":"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo","ephemeralPublicKey":"Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I","capabilities":["textPlain","syncHeads"]}}';
 
-const SERVER_HELLO_FRAME_FOR_X25519_FIXTURE: string = '{"version":1,"type":"SERVER_HELLO","messageId":"018ff6f1-0000-7000-8000-000000000003","sessionCounter":1,"payload":{"spaceId":"018ff6ef-c394-7d08-8b99-4b7d10f2767a","deviceId":"018ff6f0-0a3b-7815-a4db-3eb6e23d9338","identityPublicKey":"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaapcHUro","ephemeralPublicKey":"3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08","capabilities":["textPlain","syncHeads"]}}';
+const SERVER_HELLO_FRAME_FOR_X25519_FIXTURE: string = '{"version":1,"type":"SERVER_HELLO","messageId":"018ff6f1-0000-7000-8000-000000000003","sessionCounter":1,"payload":{"spaceId":"018ff6ef-c394-7d08-8b99-4b7d10f2767a","deviceId":"018ff6f0-0a3b-7815-a4db-3eb6e23d9338","identityPublicKey":"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo","ephemeralPublicKey":"3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08","capabilities":["textPlain","syncHeads"]}}';
 
 const SERVER_HELLO_FRAME_WITH_WRONG_IDENTITY_FIXTURE: string = '{"version":1,"type":"SERVER_HELLO","messageId":"018ff6f1-0000-7000-8000-000000000002","sessionCounter":1,"payload":{"spaceId":"018ff6ef-c394-7d08-8b99-4b7d10f2767a","deviceId":"018ff6f0-0a3b-7815-a4db-3eb6e23d9338","identityPublicKey":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","ephemeralPublicKey":"Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I","capabilities":["textPlain","syncHeads"]}}';
 
-const AUTH_OK_FIXTURE: string = '{"version":1,"type":"AUTH_OK","messageId":"018ff6f1-25f0-7c09-a4cf-3d683ebfae33","sessionCounter":3,"payload":{}}';
+const AUTH_OK_FIXTURE: string = '{"version":1,"type":"AUTH_OK","messageId":"018ff6f1-25f0-7c09-a4cf-3d683ebfae33","sessionCounter":4,"payload":{}}';
 
 const AUTH_OK_OLD_COUNTER_FIXTURE: string = '{"version":1,"type":"AUTH_OK","messageId":"018ff6f1-25f0-7c09-a4cf-3d683ebfae33","sessionCounter":1,"payload":{}}';
 

@@ -112,6 +112,7 @@ export interface HelloPayload {
   ephemeralPublicKey: string;
   capabilities: Capability[];
   pairingContext?: string;
+  pairingProof?: string;
 }
 
 export interface HelloPayloadResult {
@@ -358,6 +359,10 @@ export class ProtocolParser {
     if (pairingContext.length > 0) {
       payload.pairingContext = pairingContext;
     }
+    const pairingProof = getString(payloadObject, 'pairingProof');
+    if (pairingProof.length > 0) {
+      payload.pairingProof = pairingProof;
+    }
     if (!isUuid(payload.spaceId)) {
       return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'spaceId' };
     }
@@ -372,6 +377,10 @@ export class ProtocolParser {
     }
     if (payload.pairingContext !== undefined && !isTranscriptField(payload.pairingContext)) {
       return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'pairingContext' };
+    }
+    if (payload.pairingProof !== undefined &&
+      (payload.pairingProof.length !== 43 || !isBase64Url(payload.pairingProof))) {
+      return { ok: false, error: ProtocolErrorCode.INVALID_FIELD, field: 'pairingProof' };
     }
     return { ok: true, payload };
   }

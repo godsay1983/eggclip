@@ -257,6 +257,20 @@ entry/src/main/ets/
 - 配对安全通道建立后再传输 `spaceKey` 和成员信息。
 - 配对秘密和完整邀请内容不得进入日志、崩溃报告或剪贴板历史。
 
+邀请线格式使用 version 2。邀请发起端只在二维码或邀请字符串中交付原始
+`pairingSecret`，本机短期邀请记录只保存由固定 canonical input 计算出的
+SHA-256 verifier。加入端在 `CLIENT_HELLO` 中发送
+`HMAC-SHA-256(verifier, clientClaim)`；claim 必须绑定邀请 ID、空间 ID、发行
+设备 ID 和身份公钥，以及加入设备的 ID、身份公钥和 X25519 临时公钥。
+`pairingContext` 固定为 `pairing-invitation:v2:<invitationId>`。旧 version 1
+邀请、缺失 proof 和字段被替换后的 proof 都必须拒绝。
+
+服务端验证客户端 role=`client` 的 Ed25519 `AUTH_PROOF` 后，必须返回自己的
+role=`server` `AUTH_PROOF`；客户端按邀请中的发行身份公钥验证成功后，才可
+接受 `AUTH_OK`。因此邀请秘密和双方身份私钥缺少任意一项都不能完成配对。
+升级不删除既有可信设备和空间密钥记录，但参与连接的客户端都必须支持双向
+proof 顺序。
+
 ### 6.4 会话加密
 
 - X25519 协商每次连接的临时共享秘密。

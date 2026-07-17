@@ -110,17 +110,47 @@ Connection:
   "deviceId": "018ff6f0-0a3b-7815-a4db-3eb6e23d9338",
   "identityPublicKey": "base64url-ed25519-public-key",
   "ephemeralPublicKey": "base64url-x25519-public-key",
-  "pairingContext": "pairing-invitation:v1:018ff6f0-1111-7222-8333-123456789abc",
+  "pairingContext": "pairing-invitation:v2:018ff6f0-1111-7222-8333-123456789abc",
+  "pairingProof": "base64url-hmac-sha256-proof",
   "capabilities": ["textPlain", "syncHeads"]
 }
 ```
 
 `pairingContext` is required for invitation pairing and trusted-device reconnect.
-Invitation pairing uses `pairing-invitation:v1:<invitationId>`. A trusted reconnect
+Invitation pairing uses `pairing-invitation:v2:<invitationId>`. A trusted reconnect
 uses `trusted-device:<spaceId>:key-v<spaceKeyVersion>`. It is a public routing and
 transcript-binding value; it must not contain the `pairingSecret`. The signed key
 version lets the server omit a same-version key replay while still delivering a
 newer key to a trusted device that missed a real rotation.
+
+Invitation v2 requires `pairingProof` on `CLIENT_HELLO`; `SERVER_HELLO` and trusted
+reconnect hello messages omit it. The issuer stores only the verifier below and
+rejects version 1 invitations, missing proofs, and mismatched proofs:
+
+```text
+verifier = SHA-256(UTF-8(
+  "EggClip pairing invitation verifier v2\n" +
+  "invitationId=<uuid>\n" +
+  "pairingSecret=<base64url-32-byte-secret>\n"
+))
+
+claim = UTF-8(
+  "EggClip pairing secret proof v2\n" +
+  "invitationId=<uuid>\n" +
+  "spaceId=<uuid>\n" +
+  "issuerDeviceId=<uuid>\n" +
+  "issuerIdentityPublicKey=<base64url-ed25519-public-key>\n" +
+  "clientDeviceId=<uuid>\n" +
+  "clientIdentityPublicKey=<base64url-ed25519-public-key>\n" +
+  "clientEphemeralPublicKey=<base64url-x25519-public-key>\n"
+)
+
+pairingProof = HMAC-SHA-256(verifier, claim)
+```
+
+Every line uses LF and the final line ends with LF. Binding the client identity and
+ephemeral key prevents a captured proof from being rebound to another joining
+device or handshake.
 
 `AUTH_PROOF` signs the canonical handshake transcript with the Ed25519 identity key and binds:
 
@@ -158,7 +188,19 @@ An `AUTH_PROOF` payload carries:
 }
 ```
 
-`AUTH_OK` confirms both sides derived the same session context. `AUTH_ERROR` terminates the session and must not include secrets.
+Invitation pairing is mutually authenticated in this order:
+
+1. client sends `CLIENT_HELLO` with counter 0 and a valid `pairingProof`;
+2. server sends `SERVER_HELLO` with counter 1;
+3. client sends role=`client` `AUTH_PROOF` with counter 2;
+4. server verifies it, then sends role=`server` `AUTH_PROOF` with counter 3;
+5. client verifies the server proof against the identity embedded in the invitation;
+6. server sends `AUTH_OK` with counter 4 and, when needed, encrypted space-key delivery from counter 5.
+
+The client must reject `AUTH_OK` until the server proof has been verified. Existing
+trusted-device records and space-key references remain usable after upgrade, but
+both peers must run an implementation that understands the mutual-proof sequence.
+`AUTH_ERROR` terminates the session and must not include secrets.
 
 Pre-authentication pairing rejection codes are intentionally coarse and never include invitation secrets, keys, full frames, or clipboard content:
 

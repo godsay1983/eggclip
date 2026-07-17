@@ -42,6 +42,11 @@ import {
   PairingHandshakeDraftError,
   PairingHandshakeDraftService
 } from './PairingHandshakeDraftService';
+import {
+  PairingAuthProofValidationError,
+  PairingAuthProofValidator,
+  PairingAuthProofValidationService
+} from './PairingAuthProofValidationService';
 
 export enum PairingClientHandshakeError {
   CLIENT_HELLO_BUILD_FAILED = 'clientHelloBuildFailed',
@@ -52,6 +57,9 @@ export enum PairingClientHandshakeError {
   AUTH_PROOF_SIGN_FAILED = 'authProofSignFailed',
   AUTH_PROOF_BUILD_FAILED = 'authProofBuildFailed',
   AUTH_PROOF_NOT_SENT = 'authProofNotSent',
+  SERVER_AUTH_PROOF_REJECTED = 'serverAuthProofRejected',
+  SERVER_AUTH_PROOF_INVALID = 'serverAuthProofInvalid',
+  SERVER_AUTH_PROOF_REQUIRED = 'serverAuthProofRequired',
   AUTH_OK_REJECTED = 'authOkRejected',
   SHARED_SECRET_DERIVATION_FAILED = 'sharedSecretDerivationFailed',
   SESSION_KEY_DERIVATION_FAILED = 'sessionKeyDerivationFailed'
@@ -92,6 +100,14 @@ export interface PairingClientAuthenticatedSessionResult {
   field?: string;
 }
 
+export interface PairingServerAuthProofResult {
+  ok: boolean;
+  error?: PairingClientHandshakeError;
+  transportError?: ProtocolTransportFrameError;
+  validationError?: PairingAuthProofValidationError;
+  field?: string;
+}
+
 export interface PairingClientAuthProofSigner {
   signAuthTranscriptWithRef(
     identityPrivateKeyRef: string,
@@ -104,6 +120,7 @@ export class PairingClientHandshakeSession {
   private readonly transportSession: ProtocolHandshakeTransportSession;
   private readonly localEphemeralPrivateKeyValue: string | null;
   private authProofSent: boolean = false;
+  private serverAuthProofVerified: boolean = false;
   private serverHelloPayloadValue: HelloPayload | null = null;
   private transcriptSaltBase64UrlValue: string | null = null;
 
@@ -133,6 +150,14 @@ export class PairingClientHandshakeSession {
     return this.authProofSent;
   }
 
+  markServerAuthProofVerified(): void {
+    this.serverAuthProofVerified = true;
+  }
+
+  hasVerifiedServerAuthProof(): boolean {
+    return this.serverAuthProofVerified;
+  }
+
   localEphemeralPrivateKey(): string | null {
     return this.localEphemeralPrivateKeyValue;
   }
@@ -156,10 +181,15 @@ export class PairingClientHandshakeSessionService {
   private readonly signatureService: Ed25519SignatureService = new Ed25519SignatureService();
   private readonly keyDerivation: SessionKeyDerivationService = new SessionKeyDerivationService();
   private readonly keyAgreement: X25519KeyAgreementService = new X25519KeyAgreementService();
+  private readonly authProofValidation: PairingAuthProofValidator;
   private readonly authProofSigner: PairingClientAuthProofSigner;
 
-  constructor(authProofSigner: PairingClientAuthProofSigner = new Ed25519HuksIdentityService()) {
+  constructor(
+    authProofSigner: PairingClientAuthProofSigner = new Ed25519HuksIdentityService(),
+    authProofValidation: PairingAuthProofValidator = new PairingAuthProofValidationService()
+  ) {
     this.authProofSigner = authProofSigner;
+    this.authProofValidation = authProofValidation;
   }
 
   start(
@@ -436,6 +466,12 @@ export class PairingClientHandshakeSessionService {
         error: PairingClientHandshakeError.AUTH_PROOF_NOT_SENT
       };
     }
+    if (!session.hasVerifiedServerAuthProof()) {
+      return {
+        ok: false,
+        error: PairingClientHandshakeError.SERVER_AUTH_PROOF_REQUIRED
+      };
+    }
 
     const accepted = session.acceptServerFrame(authOkFrame);
     if (!accepted.ok || accepted.envelope === undefined ||
@@ -467,6 +503,58 @@ export class PairingClientHandshakeSessionService {
       sessionKeys,
       transportSession: new ProtocolTransportSession(ProtocolSessionState.AUTHENTICATED, sessionKeys)
     };
+  }
+
+  acceptServerAuthProof(
+    session: PairingClientHandshakeSession,
+    serverAuthProofFrame: string
+  ): PairingServerAuthProofResult {
+    if (!session.hasSentAuthProof()) {
+      return { ok: false, error: PairingClientHandshakeError.AUTH_PROOF_NOT_SENT };
+    }
+    const accepted = session.acceptServerFrame(serverAuthProofFrame);
+    if (!accepted.ok || accepted.envelope === undefined ||
+      accepted.outcome !== ProtocolHandshakeFrameOutcome.CONTINUE ||
+      accepted.envelope.messageType !== MessageType.AUTH_PROOF) {
+      return {
+        ok: false,
+        error: PairingClientHandshakeError.SERVER_AUTH_PROOF_REJECTED,
+        transportError: accepted.error
+      };
+    }
+    const payload = this.parser.parseAuthProofPayload(accepted.envelope.payload);
+    const serverHello = session.serverHelloPayload();
+    if (!payload.ok || payload.payload === undefined || serverHello === null) {
+      return {
+        ok: false,
+        error: PairingClientHandshakeError.SERVER_AUTH_PROOF_INVALID,
+        field: payload.field ?? 'serverHello'
+      };
+    }
+    const transcript = this.draftService.buildServerAuthTranscriptDraft(session.draft, serverHello);
+    if (!transcript.ok || transcript.transcript === undefined) {
+      return {
+        ok: false,
+        error: PairingClientHandshakeError.SERVER_AUTH_PROOF_INVALID,
+        field: transcript.field
+      };
+    }
+    const verified = this.authProofValidation.verifyPayloadSignatureAgainstTranscript(
+      payload.payload,
+      AuthRole.SERVER,
+      transcript.transcript,
+      session.draft.remoteIdentityPublicKey
+    );
+    if (!verified.ok) {
+      return {
+        ok: false,
+        error: PairingClientHandshakeError.SERVER_AUTH_PROOF_INVALID,
+        validationError: verified.error,
+        field: verified.field
+      };
+    }
+    session.markServerAuthProofVerified();
+    return { ok: true };
   }
 
   acceptAuthOkAndCreateTransportSessionFromEphemeral(
@@ -550,6 +638,9 @@ function cloneHelloPayload(payload: HelloPayload): HelloPayload {
   };
   if (payload.pairingContext !== undefined) {
     clone.pairingContext = payload.pairingContext;
+  }
+  if (payload.pairingProof !== undefined) {
+    clone.pairingProof = payload.pairingProof;
   }
   return clone;
 }

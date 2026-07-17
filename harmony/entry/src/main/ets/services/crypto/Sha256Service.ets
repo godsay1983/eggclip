@@ -111,7 +111,7 @@ function writeU32(data: Uint8Array, offset: number, value: number): void {
   data[offset + 3] = value & 0xff;
 }
 
-function utf8Encode(value: string): Uint8Array {
+export function utf8Encode(value: string): Uint8Array {
   const bytes: number[] = [];
   for (let index = 0; index < value.length; index += 1) {
     const code = value.charCodeAt(index);

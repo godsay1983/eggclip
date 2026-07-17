@@ -363,6 +363,8 @@ pub struct HelloPayload {
     pub capabilities: Vec<Capability>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pairing_context: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pairing_proof: Option<String>,
 }
 
 impl HelloPayload {
@@ -373,6 +375,9 @@ impl HelloPayload {
         validate_base64url(&self.ephemeral_public_key, "ephemeralPublicKey")?;
         if let Some(pairing_context) = &self.pairing_context {
             validate_transcript_field(pairing_context, "pairingContext")?;
+        }
+        if let Some(pairing_proof) = &self.pairing_proof {
+            validate_base64url(pairing_proof, "pairingProof")?;
         }
         if self.capabilities.is_empty() {
             return Err(ProtocolError::InvalidField("capabilities"));
@@ -1207,8 +1212,9 @@ mod tests {
             ephemeral_public_key: "Sl2dW6TOLeFyjjv0gDUPJeB-IclH0Z4zdvCbPB4WF0I".to_string(),
             capabilities: vec![Capability::TextPlain, Capability::SyncHeads],
             pairing_context: Some(
-                "pairing-invitation:v1:018ff6f0-1111-7222-8333-123456789abc".to_string(),
+                "pairing-invitation:v2:018ff6f0-1111-7222-8333-123456789abc".to_string(),
             ),
+            pairing_proof: None,
         })
         .expect("hello payload should serialize");
         let serialized = serialize_pre_auth_envelope(&PreAuthEnvelope {

@@ -124,6 +124,7 @@ struct PairingServerHandshakeRuntimeState {
     peer_ephemeral_public_key: String,
     server_device_id: String,
     server_identity_public_key: String,
+    server_identity_private_key_ref: String,
     server_ephemeral_public_key: String,
     pairing_context: String,
     peer_space_key_version: Option<u32>,
@@ -1348,7 +1349,19 @@ fn try_accept_pairing_auth_proof(app: &AppHandle, peer: &str, text: &str) -> Pai
     };
     let is_trusted_reconnect = is_trusted_device_pairing_context(&handshake.pairing_context);
     let peer_space_key_version = handshake.peer_space_key_version;
-    let message_id = Uuid::now_v7().to_string();
+    let server_auth_proof_message_id = Uuid::now_v7().to_string();
+    let auth_ok_message_id = Uuid::now_v7().to_string();
+    #[cfg(windows)]
+    let identity_store = crate::secret_store::WindowsCredentialSecretStore;
+    #[cfg(not(windows))]
+    let identity_store = crate::secret_store::UnavailableSecretStore;
+    let server_identity_private_seed = match crate::identity::IdentitySecretStore::load_seed(
+        &identity_store,
+        &handshake.server_identity_private_key_ref,
+    ) {
+        Ok(Some(seed)) => seed,
+        _ => return PairingAuthProofRoute::Rejected(PocRejectionReason::PairingInternalError),
+    };
     let input = PairingServerAuthProofInput {
         invitation_id: handshake.invitation_id,
         space_id: handshake.space_id,
@@ -1357,12 +1370,19 @@ fn try_accept_pairing_auth_proof(app: &AppHandle, peer: &str, text: &str) -> Pai
         peer_ephemeral_public_key: handshake.peer_ephemeral_public_key,
         server_device_id: handshake.server_device_id,
         server_identity_public_key: handshake.server_identity_public_key,
+        server_identity_private_seed,
         server_ephemeral_public_key: handshake.server_ephemeral_public_key,
         pairing_context: handshake.pairing_context,
         server_ephemeral_secret: handshake.server_ephemeral_secret,
     };
-    match accept_pairing_auth_proof(input, text, &message_id) {
+    match accept_pairing_auth_proof(
+        input,
+        text,
+        &server_auth_proof_message_id,
+        &auth_ok_message_id,
+    ) {
         Ok(accepted) => {
+            let server_auth_proof_frame = accepted.server_auth_proof_frame.clone();
             let auth_ok_frame = accepted.auth_ok_frame.clone();
             let accepted_at = match now_ms() {
                 Ok(timestamp) => timestamp,
@@ -1404,7 +1424,7 @@ fn try_accept_pairing_auth_proof(app: &AppHandle, peer: &str, text: &str) -> Pai
                 }
                 let space_key_frame = if should_deliver_space_key {
                     Some(
-                        match build_space_key_delivery_frame(app, &accepted, 4, "rotation-v1") {
+                        match build_space_key_delivery_frame(app, &accepted, 5, "rotation-v1") {
                             Ok(frame) => frame,
                             Err(_) => {
                                 return PairingAuthProofRoute::Rejected(
@@ -1425,9 +1445,13 @@ fn try_accept_pairing_auth_proof(app: &AppHandle, peer: &str, text: &str) -> Pai
                     );
                 }
                 if let Some(space_key_frame) = space_key_frame {
-                    PairingAuthProofRoute::Handled(vec![auth_ok_frame, space_key_frame])
+                    PairingAuthProofRoute::Handled(vec![
+                        server_auth_proof_frame,
+                        auth_ok_frame,
+                        space_key_frame,
+                    ])
                 } else {
-                    PairingAuthProofRoute::Handled(vec![auth_ok_frame])
+                    PairingAuthProofRoute::Handled(vec![server_auth_proof_frame, auth_ok_frame])
                 }
             } else {
                 if persist_trusted_pairing_device(app, &accepted, accepted_at).is_err() {
@@ -1436,7 +1460,7 @@ fn try_accept_pairing_auth_proof(app: &AppHandle, peer: &str, text: &str) -> Pai
                     );
                 }
                 let space_key_frame =
-                    match build_space_key_delivery_frame(app, &accepted, 4, "pairing-v1") {
+                    match build_space_key_delivery_frame(app, &accepted, 5, "pairing-v1") {
                         Ok(frame) => frame,
                         Err(_) => {
                             return PairingAuthProofRoute::Rejected(
@@ -1449,7 +1473,11 @@ fn try_accept_pairing_auth_proof(app: &AppHandle, peer: &str, text: &str) -> Pai
                         PocRejectionReason::PairingInternalError,
                     );
                 }
-                PairingAuthProofRoute::Handled(vec![auth_ok_frame, space_key_frame])
+                PairingAuthProofRoute::Handled(vec![
+                    server_auth_proof_frame,
+                    auth_ok_frame,
+                    space_key_frame,
+                ])
             }
         }
         Err(error) => PairingAuthProofRoute::Rejected(pairing_auth_proof_rejection(&error)),
@@ -2118,6 +2146,7 @@ fn remember_pairing_handshake(
             peer_ephemeral_public_key: draft.peer_ephemeral_public_key.clone(),
             server_device_id: draft.server_device_id.clone(),
             server_identity_public_key: draft.server_identity_public_key.clone(),
+            server_identity_private_key_ref: draft.server_identity_private_key_ref.clone(),
             server_ephemeral_public_key: draft.server_ephemeral_public_key.clone(),
             pairing_context: draft.pairing_context.clone(),
             peer_space_key_version: draft.peer_space_key_version,
@@ -2156,7 +2185,7 @@ fn remember_authenticated_session(
                 accepted.session_keys.client_to_server,
                 SessionDirection::ServerToClient,
                 accepted.session_keys.server_to_client,
-                5,
+                6,
             ),
             space_id,
             device_id,
@@ -2588,6 +2617,7 @@ mod tests {
                     client_to_server: [3; 32],
                     server_to_client: [4; 32],
                 },
+                server_auth_proof_frame: "{}".to_owned(),
                 auth_ok_frame: "{}".to_owned(),
             },
             1_700_000_001_000,
