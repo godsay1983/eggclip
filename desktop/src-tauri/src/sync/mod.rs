@@ -867,6 +867,16 @@ mod tests {
         );
         assert_eq!(failing.attempts, 1);
 
+        let history_disabled = AppSettings {
+            history_enabled: false,
+            ..AppSettings::default()
+        };
+        assert_eq!(
+            broadcast_local_clipboard_after_commit(&item, &history_disabled, &mut ok),
+            LocalClipboardBroadcastOutcome::Sent
+        );
+        assert_eq!(ok.attempts, 2);
+
         let sync_disabled = AppSettings {
             sync_enabled: false,
             ..AppSettings::default()

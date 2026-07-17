@@ -941,27 +941,10 @@ fn broadcast_authenticated_item_live(
     payload: &serde_json::Value,
 ) -> usize {
     let runtime = app.state::<PocTransportRuntime>();
-    let mut frames = Vec::new();
-    let mut stale_sessions = Vec::new();
-    if let Ok(mut sessions) = runtime.authenticated_sessions.lock() {
-        for (peer, entry) in sessions.iter_mut() {
-            if entry.space_id != space_id {
-                continue;
-            }
-            match entry.session.encode_business_message(
-                MessageType::ItemLive,
-                Uuid::now_v7().to_string(),
-                payload,
-            ) {
-                Ok(frame) => frames.push((peer.clone(), frame)),
-                Err(_) => {
-                    stale_sessions.push(peer.clone());
-                }
-            }
-        }
-    } else {
-        return 0;
-    }
+    let (frames, stale_sessions) = match runtime.authenticated_sessions.lock() {
+        Ok(mut sessions) => encode_authenticated_item_live_frames(&mut sessions, space_id, payload),
+        Err(_) => return 0,
+    };
     for peer in stale_sessions {
         close_authenticated_session_with_reason(app, &peer, "outboundEncodingFailed", true);
     }
@@ -978,6 +961,29 @@ fn broadcast_authenticated_item_live(
         close_authenticated_session_with_reason(app, &peer, "outboundChannelClosed", false);
     }
     sent_peers
+}
+
+fn encode_authenticated_item_live_frames(
+    sessions: &mut HashMap<String, AuthenticatedPeerSession>,
+    space_id: Uuid,
+    payload: &serde_json::Value,
+) -> (Vec<(String, Message)>, Vec<String>) {
+    let mut frames = Vec::new();
+    let mut stale_sessions = Vec::new();
+    for (peer, entry) in sessions.iter_mut() {
+        if entry.space_id != space_id {
+            continue;
+        }
+        match entry.session.encode_business_message(
+            MessageType::ItemLive,
+            Uuid::now_v7().to_string(),
+            payload,
+        ) {
+            Ok(frame) => frames.push((peer.clone(), frame)),
+            Err(_) => stale_sessions.push(peer.clone()),
+        }
+    }
+    (frames, stale_sessions)
 }
 
 fn current_running_status(
@@ -1762,20 +1768,21 @@ fn dispatch_authenticated_payload(
         &settings,
     )
     .map_err(|_| ())?;
-    let mut should_ack = false;
-    if policy.update_history {
-        let received_at = now_ms().map_err(|_| ())?;
-        should_ack = matches!(
-            persist_authenticated_remote_history_if_possible(
-                app,
-                &protocol_item,
-                received_at,
-                &settings,
-            )?,
-            AuthenticatedRemoteHistoryOutcome::Inserted
-                | AuthenticatedRemoteHistoryOutcome::Duplicate
-        );
+    if inbound_live_is_paused(&policy) {
+        return Ok(());
     }
+    let history_outcome = if policy.update_history {
+        let received_at = now_ms().map_err(|_| ())?;
+        Some(persist_authenticated_remote_history_if_possible(
+            app,
+            &protocol_item,
+            received_at,
+            &settings,
+        )?)
+    } else {
+        None
+    };
+    let should_ack = inbound_live_should_ack(&policy, history_outcome);
     let acked_item_id = protocol_item.item_id.clone();
     let _ = app.emit(
         "transport://authenticated-clipboard-text",
@@ -1796,6 +1803,33 @@ fn dispatch_authenticated_payload(
     ack.validate().map_err(|_| ())?;
     let value = serde_json::to_value(ack).map_err(|_| ())?;
     send_authenticated_business_payload(app, peer, MessageType::ItemAck, &value)
+}
+
+fn inbound_live_is_paused(policy: &crate::sync::InboundClipboardPolicy) -> bool {
+    matches!(
+        policy.blocked_reason,
+        Some(
+            crate::sync::SyncPauseReason::SyncDisabled
+                | crate::sync::SyncPauseReason::AutoReceiveDisabled
+        )
+    )
+}
+
+fn inbound_live_should_ack(
+    policy: &crate::sync::InboundClipboardPolicy,
+    history_outcome: Option<AuthenticatedRemoteHistoryOutcome>,
+) -> bool {
+    if inbound_live_is_paused(policy) {
+        return false;
+    }
+    matches!(
+        history_outcome,
+        Some(
+            AuthenticatedRemoteHistoryOutcome::Inserted
+                | AuthenticatedRemoteHistoryOutcome::Duplicate
+                | AuthenticatedRemoteHistoryOutcome::SkippedByPolicy
+        )
+    )
 }
 
 fn handle_inbound_space_key_rotation(
@@ -2656,6 +2690,34 @@ mod tests {
         assert!(
             authenticated_clipboard_text_from_payload(MessageType::ItemLive, &payload).is_err()
         );
+
+        let exact_text = "a".repeat(crate::clipboard::MAX_TEXT_BYTES);
+        let exact_payload = serde_json::json!({
+            "itemId": Uuid::now_v7(),
+            "spaceId": Uuid::now_v7(),
+            "originDeviceId": Uuid::now_v7(),
+            "originSeq": 8,
+            "hlc": "0000018bcfe56864-0001",
+            "contentType": "text/plain",
+            "contentLength": exact_text.len(),
+            "contentDigest": "eA5jJ_YZ7drWuf4TrzLd5LaQ6mKfMsoQkxzHNXl2f5I",
+            "createdAt": 1_700_000_000_000u64,
+            "content": exact_text,
+        });
+        assert!(
+            authenticated_clipboard_text_from_payload(MessageType::ItemLive, &exact_payload)
+                .is_ok()
+        );
+        let mut oversized_payload = exact_payload;
+        oversized_payload["content"] =
+            serde_json::Value::String("a".repeat(crate::clipboard::MAX_TEXT_BYTES + 1));
+        oversized_payload["contentLength"] =
+            serde_json::json!(crate::clipboard::MAX_TEXT_BYTES + 1);
+        assert!(authenticated_clipboard_text_from_payload(
+            MessageType::ItemLive,
+            &oversized_payload
+        )
+        .is_err());
     }
 
     #[test]
@@ -2691,6 +2753,146 @@ mod tests {
             ),
             vec!["192.168.1.8:5001".to_owned()]
         );
+    }
+
+    #[test]
+    fn item_live_broadcast_encodes_for_inbound_and_formal_outbound_sessions() {
+        let space_id = Uuid::now_v7();
+        let inbound_peer = "windows-a-inbound".to_string();
+        let outbound_peer = "windows-b-outbound".to_string();
+        let mut inbound_session = AuthenticatedTransportSession::new(
+            SessionDirection::ClientToServer,
+            [0x11; 32],
+            SessionDirection::ServerToClient,
+            [0x22; 32],
+            6,
+        );
+        inbound_session.mark_ready().expect("inbound ready");
+        let mut outbound_session = AuthenticatedTransportSession::new(
+            SessionDirection::ServerToClient,
+            [0x44; 32],
+            SessionDirection::ClientToServer,
+            [0x33; 32],
+            3,
+        );
+        outbound_session.mark_ready().expect("outbound ready");
+        let mut sessions = HashMap::from([
+            (
+                inbound_peer.clone(),
+                AuthenticatedPeerSession {
+                    session: inbound_session,
+                    space_id,
+                    device_id: Uuid::now_v7(),
+                    connection_kind: AuthenticatedConnectionKind::Inbound,
+                },
+            ),
+            (
+                outbound_peer.clone(),
+                AuthenticatedPeerSession {
+                    session: outbound_session,
+                    space_id,
+                    device_id: Uuid::now_v7(),
+                    connection_kind: AuthenticatedConnectionKind::FormalOutbound,
+                },
+            ),
+            (
+                "other-space".to_string(),
+                AuthenticatedPeerSession {
+                    session: AuthenticatedTransportSession::new(
+                        SessionDirection::ClientToServer,
+                        [0x55; 32],
+                        SessionDirection::ServerToClient,
+                        [0x66; 32],
+                        1,
+                    ),
+                    space_id: Uuid::now_v7(),
+                    device_id: Uuid::now_v7(),
+                    connection_kind: AuthenticatedConnectionKind::Inbound,
+                },
+            ),
+        ]);
+        let payload = serde_json::json!({ "content": "Windows 双向自动同步" });
+        let (frames, stale) =
+            encode_authenticated_item_live_frames(&mut sessions, space_id, &payload);
+        assert!(stale.is_empty());
+        assert_eq!(frames.len(), 2);
+
+        let mut decoders = HashMap::from([
+            (
+                inbound_peer,
+                AuthenticatedTransportSession::new(
+                    SessionDirection::ServerToClient,
+                    [0x22; 32],
+                    SessionDirection::ClientToServer,
+                    [0x11; 32],
+                    0,
+                ),
+            ),
+            (
+                outbound_peer,
+                AuthenticatedTransportSession::new(
+                    SessionDirection::ClientToServer,
+                    [0x33; 32],
+                    SessionDirection::ServerToClient,
+                    [0x44; 32],
+                    0,
+                ),
+            ),
+        ]);
+        for (peer, frame) in frames {
+            let Message::Text(text) = frame else {
+                panic!("item live must use a text frame");
+            };
+            let (message_type, decoded) = decoders
+                .get_mut(&peer)
+                .expect("matching peer decoder")
+                .accept_typed_text_frame(&text)
+                .expect("peer decrypts item live");
+            assert_eq!(message_type, MessageType::ItemLive);
+            assert_eq!(decoded, payload);
+        }
+    }
+
+    #[test]
+    fn live_ack_respects_pause_but_confirms_history_disabled_acceptance() {
+        let normal = crate::sync::inbound_clipboard_policy_with_settings(
+            crate::sync::InboundClipboardEventKind::ItemLive,
+            &AppSettings::default(),
+        );
+        assert!(inbound_live_should_ack(
+            &normal,
+            Some(AuthenticatedRemoteHistoryOutcome::SkippedByPolicy)
+        ));
+        assert!(inbound_live_should_ack(
+            &normal,
+            Some(AuthenticatedRemoteHistoryOutcome::Inserted)
+        ));
+
+        let sync_disabled = crate::sync::inbound_clipboard_policy_with_settings(
+            crate::sync::InboundClipboardEventKind::ItemLive,
+            &AppSettings {
+                sync_enabled: false,
+                ..AppSettings::default()
+            },
+        );
+        assert!(inbound_live_is_paused(&sync_disabled));
+        assert!(!inbound_live_should_ack(
+            &sync_disabled,
+            Some(AuthenticatedRemoteHistoryOutcome::SkippedByPolicy)
+        ));
+
+        let receive_disabled = crate::sync::inbound_clipboard_policy_with_settings(
+            crate::sync::InboundClipboardEventKind::ItemLive,
+            &AppSettings {
+                auto_receive_enabled: false,
+                ..AppSettings::default()
+            },
+        );
+        assert!(inbound_live_is_paused(&receive_disabled));
+        assert!(!inbound_live_should_ack(
+            &receive_disabled,
+            Some(AuthenticatedRemoteHistoryOutcome::Inserted)
+        ));
     }
 
     #[test]
