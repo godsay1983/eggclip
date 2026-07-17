@@ -13,6 +13,8 @@ use tauri::Manager;
 use uuid::Uuid;
 
 pub mod client;
+#[allow(dead_code)] // Wired to the outbound WebSocket lifecycle in W2W-06.
+pub(crate) mod client_handshake;
 mod join_runtime;
 
 pub use join_runtime::PairingJoinRuntime;
@@ -1615,7 +1617,27 @@ fn build_pairing_secret_proof(
     if secret.len() != PAIRING_SECRET_BYTES {
         return Err(PairingError::InvalidInvitationSecret);
     }
-    let verifier = pairing_secret_verifier_from_encoded(invitation_id, pairing_secret);
+    let secret = fixed_bytes::<PAIRING_SECRET_BYTES>(&secret, "pairingSecret")
+        .map_err(|_| PairingError::InvalidInvitationSecret)?;
+    build_pairing_secret_proof_from_secret(
+        &secret,
+        invitation_id,
+        space_id,
+        issuer_device_id,
+        issuer_identity_public_key,
+        client_hello,
+    )
+}
+
+pub(super) fn build_pairing_secret_proof_from_secret(
+    pairing_secret: &[u8; PAIRING_SECRET_BYTES],
+    invitation_id: Uuid,
+    space_id: &str,
+    issuer_device_id: &str,
+    issuer_identity_public_key: &str,
+    client_hello: &HelloPayload,
+) -> Result<String, PairingError> {
+    let verifier = pairing_secret_verifier(invitation_id, pairing_secret);
     let verifier =
         decode_base64url(&verifier).map_err(|_| PairingError::InvalidInvitationSecret)?;
     let claim = canonical_pairing_secret_claim(
