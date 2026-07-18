@@ -1,4 +1,5 @@
 import type { LanguageMode } from "$lib/i18n/types";
+import type { UiMessageDescriptor } from "$lib/i18n";
 
 export type { LanguageMode } from "$lib/i18n/types";
 
@@ -20,5 +21,5 @@ export type SettingsLoadState = "idle" | "loading" | "ready" | "saving" | "error
 export interface SettingsSnapshot {
   state: SettingsLoadState;
   settings: AppSettings;
-  errorMessage: string | null;
+  errorMessage: UiMessageDescriptor | null;
 }

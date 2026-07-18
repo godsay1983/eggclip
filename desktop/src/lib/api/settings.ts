@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { uiMessage, type UiMessageDescriptor } from "$lib/i18n";
 import type { AppSettings } from "$lib/types/settings";
 
 export function defaultAppSettings(): AppSettings {
@@ -22,18 +23,18 @@ export async function saveAppSettings(settings: AppSettings): Promise<AppSetting
   return invoke<AppSettings>("save_app_settings", { settings });
 }
 
-export function validateAppSettings(settings: AppSettings): string | null {
+export function validateAppSettings(settings: AppSettings): UiMessageDescriptor | null {
   if (![0, 20, 50, 100].includes(settings.historyLimit)) {
-    return "历史数量只能选择 0、20、50 或 100。";
+    return uiMessage("settings.invalidHistoryLimit");
   }
   if (!Number.isSafeInteger(settings.retentionDays) || settings.retentionDays < 0) {
-    return "历史保留天数必须是非负整数。";
+    return uiMessage("settings.invalidRetentionDays");
   }
   if (!["system", "light", "dark"].includes(settings.themeMode)) {
-    return "主题只能选择跟随系统、浅色或深色。";
+    return uiMessage("settings.invalidTheme");
   }
   if (!["system", "zh-CN", "en-US"].includes(settings.languageMode)) {
-    return "语言只能选择跟随系统、简体中文或 English。";
+    return uiMessage("settings.invalidLanguage");
   }
   return null;
 }

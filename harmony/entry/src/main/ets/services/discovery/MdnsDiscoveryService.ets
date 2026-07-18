@@ -13,8 +13,17 @@ const MAX_CANDIDATES: number = 32;
 const MAX_INSTANCE_ID_LENGTH: number = 96;
 
 export interface MdnsDiscoveryCallbacks {
-  onStateChanged: (state: PocLifecycleState, reason: string) => void;
+  onStateChanged: (state: PocLifecycleState, event: MdnsDiscoveryEvent) => void;
   onCandidatesChanged: (candidates: MdnsServiceCandidate[]) => void;
+}
+
+export enum MdnsDiscoveryEvent {
+  ALREADY_RUNNING = 'alreadyRunning',
+  SEARCHING = 'searching',
+  STOPPED = 'stopped',
+  START_FAILED = 'startFailed',
+  STOP_FAILED = 'stopFailed',
+  RESOLVE_FAILED = 'resolveFailed'
 }
 
 export class MdnsDiscoveryService {
@@ -43,7 +52,7 @@ export class MdnsDiscoveryService {
 
   startSearch(callbacks: MdnsDiscoveryCallbacks): void {
     if (this.discovery !== null) {
-      callbacks.onStateChanged(this.state, 'mDNS 搜索已在运行');
+      callbacks.onStateChanged(this.state, MdnsDiscoveryEvent.ALREADY_RUNNING);
       callbacks.onCandidatesChanged(this.currentCandidates());
       return;
     }
@@ -51,7 +60,7 @@ export class MdnsDiscoveryService {
     this.callbacks = callbacks;
     this.state = PocLifecycleState.STARTING;
     this.generation += 1;
-    callbacks.onStateChanged(this.state, '正在搜索局域网 EggClip 服务');
+    callbacks.onStateChanged(this.state, MdnsDiscoveryEvent.SEARCHING);
 
     try {
       const discovery = mdns.createDiscoveryService(this.context, EGGCLIP_MDNS_DISCOVERY_TYPE);
@@ -62,7 +71,7 @@ export class MdnsDiscoveryService {
       discovery.on('serviceLost', this.onServiceLost);
       discovery.startSearchingMDNS();
     } catch (_) {
-      this.failSearch('无法启动 mDNS 搜索，请检查 Wi-Fi 和网络权限');
+      this.failSearch(MdnsDiscoveryEvent.START_FAILED);
     }
   }
 
@@ -80,18 +89,18 @@ export class MdnsDiscoveryService {
     this.state = PocLifecycleState.IDLE;
     this.candidates = [];
     if (this.callbacks !== null) {
-      this.callbacks.onStateChanged(this.state, 'mDNS 搜索已停止，仍可使用手动 IP');
+      this.callbacks.onStateChanged(this.state, MdnsDiscoveryEvent.STOPPED);
       this.callbacks.onCandidatesChanged([]);
     }
   }
 
   private readonly onDiscoveryStart = (event: mdns.DiscoveryEventInfo): void => {
     if (event.errorCode !== undefined) {
-      this.failSearch(this.discoveryErrorMessage(event.errorCode));
+      this.failSearch(MdnsDiscoveryEvent.START_FAILED);
       return;
     }
     this.state = PocLifecycleState.RUNNING;
-    this.notifyState('正在搜索局域网 EggClip 服务');
+    this.notifyState(MdnsDiscoveryEvent.SEARCHING);
   };
 
   private readonly onDiscoveryStop = (event: mdns.DiscoveryEventInfo): void => {
@@ -105,11 +114,11 @@ export class MdnsDiscoveryService {
     this.notifyCandidates();
     if (event.errorCode !== undefined) {
       this.state = PocLifecycleState.FAILED;
-      this.notifyState(`mDNS 搜索停止异常，错误码 ${event.errorCode}`);
+      this.notifyState(MdnsDiscoveryEvent.STOP_FAILED);
       return;
     }
     this.state = PocLifecycleState.IDLE;
-    this.notifyState('mDNS 搜索已停止，仍可使用手动 IP');
+    this.notifyState(MdnsDiscoveryEvent.STOPPED);
   };
 
   private readonly onServiceFound = (serviceInfo: mdns.LocalServiceInfo): void => {
@@ -126,7 +135,7 @@ export class MdnsDiscoveryService {
       })
       .catch(() => {
         if (generation === this.generation && this.discovery !== null) {
-          this.notifyState('发现服务但地址解析失败，继续搜索');
+          this.notifyState(MdnsDiscoveryEvent.RESOLVE_FAILED);
         }
       });
   };
@@ -189,11 +198,11 @@ export class MdnsDiscoveryService {
     this.notifyCandidates();
   }
 
-  private failSearch(reason: string): void {
+  private failSearch(event: MdnsDiscoveryEvent): void {
     this.generation += 1;
     this.state = PocLifecycleState.FAILED;
     this.candidates = [];
-    this.notifyState(reason);
+    this.notifyState(event);
     this.notifyCandidates();
     const discovery = this.discovery;
     this.discovery = null;
@@ -213,22 +222,9 @@ export class MdnsDiscoveryService {
     discovery.off('serviceLost', this.onServiceLost);
   }
 
-  private discoveryErrorMessage(errorCode: mdns.MdnsError): string {
-    if (errorCode === mdns.MdnsError.INTERNAL_ERROR) {
-      return 'mDNS 子系统启动失败；模拟器可能不支持局域网组播，请使用真机验证或改用手动 IP';
-    }
-    if (errorCode === mdns.MdnsError.ALREADY_ACTIVE) {
-      return 'mDNS 搜索已在运行';
-    }
-    if (errorCode === mdns.MdnsError.MAX_LIMIT) {
-      return 'mDNS 搜索数量已达系统上限，请停止其他搜索后重试';
-    }
-    return `mDNS 搜索启动失败，错误码 ${errorCode}`;
-  }
-
-  private notifyState(reason: string): void {
+  private notifyState(event: MdnsDiscoveryEvent): void {
     if (this.callbacks !== null) {
-      this.callbacks.onStateChanged(this.state, reason);
+      this.callbacks.onStateChanged(this.state, event);
     }
   }
 

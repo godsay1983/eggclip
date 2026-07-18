@@ -26,6 +26,9 @@ import {
   ConnectionExperiencePolicy,
   connectionExperiencePolicy
 } from '../services/ui/ConnectionExperiencePolicy';
+import { ConnectionState } from '../models/ShellModels';
+import { UiMessageDescriptor } from '../services/localization/UiMessageCodes';
+import { UiMessageFormatter } from '../services/localization/UiMessageFormatter';
 
 enum OutboundSendState {
   IDLE = 'idle',
@@ -42,6 +45,7 @@ export struct HomePage {
   private readonly clipboardBridge: ClipboardBridgeService = new ClipboardBridgeService();
   private historyStore: HistoryStore | null = null;
   private trustedDeviceStore: TrustedDeviceStore | null = null;
+  private messageFormatter: UiMessageFormatter | null = null;
   private lastPairingHistoryRevision: number = 0;
   private readonly connectionSnapshotListener = (snapshot: PocConnectionSnapshot): void => {
     const previousReceivedText = this.latestReceivedText;
@@ -51,8 +55,9 @@ export struct HomePage {
     this.latestReceivedAt = snapshot.latestReceivedAt;
     this.latestReceivedByteLength = snapshot.latestReceivedByteLength;
     if (pairingConnectionStore.snapshot().state !== PairingConnectionState.AUTHENTICATED) {
-      this.connectionTitle = snapshot.connectionTitle;
-      this.connectionDescription = snapshot.connectionDescription;
+      this.connectionState = snapshot.connectionState;
+      this.connectionTitle = this.formatMessage(snapshot.connectionTitle);
+      this.connectionDescription = this.formatMessage(snapshot.connectionDescription);
     }
     if (previousReceivedText !== snapshot.latestReceivedText) {
       this.latestReceivedExpanded = false;
@@ -77,13 +82,13 @@ export struct HomePage {
       this.loadHistorySummary();
     }
     if (snapshot.authenticated || snapshot.state === PairingConnectionState.AUTHENTICATED) {
-      this.connectionTitle = snapshot.title;
-      this.connectionDescription = snapshot.syncReady
-        ? '安全连接已建立，可以同步纯文本。'
-        : '身份认证已完成，正在初始化同步，请稍候。';
+      this.connectionState = ConnectionState.ONLINE;
+      this.connectionTitle = this.formatMessage(snapshot.title);
+      this.connectionDescription = this.formatMessage(snapshot.description);
     } else if (snapshot.state === PairingConnectionState.FAILED) {
-      this.connectionTitle = snapshot.title;
-      this.connectionDescription = snapshot.description;
+      this.connectionState = ConnectionState.AUTH_FAILED;
+      this.connectionTitle = this.formatMessage(snapshot.title);
+      this.connectionDescription = this.formatMessage(snapshot.description);
     }
     if ((snapshot.authenticated || snapshot.state === PairingConnectionState.AUTHENTICATED) &&
       this.trustedDeviceCount === 0) {
@@ -91,14 +96,16 @@ export struct HomePage {
     }
     if (snapshot.outboundDeliveryState === OutboundDeliveryState.QUEUED) {
       this.setOutboundStatus(OutboundSendState.WAITING,
-        `${snapshot.pendingOutboundCount} 条等待发送`, snapshot.outboundDeliveryDescription);
+        `${snapshot.pendingOutboundCount} 条等待发送`, this.formatMessage(snapshot.outboundDeliveryDescription));
     } else if (snapshot.outboundDeliveryState === OutboundDeliveryState.SENDING) {
       this.setOutboundStatus(OutboundSendState.PENDING,
-        `${snapshot.pendingOutboundCount} 条等待确认`, snapshot.outboundDeliveryDescription);
+        `${snapshot.pendingOutboundCount} 条等待确认`, this.formatMessage(snapshot.outboundDeliveryDescription));
     } else if (snapshot.outboundDeliveryState === OutboundDeliveryState.SENT) {
-      this.setOutboundStatus(OutboundSendState.SENT, '同步记录已确认', snapshot.outboundDeliveryDescription);
+      this.setOutboundStatus(OutboundSendState.SENT, '同步记录已确认',
+        this.formatMessage(snapshot.outboundDeliveryDescription));
     } else if (snapshot.outboundDeliveryState === OutboundDeliveryState.FAILED) {
-      this.setOutboundStatus(OutboundSendState.FAILED, '待同步状态读取失败', snapshot.outboundDeliveryDescription);
+      this.setOutboundStatus(OutboundSendState.FAILED, '待同步状态读取失败',
+        this.formatMessage(snapshot.outboundDeliveryDescription));
     }
   };
   @State private pasteStatus: string = '点击“粘贴”后读取并发送一次';
@@ -109,6 +116,7 @@ export struct HomePage {
   @State private outboundUpdatedAt: string = '';
   @State private connectionTitle: string = '等待桌面端';
   @State private connectionDescription: string = '连接和发现入口在设备页';
+  @State private connectionState: ConnectionState = ConnectionState.OFFLINE;
   @State private latestReceivedText: string = '';
   @State private latestReceivedPreview: string = '';
   @State private latestReceivedSource: string = '暂无内容';
@@ -132,8 +140,10 @@ export struct HomePage {
     if (this.historyStore === null) {
       const hostContext = this.getUIContext().getHostContext();
       if (hostContext !== undefined) {
-        this.historyStore = new HistoryStore(hostContext as common.UIAbilityContext);
-        this.trustedDeviceStore = new TrustedDeviceStore(hostContext as common.UIAbilityContext);
+        const context = hostContext as common.UIAbilityContext;
+        this.messageFormatter = new UiMessageFormatter(context);
+        this.historyStore = new HistoryStore(context);
+        this.trustedDeviceStore = new TrustedDeviceStore(context);
       }
     }
     pocConnectionStore.subscribe(this.connectionSnapshotListener);
@@ -320,7 +330,7 @@ export struct HomePage {
             this.pasteStatus = 'PasteButton 已授权，正在读取纯文本';
             this.clipboardBridge.readPlainTextAfterPasteButton()
               .then((readResult) => {
-                this.pasteStatus = readResult.message;
+                this.pasteStatus = this.formatMessage(readResult.message);
                 if (readResult.ok) {
                   this.persistLocalHistoryThenSend(readResult.text);
                 }
@@ -620,7 +630,7 @@ export struct HomePage {
     this.historyStore.loadLocalBroadcastPolicy()
       .then((policy: LocalBroadcastPolicySnapshot) => {
         if (!policy.allowed) {
-          this.pasteStatus = policy.message;
+          this.pasteStatus = this.formatMessage(policy.message);
           this.setOutboundStatus(OutboundSendState.PAUSED, '同步已暂停', '文本已进入本机历史；当前同步策略禁止发送到桌面端。');
           return;
         }
@@ -770,8 +780,9 @@ export struct HomePage {
         this.historyUsed = snapshot.used;
         this.historyLimit = snapshot.limit;
         this.historyItems = snapshot.items;
-        this.historyStatus = snapshot.errorMessage.length > 0 ? snapshot.errorMessage : '已保存到本机历史';
-        if (snapshot.errorMessage.length > 0) {
+        this.historyStatus = snapshot.errorMessage === null ? '已保存到本机历史' :
+          this.formatMessage(snapshot.errorMessage);
+        if (snapshot.errorMessage !== null) {
           this.setOutboundStatus(OutboundSendState.FAILED, '保存本机历史失败', '本机事务未确认成功，已停止发送。');
           return false;
         }
@@ -794,7 +805,7 @@ export struct HomePage {
     this.copyStatus = '正在写入本机剪贴板';
     this.clipboardBridge.writePlainTextByUserAction(this.latestReceivedText)
       .then((result) => {
-        this.copyStatus = result.message;
+        this.copyStatus = this.formatMessage(result.message);
       })
       .catch(() => {
         this.copyStatus = '写入本机剪贴板失败，请稍后重试';
@@ -812,7 +823,8 @@ export struct HomePage {
         this.historyUsed = snapshot.used;
         this.historyLimit = snapshot.limit;
         this.historyItems = snapshot.items;
-        this.historyStatus = snapshot.errorMessage.length > 0 ? snapshot.errorMessage : '只显示数量，不展示历史正文';
+        this.historyStatus = snapshot.errorMessage === null ? '只显示数量，不展示历史正文' :
+          this.formatMessage(snapshot.errorMessage);
       })
       .catch(() => {
         this.historyItems = [];
@@ -847,7 +859,7 @@ export struct HomePage {
   private currentConnectionExperience(): ConnectionExperiencePolicy {
     return connectionExperiencePolicy(
       this.trustedDeviceCount,
-      this.connectionTitle,
+      this.connectionState,
       this.appInForeground,
       this.retryingTrustedConnection
     );
@@ -867,7 +879,8 @@ export struct HomePage {
         this.historyItems = snapshot.items;
         this.historyActionsItemId = '';
         this.expandedHistoryItemId = '';
-        this.historyStatus = snapshot.errorMessage.length > 0 ? snapshot.errorMessage : '已删除历史记录';
+        this.historyStatus = snapshot.errorMessage === null ? '已删除历史记录' :
+          this.formatMessage(snapshot.errorMessage);
       })
       .catch(() => {
         this.historyStatus = '删除历史记录失败';
@@ -891,7 +904,8 @@ export struct HomePage {
         this.historyItems = snapshot.items;
         this.historyActionsItemId = '';
         this.expandedHistoryItemId = '';
-        this.historyStatus = snapshot.errorMessage.length > 0 ? snapshot.errorMessage : '已清空本机历史；不会修改系统剪贴板';
+        this.historyStatus = snapshot.errorMessage === null ? '已清空本机历史；不会修改系统剪贴板' :
+          this.formatMessage(snapshot.errorMessage);
       })
       .catch(() => {
         this.historyStatus = '清空历史失败';
@@ -906,6 +920,10 @@ export struct HomePage {
     this.outboundTitle = title;
     this.outboundDescription = description;
     this.outboundUpdatedAt = this.formatTime(Date.now());
+  }
+
+  private formatMessage(message: UiMessageDescriptor): string {
+    return this.messageFormatter === null ? message.code : this.messageFormatter.format(message);
   }
 
   private formatTime(milliseconds: number): string {

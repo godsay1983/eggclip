@@ -21,10 +21,13 @@ import { EggClipSpacing } from '../theme/Spacing';
 import { EggClipTypography } from '../theme/Typography';
 import { APP_FOREGROUND_STORAGE_KEY } from '../utils/AppLifecycle';
 import { PairingPage } from './PairingPage';
+import { UiMessageDescriptor } from '../services/localization/UiMessageCodes';
+import { UiMessageFormatter } from '../services/localization/UiMessageFormatter';
 
 @Component
 export struct DevicesPage {
   private trustedDeviceStore: TrustedDeviceStore | null = null;
+  private messageFormatter: UiMessageFormatter | null = null;
   private readonly connectionSnapshotListener = (snapshot: PocConnectionSnapshot): void => {
     this.manualHost = snapshot.manualHost;
     this.manualPort = snapshot.manualPort;
@@ -33,14 +36,14 @@ export struct DevicesPage {
     this.lastSuccessfulEndpointLabel = snapshot.lastSuccessfulEndpointLabel;
     this.lastSuccessfulAt = snapshot.lastSuccessfulAt;
     this.discoveryState = snapshot.discoveryState;
-    this.discoveryStatus = snapshot.discoveryStatus;
+    this.discoveryStatus = this.formatMessage(snapshot.discoveryStatus);
     this.discoveryCandidates = snapshot.discoveryCandidates;
     this.transportState = snapshot.transportState;
-    this.transportStatus = snapshot.transportStatus;
-    this.transportDiagnostics = snapshot.transportDiagnostics;
+    this.transportStatus = this.formatMessage(snapshot.transportStatus);
+    this.transportDiagnostics = this.formatMessage(snapshot.transportDiagnostics);
     this.connectionState = snapshot.connectionState;
-    this.connectionTitle = snapshot.connectionTitle;
-    this.connectionDescription = snapshot.connectionDescription;
+    this.connectionTitle = this.formatMessage(snapshot.connectionTitle);
+    this.connectionDescription = this.formatMessage(snapshot.connectionDescription);
   };
   private readonly pairingSnapshotListener = (snapshot: PairingConnectionSnapshot): void => {
     this.pairingConnectionState = snapshot.state;
@@ -80,9 +83,11 @@ export struct DevicesPage {
   aboutToAppear(): void {
     const hostContext = this.getUIContext().getHostContext();
     if (hostContext !== undefined) {
-      pocConnectionStore.initialize(hostContext as common.UIAbilityContext);
+      const context = hostContext as common.UIAbilityContext;
+      this.messageFormatter = new UiMessageFormatter(context);
+      pocConnectionStore.initialize(context);
       if (this.trustedDeviceStore === null) {
-        this.trustedDeviceStore = new TrustedDeviceStore(hostContext as common.UIAbilityContext);
+        this.trustedDeviceStore = new TrustedDeviceStore(context);
       }
     }
     pocConnectionStore.subscribe(this.connectionSnapshotListener);
@@ -1002,7 +1007,8 @@ export struct DevicesPage {
       .then((result) => {
         this.busyDeviceId = '';
         if (!result.ok) {
-          this.deviceActionStatus = result.reason ?? '设备重命名失败';
+          this.deviceActionStatus = result.reason === undefined ? '设备重命名失败' :
+            this.formatMessage(result.reason);
           return;
         }
         this.editingDeviceId = '';
@@ -1044,7 +1050,8 @@ export struct DevicesPage {
       .then((result) => {
         this.busyDeviceId = '';
         if (!result.ok) {
-          this.deviceActionStatus = result.reason ?? '设备移除未完整完成，请到设置中重新初始化配对安全状态';
+          this.deviceActionStatus = result.reason === undefined ?
+            '设备移除未完整完成，请到设置中重新初始化配对安全状态' : this.formatMessage(result.reason);
           this.loadTrustedDevices();
           return;
         }
@@ -1265,5 +1272,9 @@ export struct DevicesPage {
       return '发现或连接失败，可展开查看排障建议';
     }
     return '自动连接异常时可展开检查';
+  }
+
+  private formatMessage(message: UiMessageDescriptor): string {
+    return this.messageFormatter === null ? message.code : this.messageFormatter.format(message);
   }
 }

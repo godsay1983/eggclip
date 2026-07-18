@@ -47,8 +47,8 @@ export type OutboundSyncState =
 
 export interface OutboundSyncStatus {
   state: OutboundSyncState;
-  title: string;
-  description: string;
+  title: UiMessageDescriptor;
+  description: UiMessageDescriptor;
   updatedAt: string;
 }
 
@@ -160,15 +160,15 @@ export interface SyncSpaceState {
   activeSpaceId: string | null;
   hmacDiagnostic: SpaceHmacDiagnosticSummary | null;
   invitation: PairingInvitationSummary | null;
-  errorMessage: string | null;
+  errorMessage: UiMessageDescriptor | null;
   invitationCopiedAt: string | null;
 }
 
 export interface ShellSnapshot {
   connection: {
     state: ConnectionState;
-    title: string;
-    description: string;
+    title: UiMessageDescriptor;
+    description: UiMessageDescriptor;
   };
   current: ClipboardPreview | null;
   outbound: OutboundSyncStatus;
@@ -180,3 +180,4 @@ export interface ShellSnapshot {
   syncSpace: SyncSpaceState;
   syncEnabled: boolean;
 }
+import type { UiMessageDescriptor } from "$lib/i18n";

@@ -1,11 +1,12 @@
 import { ConnectionState, HomeShellState } from '../models/ShellModels';
+import { UiMessageCode, uiMessage } from '../services/localization/UiMessageCodes';
 
 export function createInitialHomeShellState(): HomeShellState {
   return {
     connection: {
       state: ConnectionState.OFFLINE,
-      title: '等待配对设备',
-      description: '前台打开后将自动发现局域网桌面端'
+      title: uiMessage(UiMessageCode.CONNECTION_WAITING_TITLE),
+      description: uiMessage(UiMessageCode.CONNECTION_WAITING_DESCRIPTION)
     },
     latest: null,
     devices: [

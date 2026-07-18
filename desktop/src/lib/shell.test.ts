@@ -16,6 +16,7 @@ import {
   readyPairingJoinFormState,
 } from "$lib/pairing-join";
 import type { DeviceSummary } from "$lib/types/shell";
+import { formatUiMessage } from "$lib/i18n";
 
 describe("desktop shell", () => {
   it("keeps the first release text-only limit explicit", () => {
@@ -143,16 +144,21 @@ describe("desktop shell", () => {
   });
 
   it("distinguishes pairing failures that require different user actions", () => {
-    expect(classifyPairingJoinError("配对邀请已过期，请重新生成").title).toBe("邀请已过期");
-    expect(classifyPairingJoinError("配对邀请已使用，请重新生成").title).toBe("邀请不可用");
-    expect(classifyPairingJoinError("设备身份与邀请不匹配").title).toBe("设备身份不匹配");
-    expect(classifyPairingJoinError("空间密钥保存失败").title).toBe("密钥保存失败");
-    expect(classifyPairingJoinError("本机数据库写入失败").title).toBe("本机保存失败");
-    expect(classifyPairingJoinError("无法连接可信设备，请检查防火墙")).toMatchObject({
-      title: "网络不可达",
+    const expired = classifyPairingJoinError({
+      code: "pairingInvitationExpired",
+      retryable: false,
+      params: {},
+    });
+    expect(expired.title.code).toBe("pairing.invitationExpiredTitle");
+    expect(formatUiMessage("en-US", expired.title)).toBe("Invitation expired");
+    expect(classifyPairingJoinError({
+      code: "pairingNetworkUnavailable",
+      retryable: true,
+      params: {},
+    })).toMatchObject({
       retryableNetwork: true,
     });
-    expect(classifyPairingJoinError("设备认证失败").title).toBe("认证失败");
+    expect(classifyPairingJoinError("旧版中文错误").title.code).toBe("pairing.failedTitle");
   });
 
   it("clears join material after close or success and restores a validated address choice", () => {

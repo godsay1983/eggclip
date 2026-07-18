@@ -17,10 +17,13 @@ import {
 import { EggClipColors } from '../theme/Colors';
 import { EggClipSpacing } from '../theme/Spacing';
 import { EggClipTypography } from '../theme/Typography';
+import { UiMessageDescriptor } from '../services/localization/UiMessageCodes';
+import { UiMessageFormatter } from '../services/localization/UiMessageFormatter';
 
 @Component
 export struct SettingsPage {
   private settingsStore: SettingsStore | null = null;
+  private messageFormatter: UiMessageFormatter | null = null;
   @State private storeState: SettingsStoreState = SettingsStoreState.IDLE;
   @State private statusText: string = '设置尚未加载';
   @State private syncEnabled: boolean = true;
@@ -46,7 +49,9 @@ export struct SettingsPage {
         this.statusText = '无法获取页面上下文，设置不可用';
         return;
       }
-      this.settingsStore = new SettingsStore(hostContext as common.UIAbilityContext);
+      const context = hostContext as common.UIAbilityContext;
+      this.messageFormatter = new UiMessageFormatter(context);
+      this.settingsStore = new SettingsStore(context);
     }
     this.loadSettings();
   }
@@ -493,7 +498,8 @@ export struct SettingsPage {
     this.settingsStore.load()
       .then((snapshot: SettingsStoreSnapshot) => {
         this.applySnapshot(snapshot);
-        this.statusText = snapshot.state === SettingsStoreState.ERROR ? snapshot.errorMessage : '设置已从本机 RDB 读取';
+        this.statusText = snapshot.state === SettingsStoreState.ERROR && snapshot.errorMessage !== null ?
+          this.formatMessage(snapshot.errorMessage) : '设置已从本机 RDB 读取';
       })
       .catch(() => {
         this.storeState = SettingsStoreState.ERROR;
@@ -520,7 +526,8 @@ export struct SettingsPage {
     this.settingsStore.save(settings)
       .then((snapshot: SettingsStoreSnapshot) => {
         this.applySnapshot(snapshot);
-        this.statusText = snapshot.state === SettingsStoreState.ERROR ? snapshot.errorMessage : '设置已保存到本机';
+        this.statusText = snapshot.state === SettingsStoreState.ERROR && snapshot.errorMessage !== null ?
+          this.formatMessage(snapshot.errorMessage) : '设置已保存到本机';
       })
       .catch(() => {
         this.storeState = SettingsStoreState.ERROR;
@@ -538,11 +545,11 @@ export struct SettingsPage {
     this.settingsStore.clearLocalHistory()
       .then((snapshot: SettingsStoreSnapshot) => {
         this.applySnapshot(snapshot);
-        this.historyActionStatus = snapshot.state === SettingsStoreState.ERROR
-          ? snapshot.errorMessage
+        this.historyActionStatus = snapshot.state === SettingsStoreState.ERROR && snapshot.errorMessage !== null
+          ? this.formatMessage(snapshot.errorMessage)
           : '已清空本机历史；系统剪贴板不受影响';
-        this.statusText = snapshot.state === SettingsStoreState.ERROR
-          ? snapshot.errorMessage
+        this.statusText = snapshot.state === SettingsStoreState.ERROR && snapshot.errorMessage !== null
+          ? this.formatMessage(snapshot.errorMessage)
           : '本机历史已清空';
       })
       .catch(() => {
@@ -750,5 +757,9 @@ export struct SettingsPage {
       return;
     }
     abilityContext.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
+  }
+
+  private formatMessage(message: UiMessageDescriptor): string {
+    return this.messageFormatter === null ? message.code : this.messageFormatter.format(message);
   }
 }

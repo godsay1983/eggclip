@@ -1,3 +1,5 @@
+import { UiMessageDescriptor } from '../services/localization/UiMessageCodes';
+
 export enum ConnectionState {
   OFFLINE = 'offline',
   CONNECTING = 'connecting',
@@ -8,8 +10,8 @@ export enum ConnectionState {
 
 export interface ConnectionSummary {
   state: ConnectionState;
-  title: string;
-  description: string;
+  title: UiMessageDescriptor;
+  description: UiMessageDescriptor;
 }
 
 export interface ClipboardPreview {

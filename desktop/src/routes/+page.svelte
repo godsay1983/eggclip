@@ -19,6 +19,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
   import packageMetadata from "../../package.json";
+  import { effectiveLocale, formatUiMessage } from "$lib/i18n";
 
   let settingsVisible = false;
   let aboutVisible = false;
@@ -204,6 +205,8 @@
           <p class="metadata">
             {$settingsSnapshot.state === "error"
               ? $settingsSnapshot.errorMessage
+                ? formatUiMessage($effectiveLocale, $settingsSnapshot.errorMessage)
+                : ""
               : "更改后自动保存到本机"}
           </p>
         </div>
@@ -232,7 +235,7 @@
           />
         </label>
         {#if $autostartSnapshot.errorMessage}
-          <p class="setting-inline-error" role="status">{$autostartSnapshot.errorMessage}</p>
+          <p class="setting-inline-error" role="status">{formatUiMessage($effectiveLocale, $autostartSnapshot.errorMessage)}</p>
         {/if}
         <label>
           <span>自动同步</span>
@@ -372,8 +375,9 @@
           <div>
             <h2>同步空间</h2>
             <p class="metadata">
-              {$shellSnapshot.syncSpace.errorMessage ??
-                "空间密钥保存到系统凭据库，界面不显示密钥"}
+              {$shellSnapshot.syncSpace.errorMessage
+                ? formatUiMessage($effectiveLocale, $shellSnapshot.syncSpace.errorMessage)
+                : "空间密钥保存到系统凭据库，界面不显示密钥"}
             </p>
           </div>
           <button
@@ -546,8 +550,8 @@
 
         <StatusCard
           state={$shellSnapshot.connection.state}
-          title={$shellSnapshot.connection.title}
-          description={$shellSnapshot.connection.description}
+          title={formatUiMessage($effectiveLocale, $shellSnapshot.connection.title)}
+          description={formatUiMessage($effectiveLocale, $shellSnapshot.connection.description)}
         />
 
         <PocConnectCard />

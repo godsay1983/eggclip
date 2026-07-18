@@ -1,4 +1,10 @@
-import type { PairingJoinAddressSummary, PairingJoinAttemptSummary } from "$lib/types/pairing";
+import { uiMessage, type UiMessageDescriptor } from "$lib/i18n";
+import type {
+  AppErrorCode,
+  AppErrorDto,
+  PairingJoinAddressSummary,
+  PairingJoinAttemptSummary,
+} from "$lib/types/pairing";
 
 export interface PairingJoinFormState {
   invitationText: string;
@@ -38,47 +44,55 @@ export function canManageSyncSpace(
 }
 
 export interface PairingJoinIssue {
-  title: string;
-  message: string;
+  title: UiMessageDescriptor;
+  message: UiMessageDescriptor;
   retryableNetwork: boolean;
 }
 
-export function pairingErrorMessage(error: unknown): string {
-  if (typeof error === "string") return error;
-  if (error instanceof Error) return error.message;
-  return "配对失败，请重新生成邀请后再试";
+export function isAppErrorDto(error: unknown): error is AppErrorDto {
+  if (typeof error !== "object" || error === null) return false;
+  const value = error as Partial<AppErrorDto>;
+  return typeof value.code === "string" && typeof value.retryable === "boolean";
 }
 
 export function classifyPairingJoinError(error: unknown): PairingJoinIssue {
-  const message = pairingErrorMessage(error);
-  if (message.includes("已过期")) {
-    return { title: "邀请已过期", message, retryableNetwork: false };
+  const code: AppErrorCode = isAppErrorDto(error) ? error.code : "pairingFailed";
+  const retryableNetwork = isAppErrorDto(error) && error.retryable;
+  switch (code) {
+    case "pairingInvitationEmpty":
+      return issue("pairing.failedTitle", "pairing.invitationEmptyDescription", false);
+    case "pairingInvitationTooLarge":
+      return issue("pairing.failedTitle", "pairing.invitationTooLargeDescription", false);
+    case "pairingInvitationInvalid":
+    case "pairingInvalidEndpoint":
+      return issue("pairing.failedTitle", "pairing.invitationInvalidDescription", false);
+    case "pairingInvitationExpired":
+      return issue("pairing.invitationExpiredTitle", "pairing.invitationExpiredDescription", false);
+    case "pairingInvitationUnavailable":
+      return issue("pairing.invitationUnavailableTitle", "pairing.invitationUnavailableDescription", false);
+    case "pairingIdentityMismatch":
+      return issue("pairing.identityMismatchTitle", "pairing.identityMismatchDescription", false);
+    case "pairingCredentialFailed":
+      return issue("pairing.credentialFailedTitle", "pairing.credentialFailedDescription", false);
+    case "pairingStorageFailed":
+      return issue("pairing.storageFailedTitle", "pairing.storageFailedDescription", false);
+    case "pairingNetworkUnavailable":
+      return issue("pairing.networkFailedTitle", "pairing.networkFailedDescription", true);
+    case "pairingAuthenticationFailed":
+      return issue("pairing.authenticationFailedTitle", "pairing.authenticationFailedDescription", false);
+    case "pairingBusy":
+    case "pairingFailed":
+    default:
+      return issue("pairing.failedTitle", "pairing.failedDescription", retryableNetwork);
   }
-  if (message.includes("已使用") || message.includes("找不到该邀请")) {
-    return { title: "邀请不可用", message, retryableNetwork: false };
-  }
-  if (message.includes("身份") || message.includes("连接的是生成邀请的电脑")) {
-    return { title: "设备身份不匹配", message, retryableNetwork: false };
-  }
-  if (message.includes("密钥") || message.includes("凭据")) {
-    return { title: "密钥保存失败", message, retryableNetwork: false };
-  }
-  if (message.includes("数据库")) {
-    return { title: "本机保存失败", message, retryableNetwork: false };
-  }
-  if (
-    message.includes("无法连接") ||
-    message.includes("连接可信设备超时") ||
-    message.includes("握手超时") ||
-    message.includes("不可达") ||
-    message.includes("防火墙")
-  ) {
-    return { title: "网络不可达", message, retryableNetwork: true };
-  }
-  if (message.includes("认证") || message.includes("握手")) {
-    return { title: "认证失败", message, retryableNetwork: false };
-  }
-  return { title: "配对失败", message, retryableNetwork: false };
+}
+
+function issue(
+  title: Parameters<typeof uiMessage>[0],
+  message: Parameters<typeof uiMessage>[0],
+  retryableNetwork: boolean,
+): PairingJoinIssue {
+  return { title: uiMessage(title), message: uiMessage(message), retryableNetwork };
 }
 
 export function prioritizedPairingAddresses(

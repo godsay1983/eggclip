@@ -1,20 +1,27 @@
 import pasteboard from '@ohos.pasteboard';
 import { estimateUtf8Bytes, MAX_TEXT_BYTES } from '../../utils/TextLimits';
 import { ClipboardValidationError, ClipboardValidationResult } from '../../models/PocModels';
+import {
+  UiMessageCode,
+  UiMessageDescriptor,
+  UiMessageParameterName,
+  uiMessage,
+  uiParameter
+} from '../localization/UiMessageCodes';
 
 export interface ClipboardPlainTextReadResult {
   ok: boolean;
   text: string;
   byteLength: number;
   error?: ClipboardValidationError;
-  message: string;
+  message: UiMessageDescriptor;
 }
 
 export interface ClipboardPlainTextWriteResult {
   ok: boolean;
   byteLength: number;
   error?: ClipboardValidationError;
-  message: string;
+  message: UiMessageDescriptor;
 }
 
 export class ClipboardBridgeService {
@@ -28,7 +35,7 @@ export class ClipboardBridgeService {
         ok: false,
         text: '',
         byteLength: 0,
-        message: '读取剪贴板失败，请确认已通过 PasteButton 授权'
+        message: uiMessage(UiMessageCode.CLIPBOARD_READ_FAILED)
       };
     }
 
@@ -39,7 +46,7 @@ export class ClipboardBridgeService {
         ok: false,
         text: '',
         byteLength: 0,
-        message: '剪贴板当前内容不是 text/plain 纯文本'
+        message: uiMessage(UiMessageCode.CLIPBOARD_NOT_PLAIN_TEXT)
       };
     }
 
@@ -59,7 +66,9 @@ export class ClipboardBridgeService {
       ok: true,
       text,
       byteLength: validation.byteLength,
-      message: `已读取 ${validation.byteLength} 字节纯文本，等待接入发送链路`
+        message: uiMessage(UiMessageCode.CLIPBOARD_READ_SUCCESS, [
+          uiParameter(UiMessageParameterName.BYTE_LENGTH, validation.byteLength)
+        ])
     };
   }
 
@@ -85,13 +94,15 @@ export class ClipboardBridgeService {
       return {
         ok: true,
         byteLength: validation.byteLength,
-        message: `已复制 ${validation.byteLength} 字节纯文本到本机剪贴板`
+        message: uiMessage(UiMessageCode.CLIPBOARD_WRITE_SUCCESS, [
+          uiParameter(UiMessageParameterName.BYTE_LENGTH, validation.byteLength)
+        ])
       };
     } catch (_) {
       return {
         ok: false,
         byteLength: validation.byteLength,
-        message: '写入本机剪贴板失败，请稍后重试'
+        message: uiMessage(UiMessageCode.CLIPBOARD_WRITE_FAILED)
       };
     }
   }
@@ -118,13 +129,16 @@ export class ClipboardBridgeService {
     };
   }
 
-  private formatValidationMessage(result: ClipboardValidationResult): string {
+  private formatValidationMessage(result: ClipboardValidationResult): UiMessageDescriptor {
     if (result.error === ClipboardValidationError.EMPTY) {
-      return '剪贴板为空，或当前内容不是可同步的纯文本';
+      return uiMessage(UiMessageCode.CLIPBOARD_EMPTY);
     }
     if (result.error === ClipboardValidationError.TOO_LARGE) {
-      return `剪贴板文本过大：${result.byteLength} 字节，当前上限为 ${MAX_TEXT_BYTES} 字节`;
+      return uiMessage(UiMessageCode.CLIPBOARD_TOO_LARGE, [
+        uiParameter(UiMessageParameterName.BYTE_LENGTH, result.byteLength),
+        uiParameter(UiMessageParameterName.MAX_BYTES, MAX_TEXT_BYTES)
+      ]);
     }
-    return '无法读取可同步的剪贴板文本';
+    return uiMessage(UiMessageCode.CLIPBOARD_READ_FAILED);
   }
 }

@@ -8,7 +8,11 @@ use uuid::Uuid;
 use zeroize::Zeroize;
 
 use super::{join_runtime::PairingJoinRuntime, PAIRING_INVITATION_VERSION};
-use crate::{crypto::ED25519_PUBLIC_KEY_BYTES, settings::now_ms};
+use crate::{
+    app_error::{AppErrorCode, AppErrorDto},
+    crypto::ED25519_PUBLIC_KEY_BYTES,
+    settings::now_ms,
+};
 
 const INVITATION_PREFIX: &str = "eggclip://pair?p=";
 const MAX_INVITATION_URI_BYTES: usize = 4096;
@@ -334,54 +338,41 @@ fn mask_endpoint(endpoint: &PairingJoinEndpoint) -> String {
 pub fn parse_pairing_join_invitation(
     runtime: State<'_, PairingJoinRuntime>,
     invitation: String,
-) -> Result<PairingJoinAttemptSummary, String> {
-    let timestamp = now_ms()?;
-    runtime
-        .begin(invitation, timestamp)
-        .map_err(describe_join_error)
+) -> Result<PairingJoinAttemptSummary, AppErrorDto> {
+    let timestamp = now_ms().map_err(|_| AppErrorDto::new(AppErrorCode::PairingFailed, false))?;
+    runtime.begin(invitation, timestamp).map_err(join_error_dto)
 }
 
 #[tauri::command]
 pub fn cancel_pairing_join_attempt(
     runtime: State<'_, PairingJoinRuntime>,
     attempt_id: String,
-) -> Result<(), String> {
+) -> Result<(), AppErrorDto> {
     runtime
         .discard(&attempt_id)
         .map(|_| ())
-        .map_err(describe_join_error)
+        .map_err(join_error_dto)
 }
 
-pub(crate) fn describe_join_error(error: super::join_runtime::PairingJoinRuntimeError) -> String {
+pub(crate) fn join_error_dto(error: super::join_runtime::PairingJoinRuntimeError) -> AppErrorDto {
     use super::join_runtime::PairingJoinRuntimeError;
-    match error {
+    let code = match error {
         PairingJoinRuntimeError::Invitation(PairingInvitationParseError::Empty) => {
-            "请输入或粘贴 EggClip 配对邀请".to_string()
+            AppErrorCode::PairingInvitationEmpty
         }
         PairingJoinRuntimeError::Invitation(PairingInvitationParseError::TooLarge) => {
-            "配对邀请过长，已拒绝处理".to_string()
-        }
-        PairingJoinRuntimeError::Invitation(PairingInvitationParseError::InvalidScheme) => {
-            "不是 EggClip 配对邀请，请使用 eggclip://pair 开头的字符串".to_string()
-        }
-        PairingJoinRuntimeError::Invitation(PairingInvitationParseError::InvalidPayload) => {
-            "配对邀请内容无法解析".to_string()
-        }
-        PairingJoinRuntimeError::Invitation(PairingInvitationParseError::InvalidField(field)) => {
-            format!("配对邀请字段无效：{field}")
+            AppErrorCode::PairingInvitationTooLarge
         }
         PairingJoinRuntimeError::Invitation(PairingInvitationParseError::Expired)
-        | PairingJoinRuntimeError::AttemptExpired => {
-            "配对邀请已过期，请在另一台电脑重新生成".to_string()
-        }
+        | PairingJoinRuntimeError::AttemptExpired => AppErrorCode::PairingInvitationExpired,
         PairingJoinRuntimeError::InvalidAttemptId | PairingJoinRuntimeError::AttemptMissing => {
-            "配对加入尝试不存在，请重新粘贴邀请".to_string()
+            AppErrorCode::PairingInvitationUnavailable
         }
-        PairingJoinRuntimeError::InvalidCandidate => {
-            "邀请中的候选地址无效，请重新粘贴邀请".to_string()
-        }
-        PairingJoinRuntimeError::Unavailable => "配对加入状态暂时不可用".to_string(),
-    }
+        PairingJoinRuntimeError::InvalidCandidate => AppErrorCode::PairingInvalidEndpoint,
+        PairingJoinRuntimeError::Unavailable => AppErrorCode::PairingBusy,
+        PairingJoinRuntimeError::Invitation(_) => AppErrorCode::PairingInvitationInvalid,
+    };
+    AppErrorDto::new(code, false)
 }
 
 #[cfg(test)]

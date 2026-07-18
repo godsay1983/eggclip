@@ -3,11 +3,14 @@ import {
   DEFAULT_LANGUAGE_MODE,
   DEFAULT_LOCALE,
   formatTime,
+  formatUiMessage,
   isLanguageMode,
   resolveEffectiveLocale,
   resolveSystemLocale,
   translate,
+  uiMessage,
 } from "$lib/i18n";
+import type { UiMessageCode } from "$lib/i18n";
 
 describe("desktop i18n foundation", () => {
   it("keeps the fixed language modes and fallback explicit", () => {
@@ -40,5 +43,20 @@ describe("desktop i18n foundation", () => {
     const value = new Date(2026, 0, 2, 15, 4, 5);
     expect(formatTime(value, "zh-CN").length).toBeGreaterThan(0);
     expect(formatTime(value, "en-US").length).toBeGreaterThan(0);
+  });
+
+  it("re-renders an existing status descriptor after a language switch", () => {
+    const descriptor = uiMessage("sync.sentDescription", { count: 2 });
+    expect(formatUiMessage("zh-CN", descriptor)).toContain("2 个可信设备");
+    expect(formatUiMessage("en-US", descriptor)).toContain("2 trusted devices");
+  });
+
+  it("falls back for unknown codes and rejects sensitive parameter names", () => {
+    expect(formatUiMessage("en-US", {
+      code: "unknown.code" as UiMessageCode,
+      params: {},
+    })).toBe("The operation failed. Please try again.");
+    expect(() => uiMessage("sync.sentDescription", { content: "clipboard text" }))
+      .toThrow("unsafe ui message parameter");
   });
 });

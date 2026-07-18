@@ -49,3 +49,15 @@ export {
   resolveEffectiveLocale,
   resolveSystemLocale,
 } from "$lib/i18n/locale";
+export {
+  UI_MESSAGE_CODES,
+  formatUiMessage,
+  uiMessage,
+  unknownUiMessage,
+} from "$lib/i18n/ui-messages";
+export type {
+  UiMessageCode,
+  UiMessageDescriptor,
+  UiMessageParameter,
+  UiMessageParameters,
+} from "$lib/i18n/ui-messages";

@@ -147,7 +147,7 @@ import {
   PairingConnectionStore,
   OutboundDeliveryState,
   calculatePendingOutboundCount,
-  describePairingAuthError,
+  pairingAuthErrorCode,
   resolveOutboundDelivery,
   trustedDiscoveryEndpoint
 } from '../main/ets/store/PairingConnectionStore';
@@ -229,6 +229,16 @@ import {
   resolveEffectiveLocale
 } from '../main/ets/services/localization/LanguagePreferenceService';
 import {
+  UiMessageCode,
+  UiMessageDescriptor,
+  uiMessage
+} from '../main/ets/services/localization/UiMessageCodes';
+import {
+  UiStringResolver,
+  formatUiMessage
+} from '../main/ets/services/localization/UiMessageFormatter';
+import { ConnectionState } from '../main/ets/models/ShellModels';
+import {
   AeadAlgorithm,
   AuthProofPayload,
   AuthRole,
@@ -290,6 +300,21 @@ class TestAppLanguageGateway implements AppLanguageGateway {
   }
 }
 
+class TestUiStringResolver implements UiStringResolver {
+  private readonly locale: string;
+
+  constructor(locale: string) {
+    this.locale = locale;
+  }
+
+  getStringByNameSync(resourceName: string, ...args: Array<string | number>): string {
+    if (resourceName === 'missing_code') {
+      throw new Error('missing resource');
+    }
+    return `${this.locale}:${resourceName}:${args.join(',')}`;
+  }
+}
+
 export default function localUnitTest() {
   describe('EggClipH1Boundaries', () => {
     it('countsOnlyUnacknowledgedLocalSequencesAsPending', 0, () => {
@@ -307,18 +332,42 @@ export default function localUnitTest() {
     });
 
     it('keepsFirstUseAndTrustedRetryUiStatesActionable', 0, () => {
-      const firstUse = connectionExperiencePolicy(0, '等待桌面端', true, false);
+      const firstUse = connectionExperiencePolicy(0, ConnectionState.OFFLINE, true, false);
       expect(firstUse.showFirstUse).assertTrue();
       expect(firstUse.showRetry).assertFalse();
 
-      const offline = connectionExperiencePolicy(1, '可信连接已断开', false, false);
+      const offline = connectionExperiencePolicy(1, ConnectionState.OFFLINE, false, false);
       expect(offline.showFirstUse).assertFalse();
       expect(offline.showRetry).assertTrue();
       expect(offline.retryEnabled).assertFalse();
 
-      const foreground = connectionExperiencePolicy(1, '可信连接失败', true, false);
+      const foreground = connectionExperiencePolicy(1, ConnectionState.AUTH_FAILED, true, false);
       expect(foreground.retryEnabled).assertTrue();
-      expect(connectionExperiencePolicy(1, '可信连接失败', true, true).retryEnabled).assertFalse();
+      expect(connectionExperiencePolicy(1, ConnectionState.AUTH_FAILED, true, true).retryEnabled).assertFalse();
+    });
+
+    it('formatsExistingUiStateWithTheCurrentLanguageResolver', 0, () => {
+      const message = uiMessage(UiMessageCode.OUTBOUND_PENDING);
+      const zh = formatUiMessage(new TestUiStringResolver('zh-CN'), message);
+      const en = formatUiMessage(new TestUiStringResolver('en-US'), message);
+      expect(zh).assertEqual('zh-CN:ui_outbound_pending:');
+      expect(en).assertEqual('en-US:ui_outbound_pending:');
+    });
+
+    it('fallsBackForUnknownUiMessageCodes', 0, () => {
+      const unknown: UiMessageDescriptor = { code: 'missing_code', parameters: [] };
+      expect(formatUiMessage(new TestUiStringResolver('en-US'), unknown))
+        .assertEqual('en-US:ui_message_unknown:');
+    });
+
+    it('rejectsSensitiveUiMessageParameterNames', 0, () => {
+      let rejected = false;
+      try {
+        uiMessage(UiMessageCode.OUTBOUND_PENDING, [{ name: 'clipboardText', value: 'secret' }]);
+      } catch (_) {
+        rejected = true;
+      }
+      expect(rejected).assertTrue();
     });
 
     it('normalizesTrustedDeviceNamesForSafeDisplay', 0, () => {
@@ -1652,7 +1701,7 @@ export default function localUnitTest() {
 
       expect(parsed.state).assertEqual(PairingStoreState.READY);
       expect(parsed.summary?.confirmationCode).assertEqual('130762');
-      expect(parsed.statusText.indexOf('下一步') >= 0).assertEqual(true);
+      expect(parsed.statusMessage.code).assertEqual(UiMessageCode.PAIRING_INVITATION_VALID);
 
       const cleared = store.clear();
       expect(cleared.state).assertEqual(PairingStoreState.IDLE);
@@ -1674,7 +1723,7 @@ export default function localUnitTest() {
       expect(pending.state).assertEqual(PairingStoreState.PENDING);
       expect(pending.invitationText).assertEqual('');
       expect(pending.summary?.confirmationCode).assertEqual('130762');
-      expect(pending.statusText.indexOf('邀请 secret 已从可见输入中清理') >= 0).assertEqual(true);
+      expect(pending.statusMessage.code).assertEqual(UiMessageCode.PAIRING_CODE_MATCHED);
       expect(pending.error === null).assertEqual(true);
       expect(store.hasPendingHandshakeMaterial()).assertEqual(true);
 
@@ -1693,7 +1742,7 @@ export default function localUnitTest() {
       expect(completed.state).assertEqual(PairingStoreState.COMPLETED);
       expect(completed.invitationText).assertEqual('');
       expect(completed.summary?.confirmationCode).assertEqual('130762');
-      expect(completed.statusText.indexOf('配对完成') >= 0).assertEqual(true);
+      expect(completed.statusMessage.code).assertEqual(UiMessageCode.PAIRING_COMPLETED);
       expect(store.hasPendingHandshakeMaterial()).assertEqual(false);
     });
 
@@ -1879,8 +1928,8 @@ export default function localUnitTest() {
       transport.emitClose('0: the link is down');
 
       expect(connection.snapshot().state).assertEqual(PairingConnectionState.FAILED);
-      expect(connection.snapshot().title).assertEqual('桌面端关闭配对握手');
-      expect(connection.snapshot().description.indexOf('桌面端拒绝了 CLIENT_HELLO') >= 0).assertEqual(true);
+      expect(connection.snapshot().title.code).assertEqual(UiMessageCode.CONNECTION_FAILED_TITLE);
+      expect(connection.snapshot().description.code).assertEqual(UiMessageCode.CONNECTION_FAILED_DESCRIPTION);
     });
 
     it('continuesPairingConnectionAfterServerHelloBySendingAuthProof', 0, async () => {
@@ -1922,10 +1971,11 @@ export default function localUnitTest() {
       const serverProof = handshakeSession.acceptTextFrame(serverProofFrame);
       await connection.handleHandshakeTextFrame(serverProofFrame, serverProof);
       expect(connection.snapshot().state).assertEqual(PairingConnectionState.WAITING_AUTH_OK);
-      expect(connection.snapshot().title).assertEqual('桌面端身份已确认');
+      expect(connection.snapshot().title.code).assertEqual(UiMessageCode.CONNECTION_IDENTITY_VERIFIED_TITLE);
       expect(connection.snapshot().authenticated).assertEqual(false);
       expect(connection.snapshot().syncReady).assertEqual(false);
-      expect(connection.snapshot().description.indexOf('等待桌面端完成认证') >= 0).assertEqual(true);
+      expect(connection.snapshot().description.code)
+        .assertEqual(UiMessageCode.CONNECTION_IDENTITY_VERIFIED_DESCRIPTION);
     });
 
     it('buildsClientHelloFrameFromPairingDraftForHandshakeTransport', 0, () => {
@@ -3324,17 +3374,16 @@ export default function localUnitTest() {
       expect(rejected === null).assertEqual(true);
     });
 
-    it('describesExpiredConsumedAndIdentitySpaceMismatchAuthErrors', 0, () => {
-      expect(describePairingAuthError(JSON.parse('{"code":"invitationExpired"}') as JsonObject))
-        .assertEqual('邀请已过期，请在桌面端重新生成。');
-      expect(describePairingAuthError(JSON.parse('{"code":"invitationConsumed"}') as JsonObject).indexOf('只能成功消费一次') >= 0)
-        .assertEqual(true);
-      expect(describePairingAuthError(JSON.parse('{"code":"identityOrSpaceMismatch"}') as JsonObject).indexOf('身份或同步空间') >= 0)
-        .assertEqual(true);
+    it('keepsPairingAuthErrorsAsStableCodes', 0, () => {
+      expect(pairingAuthErrorCode(JSON.parse('{"code":"invitationExpired"}') as JsonObject))
+        .assertEqual('invitationExpired');
+      expect(pairingAuthErrorCode(JSON.parse('{"code":"invitationConsumed"}') as JsonObject))
+        .assertEqual('invitationConsumed');
+      expect(pairingAuthErrorCode(JSON.parse('{"code":"identityOrSpaceMismatch"}') as JsonObject))
+        .assertEqual('identityOrSpaceMismatch');
       const sharedError = new ProtocolParser().parseEnvelope(AUTH_ERROR_INVITATION_CONSUMED_VECTOR);
       expect(sharedError.ok).assertEqual(true);
-      expect(describePairingAuthError(sharedError.envelope?.payload).indexOf('只能成功消费一次') >= 0)
-        .assertEqual(true);
+      expect(pairingAuthErrorCode(sharedError.envelope?.payload)).assertEqual('invitationConsumed');
     });
   });
 }

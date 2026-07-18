@@ -6,7 +6,9 @@ import {
   validateAppSettings,
 } from "$lib/api/settings";
 import type { AppSettings, SettingsSnapshot } from "$lib/types/settings";
-import { setLanguageMode } from "$lib/i18n";
+import { formatUiMessage, setLanguageMode, uiMessage } from "$lib/i18n";
+import { get } from "svelte/store";
+import { effectiveLocale } from "$lib/i18n";
 
 const snapshot = writable<SettingsSnapshot>({
   state: "idle",
@@ -22,7 +24,7 @@ async function saveSettingsSnapshot(settings: AppSettings) {
       state: "error",
       errorMessage: validationError,
     }));
-    throw new Error(validationError);
+    throw new Error(formatUiMessage(get(effectiveLocale), validationError));
   }
 
   snapshot.update((current) => ({
@@ -43,7 +45,7 @@ async function saveSettingsSnapshot(settings: AppSettings) {
     snapshot.update((current) => ({
       ...current,
       state: "error",
-      errorMessage: error instanceof Error ? error.message : "保存设置失败",
+      errorMessage: uiMessage("settings.saveFailed"),
     }));
     throw error;
   }
@@ -69,7 +71,7 @@ export const settingsSnapshot = {
       snapshot.update((current) => ({
         ...current,
         state: "error",
-        errorMessage: error instanceof Error ? error.message : "读取设置失败",
+        errorMessage: uiMessage("settings.readFailed"),
       }));
     }
   },

@@ -13,6 +13,12 @@ import { ClipboardItemRecord } from '../data/repositories/RepositoryCommands';
 import { LocalClipboardPersistenceService } from '../services/sync/LocalClipboardPersistenceService';
 import { OutboundItemBatchService } from '../services/sync/OutboundItemBatchService';
 import { ClipboardBridgeService } from '../services/clipboard/ClipboardBridgeService';
+import {
+  UiMessageCode,
+  UiMessageDescriptor,
+  cloneUiMessage,
+  uiMessage
+} from '../services/localization/UiMessageCodes';
 
 const HISTORY_PREVIEW_LIMIT: number = 5;
 const LOCAL_HISTORY_SPACE_ID: string = '018ff6ef-c394-7d08-8b99-4b7d10f2767a';
@@ -30,7 +36,7 @@ export interface HistoryStoreSnapshot {
   used: number;
   limit: number;
   items: HistoryPreviewItem[];
-  errorMessage: string;
+  errorMessage: UiMessageDescriptor | null;
 }
 
 export interface HistoryPreviewItem {
@@ -46,7 +52,7 @@ export interface HistoryPreviewItem {
 
 export interface LocalBroadcastPolicySnapshot {
   allowed: boolean;
-  message: string;
+  message: UiMessageDescriptor;
 }
 
 export class HistoryStore {
@@ -59,7 +65,7 @@ export class HistoryStore {
   private currentUsed: number = 0;
   private currentLimit: number = defaultAppSettings().historyLimit;
   private currentItems: HistoryPreviewItem[] = [];
-  private currentErrorMessage: string = '';
+  private currentErrorMessage: UiMessageDescriptor | null = null;
 
   constructor(context: common.Context) {
     this.clipboardRepository = new ClipboardRdbRepository(context);
@@ -74,13 +80,13 @@ export class HistoryStore {
       used: this.currentUsed,
       limit: this.currentLimit,
       items: this.currentItems,
-      errorMessage: this.currentErrorMessage
+      errorMessage: this.currentErrorMessage === null ? null : cloneUiMessage(this.currentErrorMessage)
     };
   }
 
   async loadSummary(): Promise<HistoryStoreSnapshot> {
     this.currentState = HistoryStoreState.LOADING;
-    this.currentErrorMessage = '';
+    this.currentErrorMessage = null;
     try {
       const settings = await this.settingsRepository.loadAppSettings();
       this.currentLimit = (settings ?? defaultAppSettings()).historyLimit;
@@ -96,19 +102,19 @@ export class HistoryStore {
     } catch (_) {
       this.currentState = HistoryStoreState.ERROR;
       this.currentItems = [];
-      this.currentErrorMessage = '读取历史摘要失败';
+      this.currentErrorMessage = uiMessage(UiMessageCode.HISTORY_LOAD_FAILED);
     }
     return this.snapshot();
   }
 
   async deleteItem(itemId: string): Promise<HistoryStoreSnapshot> {
     this.currentState = HistoryStoreState.LOADING;
-    this.currentErrorMessage = '';
+    this.currentErrorMessage = null;
     try {
       await this.clipboardRepository.markDeleted(itemId, Date.now());
     } catch (_) {
       this.currentState = HistoryStoreState.ERROR;
-      this.currentErrorMessage = '删除历史记录失败';
+      this.currentErrorMessage = uiMessage(UiMessageCode.HISTORY_DELETE_FAILED);
       return this.snapshot();
     }
     return this.loadSummary();
@@ -116,12 +122,12 @@ export class HistoryStore {
 
   async clearAll(): Promise<HistoryStoreSnapshot> {
     this.currentState = HistoryStoreState.LOADING;
-    this.currentErrorMessage = '';
+    this.currentErrorMessage = null;
     try {
       await this.clipboardRepository.clearAllHistory(Date.now());
     } catch (_) {
       this.currentState = HistoryStoreState.ERROR;
-      this.currentErrorMessage = '清空历史失败';
+      this.currentErrorMessage = uiMessage(UiMessageCode.HISTORY_CLEAR_FAILED);
       return this.snapshot();
     }
     return this.loadSummary();
@@ -129,7 +135,7 @@ export class HistoryStore {
 
   async captureLocalText(text: string): Promise<HistoryStoreSnapshot> {
     this.currentState = HistoryStoreState.LOADING;
-    this.currentErrorMessage = '';
+    this.currentErrorMessage = null;
     try {
       const settings = await this.settingsRepository.loadAppSettings() ?? defaultAppSettings();
       if (!settings.historyEnabled || settings.historyLimit === 0) {
@@ -145,7 +151,7 @@ export class HistoryStore {
       });
     } catch (_) {
       this.currentState = HistoryStoreState.ERROR;
-      this.currentErrorMessage = '保存本机历史失败';
+      this.currentErrorMessage = uiMessage(UiMessageCode.HISTORY_SAVE_FAILED);
       return this.snapshot();
     }
     return this.loadSummary();
@@ -157,8 +163,8 @@ export class HistoryStore {
     return {
       allowed: policy.broadcastAfterCommit,
       message: policy.broadcastAfterCommit ?
-        '同步策略允许发送到桌面端' :
-        '已读取纯文本并更新本机历史；自动同步已关闭，未发送到桌面端'
+        uiMessage(UiMessageCode.HISTORY_BROADCAST_ALLOWED) :
+        uiMessage(UiMessageCode.HISTORY_BROADCAST_PAUSED)
     };
   }
 
@@ -176,7 +182,7 @@ export function createInitialHistorySnapshot(): HistoryStoreSnapshot {
     used: 0,
     limit: defaultAppSettings().historyLimit,
     items: [],
-    errorMessage: ''
+    errorMessage: null
   };
 }
 

@@ -104,24 +104,6 @@ export class PairingInvitationService {
     };
   }
 
-  describeError(result: PairingInvitationParseResult): string {
-    switch (result.error) {
-      case PairingInvitationError.EMPTY:
-        return '请输入或粘贴桌面端生成的配对邀请';
-      case PairingInvitationError.TOO_LARGE:
-        return '配对邀请过长，已拒绝处理';
-      case PairingInvitationError.INVALID_SCHEME:
-        return '不是 EggClip 配对邀请，请使用 eggclip://pair 开头的字符串';
-      case PairingInvitationError.INVALID_PAYLOAD:
-        return '配对邀请内容无法解析';
-      case PairingInvitationError.INVALID_FIELD:
-        return `配对邀请字段无效：${result.field ?? '未知字段'}`;
-      case PairingInvitationError.EXPIRED:
-        return '配对邀请已过期，请在桌面端重新生成';
-      default:
-        return '配对邀请无效';
-    }
-  }
 }
 
 function parsePayloadJson(payloadText: string): PairingInvitationPayload | null {

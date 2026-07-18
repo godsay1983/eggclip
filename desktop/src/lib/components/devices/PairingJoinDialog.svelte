@@ -12,6 +12,7 @@
     type PairingJoinIssue,
   } from "$lib/pairing-join";
   import type { PairingJoinAttemptSummary } from "$lib/types/pairing";
+  import { effectiveLocale, formatUiMessage } from "$lib/i18n";
 
   export let onClose: () => void = () => {};
   export let onConnected: () => Promise<void> | void = () => {};
@@ -108,7 +109,7 @@
             lastNetworkIssue = candidateIssue;
           }
         }
-        if (lastNetworkIssue) throw new Error(lastNetworkIssue.message);
+        if (lastNetworkIssue) issue = lastNetworkIssue;
       }
       clearSensitiveState();
       state = "success";
@@ -172,8 +173,8 @@
       <p class="pairing-privacy-note">邀请只在本次配对期间使用，校验后不会继续显示完整内容。</p>
       {#if issue}
         <div class="pairing-issue" role="alert">
-          <strong>{issue.title}</strong>
-          <p>{issue.message}</p>
+          <strong>{formatUiMessage($effectiveLocale, issue.title)}</strong>
+          <p>{formatUiMessage($effectiveLocale, issue.message)}</p>
         </div>
       {/if}
       <button
@@ -250,8 +251,8 @@
       {/if}
       {#if issue}
         <div class="pairing-issue" role="alert">
-          <strong>{issue.title}</strong>
-          <p>{issue.message}</p>
+          <strong>{formatUiMessage($effectiveLocale, issue.title)}</strong>
+          <p>{formatUiMessage($effectiveLocale, issue.message)}</p>
         </div>
       {/if}
       <div class="pairing-dialog-actions">

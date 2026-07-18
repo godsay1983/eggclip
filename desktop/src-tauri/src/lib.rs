@@ -1,6 +1,7 @@
 mod panel_position;
 mod tray;
 
+pub mod app_error;
 pub mod clipboard;
 pub mod crypto;
 pub mod discovery;

@@ -15,11 +15,19 @@ import {
   RecentPocEndpointRecord,
   SettingsRdbRepository
 } from '../data/repositories/RdbRepositories';
-import { MdnsDiscoveryService } from '../services/discovery/MdnsDiscoveryService';
+import { MdnsDiscoveryEvent, MdnsDiscoveryService } from '../services/discovery/MdnsDiscoveryService';
 import {
   PocClipboardTextDecodeResult,
   WebSocketTransportService
 } from '../services/transport/WebSocketTransportService';
+import {
+  UiMessageCode,
+  UiMessageDescriptor,
+  UiMessageParameterName,
+  cloneUiMessage,
+  uiMessage,
+  uiParameter
+} from '../services/localization/UiMessageCodes';
 
 export interface PocConnectionSnapshot {
   manualHost: string;
@@ -29,14 +37,14 @@ export interface PocConnectionSnapshot {
   lastSuccessfulEndpointLabel: string;
   lastSuccessfulAt: string;
   discoveryState: PocLifecycleState;
-  discoveryStatus: string;
+  discoveryStatus: UiMessageDescriptor;
   discoveryCandidates: MdnsServiceCandidate[];
   transportState: PocLifecycleState;
-  transportStatus: string;
-  transportDiagnostics: string;
+  transportStatus: UiMessageDescriptor;
+  transportDiagnostics: UiMessageDescriptor;
   connectionState: ConnectionState;
-  connectionTitle: string;
-  connectionDescription: string;
+  connectionTitle: UiMessageDescriptor;
+  connectionDescription: UiMessageDescriptor;
   latestReceivedText: string;
   latestReceivedPreview: string;
   latestReceivedSource: string;
@@ -60,14 +68,18 @@ class PocConnectionStore {
   private lastSuccessfulEndpointLabel: string = '';
   private lastSuccessfulAt: string = '';
   private discoveryState: PocLifecycleState = PocLifecycleState.IDLE;
-  private discoveryStatus: string = '等待开始局域网发现';
+  private discoveryStatus: UiMessageDescriptor = uiMessage(UiMessageCode.DISCOVERY_WAITING);
   private discoveryCandidates: MdnsServiceCandidate[] = [];
   private transportState: PocLifecycleState = PocLifecycleState.IDLE;
-  private transportStatus: string = '输入桌面端 IP 和端口后手动连接';
-  private transportDiagnostics: string = '帧诊断：接收 0 · 接受 0 · 拒绝 0';
+  private transportStatus: UiMessageDescriptor = uiMessage(UiMessageCode.POC_TRANSPORT_IDLE);
+  private transportDiagnostics: UiMessageDescriptor = uiMessage(UiMessageCode.POC_DIAGNOSTICS, [
+    uiParameter(UiMessageParameterName.COUNT, 0),
+    uiParameter(UiMessageParameterName.COUNT, 0),
+    uiParameter(UiMessageParameterName.COUNT, 0)
+  ]);
   private connectionState: ConnectionState = ConnectionState.OFFLINE;
-  private connectionTitle: string = '等待桌面端';
-  private connectionDescription: string = '正在等待 mDNS 候选，也可以使用手动 IP';
+  private connectionTitle: UiMessageDescriptor = uiMessage(UiMessageCode.CONNECTION_WAITING_TITLE);
+  private connectionDescription: UiMessageDescriptor = uiMessage(UiMessageCode.CONNECTION_WAITING_DESCRIPTION);
   private latestReceivedText: string = '';
   private latestReceivedPreview: string = '';
   private latestReceivedSource: string = '暂无内容';
@@ -107,14 +119,14 @@ class PocConnectionStore {
       lastSuccessfulEndpointLabel: this.lastSuccessfulEndpointLabel,
       lastSuccessfulAt: this.lastSuccessfulAt,
       discoveryState: this.discoveryState,
-      discoveryStatus: this.discoveryStatus,
+      discoveryStatus: cloneUiMessage(this.discoveryStatus),
       discoveryCandidates: this.discoveryCandidates.slice(),
       transportState: this.transportState,
-      transportStatus: this.transportStatus,
-      transportDiagnostics: this.transportDiagnostics,
+      transportStatus: cloneUiMessage(this.transportStatus),
+      transportDiagnostics: cloneUiMessage(this.transportDiagnostics),
       connectionState: this.connectionState,
-      connectionTitle: this.connectionTitle,
-      connectionDescription: this.connectionDescription,
+      connectionTitle: cloneUiMessage(this.connectionTitle),
+      connectionDescription: cloneUiMessage(this.connectionDescription),
       latestReceivedText: this.latestReceivedText,
       latestReceivedPreview: this.latestReceivedPreview,
       latestReceivedSource: this.latestReceivedSource,
@@ -126,31 +138,41 @@ class PocConnectionStore {
   startDiscovery(): void {
     if (this.discovery === null) {
       this.discoveryState = PocLifecycleState.FAILED;
-      this.discoveryStatus = '无法获取页面上下文，mDNS 搜索不可用';
+      this.discoveryStatus = uiMessage(UiMessageCode.DISCOVERY_UNAVAILABLE);
       this.emit();
       return;
     }
     this.discovery.startSearch({
-      onStateChanged: (state: PocLifecycleState, reason: string) => {
+      onStateChanged: (state: PocLifecycleState, _event: MdnsDiscoveryEvent) => {
         this.discoveryState = state;
-        this.discoveryStatus = reason;
+        this.discoveryStatus = state === PocLifecycleState.FAILED
+          ? uiMessage(UiMessageCode.DISCOVERY_UNAVAILABLE)
+          : uiMessage(UiMessageCode.DISCOVERY_SEARCHING);
         if (this.transportState !== PocLifecycleState.RUNNING) {
           this.connectionState = state === PocLifecycleState.STARTING || state === PocLifecycleState.RUNNING
             ? ConnectionState.CONNECTING
             : ConnectionState.OFFLINE;
-          this.connectionTitle = state === PocLifecycleState.FAILED ? '局域网发现不可用' : '正在发现桌面端';
-          this.connectionDescription = reason;
+          this.connectionTitle = state === PocLifecycleState.FAILED
+            ? uiMessage(UiMessageCode.CONNECTION_FAILED_TITLE)
+            : uiMessage(UiMessageCode.CONNECTION_CONNECTING_TITLE);
+          this.connectionDescription = state === PocLifecycleState.FAILED
+            ? uiMessage(UiMessageCode.DISCOVERY_UNAVAILABLE)
+            : uiMessage(UiMessageCode.DISCOVERY_SEARCHING);
         }
         this.emit();
       },
       onCandidatesChanged: (candidates: MdnsServiceCandidate[]) => {
         this.discoveryCandidates = candidates;
         if (candidates.length > 0) {
-          this.discoveryStatus = `已发现 ${candidates.length} 个候选地址；mDNS 仅用于发现，不代表设备可信`;
+          this.discoveryStatus = uiMessage(UiMessageCode.DISCOVERY_FOUND, [
+            uiParameter(UiMessageParameterName.COUNT, candidates.length)
+          ]);
           if (this.transportState !== PocLifecycleState.RUNNING) {
             this.connectionState = ConnectionState.CONNECTING;
-            this.connectionTitle = `已发现 ${candidates.length} 个桌面候选`;
-            this.connectionDescription = '请选择候选连接；候选地址不代表设备已经认证';
+            this.connectionTitle = uiMessage(UiMessageCode.CONNECTION_CONNECTING_TITLE);
+            this.connectionDescription = uiMessage(UiMessageCode.DISCOVERY_FOUND, [
+              uiParameter(UiMessageParameterName.COUNT, candidates.length)
+            ]);
           }
         }
         this.emit();
@@ -161,7 +183,7 @@ class PocConnectionStore {
   stopDiscovery(): void {
     this.discovery?.stopSearch();
     this.discoveryState = PocLifecycleState.IDLE;
-    this.discoveryStatus = '已停止局域网发现';
+    this.discoveryStatus = uiMessage(UiMessageCode.DISCOVERY_STOPPED);
     this.emit();
   }
 
@@ -177,38 +199,46 @@ class PocConnectionStore {
       host,
       port
     };
-    this.transportStatus = '正在连接桌面端';
+    this.transportStatus = uiMessage(UiMessageCode.POC_CONNECTING, [
+      uiParameter(UiMessageParameterName.ENDPOINT, `${endpoint.host}:${endpoint.port}`)
+    ]);
     this.transportState = PocLifecycleState.STARTING;
     this.connectionState = ConnectionState.CONNECTING;
-    this.connectionTitle = '正在连接桌面端';
-    this.connectionDescription = `${endpoint.host}:${endpoint.port}`;
+    this.connectionTitle = uiMessage(UiMessageCode.CONNECTION_CONNECTING_TITLE);
+    this.connectionDescription = uiMessage(UiMessageCode.CONNECTION_CONNECTING_DESCRIPTION, [
+      uiParameter(UiMessageParameterName.ENDPOINT, `${endpoint.host}:${endpoint.port}`)
+    ]);
     this.emit();
     this.transport.connect(endpoint, {
       onOpen: () => {
         this.reconnectOnForeground = true;
         this.rememberSuccessfulEndpoint(endpoint.host, endpoint.port);
         this.transportState = PocLifecycleState.RUNNING;
-        this.transportStatus = '已连接桌面端，PasteButton 读取后会发送文本';
+        this.transportStatus = uiMessage(UiMessageCode.POC_CONNECTED, [
+          uiParameter(UiMessageParameterName.ENDPOINT, `${endpoint.host}:${endpoint.port}`)
+        ]);
         this.connectionState = ConnectionState.ONLINE;
-        this.connectionTitle = '已连接桌面端';
-        this.connectionDescription = `${endpoint.host}:${endpoint.port} · 当前连接尚未认证`;
+        this.connectionTitle = uiMessage(UiMessageCode.CONNECTION_AUTHENTICATED_TITLE);
+        this.connectionDescription = uiMessage(UiMessageCode.POC_CONNECTED, [
+          uiParameter(UiMessageParameterName.ENDPOINT, `${endpoint.host}:${endpoint.port}`)
+        ]);
         this.refreshTransportDiagnostics();
         this.emit();
       },
       onClose: (reason: string) => {
         this.transportState = PocLifecycleState.IDLE;
-        this.transportStatus = `连接已关闭：${reason}`;
+        this.transportStatus = uiMessage(UiMessageCode.POC_CLOSED);
         this.connectionState = ConnectionState.OFFLINE;
-        this.connectionTitle = '桌面端已断开';
-        this.connectionDescription = reason;
+        this.connectionTitle = uiMessage(UiMessageCode.CONNECTION_STOPPED_TITLE);
+        this.connectionDescription = uiMessage(UiMessageCode.POC_CLOSED);
         this.emit();
       },
       onError: (reason: string) => {
         this.transportState = PocLifecycleState.FAILED;
-        this.transportStatus = `连接失败：${reason}`;
+        this.transportStatus = uiMessage(UiMessageCode.POC_FAILED);
         this.connectionState = ConnectionState.OFFLINE;
-        this.connectionTitle = '连接桌面端失败';
-        this.connectionDescription = `${reason}；可尝试其他候选或手动 IP`;
+        this.connectionTitle = uiMessage(UiMessageCode.CONNECTION_FAILED_TITLE);
+        this.connectionDescription = uiMessage(UiMessageCode.POC_FAILED);
         this.refreshTransportDiagnostics();
         this.emit();
       },
@@ -218,7 +248,7 @@ class PocConnectionStore {
         if (decoded.ok) {
           this.handleInboundClipboardText(decoded);
         } else {
-          this.transportStatus = `${decoded.reason}，已忽略`;
+          this.transportStatus = uiMessage(UiMessageCode.POC_FAILED);
           this.emit();
         }
       }
@@ -226,19 +256,19 @@ class PocConnectionStore {
       .then((result) => {
         if (!result.ok) {
           this.transportState = PocLifecycleState.FAILED;
-          this.transportStatus = result.reason === undefined ? '连接参数无效' : `连接参数无效：${result.reason}`;
+          this.transportStatus = uiMessage(UiMessageCode.POC_INVALID);
           this.connectionState = ConnectionState.OFFLINE;
-          this.connectionTitle = '连接参数无效';
-          this.connectionDescription = result.reason ?? '请检查桌面端 IP 和端口';
+          this.connectionTitle = uiMessage(UiMessageCode.CONNECTION_ENDPOINT_INVALID_TITLE);
+          this.connectionDescription = uiMessage(UiMessageCode.CONNECTION_ENDPOINT_INVALID_DESCRIPTION);
           this.emit();
         }
       })
       .catch(() => {
         this.transportState = PocLifecycleState.FAILED;
-        this.transportStatus = '连接桌面端失败';
+        this.transportStatus = uiMessage(UiMessageCode.POC_FAILED);
         this.connectionState = ConnectionState.OFFLINE;
-        this.connectionTitle = '连接桌面端失败';
-        this.connectionDescription = '请检查候选地址、Windows 防火墙和当前网络';
+        this.connectionTitle = uiMessage(UiMessageCode.CONNECTION_FAILED_TITLE);
+        this.connectionDescription = uiMessage(UiMessageCode.POC_FAILED);
         this.emit();
       });
   }
@@ -247,16 +277,16 @@ class PocConnectionStore {
     this.reconnectOnForeground = false;
     this.transport.close();
     this.transportState = PocLifecycleState.IDLE;
-    this.transportStatus = '已主动断开桌面端';
+    this.transportStatus = uiMessage(UiMessageCode.POC_DISCONNECTED);
     this.connectionState = ConnectionState.OFFLINE;
-    this.connectionTitle = '已主动断开桌面端';
-    this.connectionDescription = 'mDNS 发现仍可继续运行';
+    this.connectionTitle = uiMessage(UiMessageCode.CONNECTION_STOPPED_TITLE);
+    this.connectionDescription = uiMessage(UiMessageCode.POC_DISCONNECTED);
     this.emit();
   }
 
   connectLastSuccessfulEndpoint(): void {
     if (this.lastSuccessfulHost.length === 0 || this.lastSuccessfulPort.length === 0) {
-      this.transportStatus = '暂无最近成功地址';
+      this.transportStatus = uiMessage(UiMessageCode.POC_RECENT_MISSING);
       this.emit();
       return;
     }
@@ -276,12 +306,10 @@ class PocConnectionStore {
     this.discovery?.stopSearch();
     this.transport.close();
     this.transportState = PocLifecycleState.IDLE;
-    this.transportStatus = this.reconnectOnForeground
-      ? '应用进入后台，已断开；回到前台后将重新连接'
-      : '应用进入后台，已停止发现和连接';
+    this.transportStatus = uiMessage(UiMessageCode.POC_BACKGROUND);
     this.connectionState = ConnectionState.OFFLINE;
-    this.connectionTitle = '应用已进入后台';
-    this.connectionDescription = '前台同步已停止，回到前台后会重新发现';
+    this.connectionTitle = uiMessage(UiMessageCode.CONNECTION_STOPPED_TITLE);
+    this.connectionDescription = uiMessage(UiMessageCode.POC_BACKGROUND);
     this.emit();
   }
 
@@ -344,7 +372,9 @@ class PocConnectionStore {
 
   private saveRecentEndpoint(record: RecentPocEndpointRecord): void {
     this.settingsRepository?.saveRecentPocEndpoint(record).catch(() => {
-      this.transportStatus = '最近成功地址未能保存；当前连接仍可继续使用';
+      this.transportStatus = uiMessage(UiMessageCode.POC_CONNECTED, [
+        uiParameter(UiMessageParameterName.ENDPOINT, this.lastSuccessfulEndpointLabel)
+      ]);
       this.emit();
     });
   }
@@ -354,10 +384,10 @@ class PocConnectionStore {
       .then((settings: AppSettings) => {
         const policy = inboundClipboardPolicy(InboundClipboardEventKind.ITEM_LIVE, settings);
         if (!policy.updateHistory) {
-          this.transportStatus = '收到桌面端文本，但当前策略已暂停自动接收，已忽略';
+          this.transportStatus = uiMessage(UiMessageCode.CONNECTION_RECEIVE_PAUSED_DESCRIPTION);
           this.connectionState = ConnectionState.PAUSED;
-          this.connectionTitle = '自动接收已暂停';
-          this.connectionDescription = '设置开启后，桌面端文本才会进入预览；不会写入本机剪贴板';
+          this.connectionTitle = uiMessage(UiMessageCode.CONNECTION_RECEIVE_PAUSED_TITLE);
+          this.connectionDescription = uiMessage(UiMessageCode.CONNECTION_RECEIVE_PAUSED_DESCRIPTION);
           this.emit();
           return;
         }
@@ -367,17 +397,17 @@ class PocConnectionStore {
         this.latestReceivedSource = '桌面端';
         this.latestReceivedAt = this.formatTime(Date.now());
         this.latestReceivedByteLength = decoded.byteLength;
-        this.transportStatus = `收到桌面端文本：${decoded.byteLength} 字节`;
+        this.transportStatus = uiMessage(UiMessageCode.CONNECTION_RECEIVED_DESCRIPTION);
         this.connectionState = ConnectionState.ONLINE;
-        this.connectionTitle = '已收到桌面端文本';
-        this.connectionDescription = '内容只进入预览，点击后才会复制到本机';
+        this.connectionTitle = uiMessage(UiMessageCode.CONNECTION_RECEIVED_TITLE);
+        this.connectionDescription = uiMessage(UiMessageCode.CONNECTION_RECEIVED_DESCRIPTION);
         this.emit();
       })
       .catch(() => {
-        this.transportStatus = '收到桌面端文本，但读取接收策略失败，已忽略';
+        this.transportStatus = uiMessage(UiMessageCode.CONNECTION_RECEIVE_PAUSED_DESCRIPTION);
         this.connectionState = ConnectionState.PAUSED;
-        this.connectionTitle = '接收策略不可用';
-        this.connectionDescription = '未确认本机设置前，不展示远端文本';
+        this.connectionTitle = uiMessage(UiMessageCode.CONNECTION_FAILED_TITLE);
+        this.connectionDescription = uiMessage(UiMessageCode.CONNECTION_FAILED_DESCRIPTION);
         this.emit();
       });
   }
@@ -407,10 +437,11 @@ class PocConnectionStore {
 
   private refreshTransportDiagnostics(): void {
     const diagnostics = this.transport.currentDiagnostics();
-    const rejection = diagnostics.lastRejection.length > 0
-      ? ` · 上次拒绝：${diagnostics.lastRejection}`
-      : '';
-    this.transportDiagnostics = `帧诊断：接收 ${diagnostics.receivedFrames} · 接受 ${diagnostics.acceptedItems} · 拒绝 ${diagnostics.rejectedFrames}${rejection}`;
+    this.transportDiagnostics = uiMessage(UiMessageCode.POC_DIAGNOSTICS, [
+      uiParameter(UiMessageParameterName.COUNT, diagnostics.receivedFrames),
+      uiParameter(UiMessageParameterName.COUNT, diagnostics.acceptedItems),
+      uiParameter(UiMessageParameterName.COUNT, diagnostics.rejectedFrames)
+    ]);
   }
 }
 

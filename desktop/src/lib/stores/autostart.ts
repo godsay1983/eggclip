@@ -1,4 +1,5 @@
 import { writable } from "svelte/store";
+import { uiMessage } from "$lib/i18n";
 import {
   systemAutostartGateway,
   type AutostartGateway,
@@ -29,7 +30,7 @@ export function createAutostartStore(
         snapshot.update((current) => ({
           ...current,
           state: "error",
-          errorMessage: "无法读取 Windows 开机启动状态。",
+          errorMessage: uiMessage("autostart.readFailed"),
         }));
       }
     },
@@ -56,7 +57,7 @@ export function createAutostartStore(
         snapshot.set({
           state: "error",
           enabled: previousEnabled,
-          errorMessage: "无法修改开机启动，请检查 Windows 系统权限。",
+          errorMessage: uiMessage("autostart.saveFailed"),
         });
       }
     },

@@ -1,10 +1,11 @@
 import { common } from '@kit.AbilityKit';
 import { scanBarcode, scanCore } from '@kit.ScanKit';
+import { UiMessageCode, UiMessageDescriptor, uiMessage } from '../localization/UiMessageCodes';
 
 export interface PairingScanResult {
   ok: boolean;
   invitationText: string;
-  message: string;
+  message: UiMessageDescriptor;
 }
 
 export class PairingScanService {
@@ -20,19 +21,19 @@ export class PairingScanService {
         return {
           ok: false,
           invitationText: '',
-          message: '扫码结果为空，请重新扫描桌面端二维码'
+          message: uiMessage(UiMessageCode.SCAN_EMPTY)
         };
       }
       return {
         ok: true,
         invitationText,
-        message: '已扫描二维码，正在校验邀请'
+        message: uiMessage(UiMessageCode.SCAN_SUCCESS)
       };
     } catch (_) {
       return {
         ok: false,
         invitationText: '',
-        message: '扫码未完成，请确认已授权相机并重新扫描'
+        message: uiMessage(UiMessageCode.SCAN_FAILED)
       };
     }
   }

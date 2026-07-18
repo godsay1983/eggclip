@@ -20,6 +20,12 @@ import {
   LocalDeviceIdentityError,
   LocalDeviceIdentityService
 } from '../services/crypto/LocalDeviceIdentityService';
+import {
+  UiMessageCode,
+  UiMessageDescriptor,
+  cloneUiMessage,
+  uiMessage
+} from '../services/localization/UiMessageCodes';
 
 export enum PairingStoreState {
   IDLE = 'idle',
@@ -32,7 +38,7 @@ export enum PairingStoreState {
 export interface PairingStoreSnapshot {
   state: PairingStoreState;
   invitationText: string;
-  statusText: string;
+  statusMessage: UiMessageDescriptor;
   summary: PairingInvitationSummary | null;
   error: PairingInvitationError | null;
 }
@@ -182,7 +188,7 @@ export class PairingStore {
     this.currentSnapshot = {
       state: PairingStoreState.IDLE,
       invitationText: value,
-      statusText: '已更新输入，点击“校验邀请”后解析',
+      statusMessage: uiMessage(UiMessageCode.PAIRING_INPUT_UPDATED),
       summary: null,
       error: null
     };
@@ -199,7 +205,7 @@ export class PairingStore {
     this.currentSnapshot = {
       state: PairingStoreState.IDLE,
       invitationText: value,
-      statusText: '已从系统 PasteButton 读取邀请，正在校验',
+      statusMessage: uiMessage(UiMessageCode.PAIRING_PASTE_IMPORTED),
       summary: null,
       error: null
     };
@@ -212,7 +218,7 @@ export class PairingStore {
       this.currentSnapshot = {
         state: PairingStoreState.ERROR,
         invitationText: this.currentSnapshot.invitationText,
-        statusText: '请先导入并校验有效邀请，再继续配对。',
+        statusMessage: uiMessage(UiMessageCode.PAIRING_VALID_REQUIRED),
         summary: null,
         error: PairingInvitationError.INVALID_PAYLOAD
       };
@@ -221,7 +227,7 @@ export class PairingStore {
     this.currentSnapshot = {
       state: PairingStoreState.PENDING,
       invitationText: '',
-      statusText: '已确认六位码一致。邀请 secret 已从可见输入中清理，等待接入身份交换、握手和 spaceKey 安全接收。',
+      statusMessage: uiMessage(UiMessageCode.PAIRING_CODE_MATCHED),
       summary: cloneSummary(this.currentSnapshot.summary),
       error: null
     };
@@ -234,7 +240,7 @@ export class PairingStore {
     this.currentSnapshot = {
       state: PairingStoreState.COMPLETED,
       invitationText: '',
-      statusText: '配对完成，已建立认证连接。一次性邀请已安全清理。',
+      statusMessage: uiMessage(UiMessageCode.PAIRING_COMPLETED),
       summary: completedSummary,
       error: null
     };
@@ -253,7 +259,7 @@ export class PairingStore {
       return {
         state: PairingStoreState.READY,
         invitationText: this.currentSnapshot.invitationText,
-        statusText: '邀请格式有效。下一步将接入身份交换、确认码核对和 spaceKey 安全接收。',
+        statusMessage: uiMessage(UiMessageCode.PAIRING_INVITATION_VALID),
         summary: result.summary,
         error: null
       };
@@ -262,7 +268,7 @@ export class PairingStore {
     return {
       state: PairingStoreState.ERROR,
       invitationText: this.currentSnapshot.invitationText,
-      statusText: this.service.describeError(result),
+      statusMessage: uiMessage(UiMessageCode.PAIRING_INVITATION_INVALID),
       summary: null,
       error: result.error ?? PairingInvitationError.INVALID_PAYLOAD
     };
@@ -273,7 +279,7 @@ export function createInitialPairingSnapshot(): PairingStoreSnapshot {
   return {
     state: PairingStoreState.IDLE,
     invitationText: '',
-    statusText: '从桌面端复制配对邀请后，粘贴到这里进行校验。',
+    statusMessage: uiMessage(UiMessageCode.PAIRING_INITIAL),
     summary: null,
     error: null
   };
@@ -310,7 +316,7 @@ function cloneSnapshot(snapshot: PairingStoreSnapshot): PairingStoreSnapshot {
   return {
     state: snapshot.state,
     invitationText: snapshot.invitationText,
-    statusText: snapshot.statusText,
+    statusMessage: cloneUiMessage(snapshot.statusMessage),
     summary: cloneSummary(snapshot.summary),
     error: snapshot.error
   };

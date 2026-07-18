@@ -1,3 +1,24 @@
+export type AppErrorCode =
+  | "pairingInvitationEmpty"
+  | "pairingInvitationTooLarge"
+  | "pairingInvitationInvalid"
+  | "pairingInvitationExpired"
+  | "pairingInvitationUnavailable"
+  | "pairingIdentityMismatch"
+  | "pairingCredentialFailed"
+  | "pairingStorageFailed"
+  | "pairingNetworkUnavailable"
+  | "pairingAuthenticationFailed"
+  | "pairingInvalidEndpoint"
+  | "pairingBusy"
+  | "pairingFailed";
+
+export interface AppErrorDto {
+  code: AppErrorCode;
+  retryable: boolean;
+  params: Record<string, string | number | boolean>;
+}
+
 export interface PairingJoinAddressSummary {
   candidateId: string;
   displayAddress: string;

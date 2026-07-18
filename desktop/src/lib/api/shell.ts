@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { uiMessage } from "$lib/i18n";
 import type {
   ClipboardPreview,
   HistoryItemSummary,
@@ -177,14 +178,14 @@ export function createInitialShellSnapshot(): ShellSnapshot {
   return {
     connection: {
       state: "offline",
-      title: "等待配对设备",
-      description: "桌面端将在局域网中自动发现可信设备",
+      title: uiMessage("connection.waitingTitle"),
+      description: uiMessage("connection.waitingDescription"),
     },
     current: null,
     outbound: {
       state: "idle",
-      title: "等待本机文本",
-      description: "读取或监听到本机剪贴板后，会先进入本机历史，再由用户触发发送。",
+      title: uiMessage("clipboard.waitingTitle"),
+      description: uiMessage("clipboard.waitingDescription"),
       updatedAt: "",
     },
     devices: [

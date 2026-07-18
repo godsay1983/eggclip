@@ -20,12 +20,15 @@ import { ClipboardBridgeService } from '../services/clipboard/ClipboardBridgeSer
 import { EggClipColors } from '../theme/Colors';
 import { EggClipSpacing } from '../theme/Spacing';
 import { EggClipTypography } from '../theme/Typography';
+import { UiMessageDescriptor } from '../services/localization/UiMessageCodes';
+import { UiMessageFormatter } from '../services/localization/UiMessageFormatter';
 
 @Component
 export struct PairingPage {
   private readonly pairingStore: PairingStore = new PairingStore();
   private readonly clipboardBridge: ClipboardBridgeService = new ClipboardBridgeService();
   private readonly pairingScanService: PairingScanService = new PairingScanService();
+  private messageFormatter: UiMessageFormatter | null = null;
   @State private snapshot: PairingStoreSnapshot = createInitialPairingSnapshot();
   @State private connectionSnapshot: PairingConnectionSnapshot = pairingConnectionStore.snapshot();
   @State private invitationInputText: string = '';
@@ -51,6 +54,10 @@ export struct PairingPage {
   };
 
   aboutToAppear(): void {
+    const hostContext = this.getUIContext().getHostContext();
+    if (hostContext !== undefined) {
+      this.messageFormatter = new UiMessageFormatter(hostContext as common.Context);
+    }
     pairingConnectionStore.subscribe(this.connectionListener);
   }
 
@@ -124,7 +131,7 @@ export struct PairingPage {
                 this.clipboardBridge.readPlainTextAfterPasteButton()
                   .then((readResult) => {
                     if (!readResult.ok) {
-                      this.pasteImportStatus = readResult.message;
+                      this.pasteImportStatus = this.formatMessage(readResult.message);
                       return;
                     }
                     this.importInvitationText(readResult.text, '已从剪贴板读取并校验邀请');
@@ -184,7 +191,7 @@ export struct PairingPage {
           })
       }
 
-      Text(this.snapshot.statusText)
+      Text(this.formatMessage(this.snapshot.statusMessage))
         .width('100%')
         .fontSize(EggClipTypography.captionSize)
         .fontColor(this.statusColor())
@@ -531,7 +538,7 @@ export struct PairingPage {
     if (this.snapshot.state !== PairingStoreState.PENDING) {
       return '首次配对请先核对六位确认码；已经配对过的设备可直接使用下方按钮恢复可信连接。';
     }
-    return this.connectionSnapshot.description;
+    return this.formatMessage(this.connectionSnapshot.description);
   }
 
   private connectionStatusColor(): ResourceColor {
@@ -645,7 +652,7 @@ export struct PairingPage {
     this.pasteImportStatus = this.snapshot.state === PairingStoreState.READY
       ? (this.snapshot.summary !== null && this.snapshot.summary.endpoints.length > 0 ?
         `${successStatus}；已识别桌面端地址 ${this.connectionSnapshot.endpointLabel}` : successStatus)
-      : this.snapshot.statusText;
+      : this.formatMessage(this.snapshot.statusMessage);
   }
 
   private confirmCodeAndPrepareConnection(): void {
@@ -674,7 +681,7 @@ export struct PairingPage {
     this.pairingScanService.scanPairingInvitation(hostContext as common.Context)
       .then((scanResult) => {
         if (!scanResult.ok) {
-          this.pasteImportStatus = scanResult.message;
+          this.pasteImportStatus = this.formatMessage(scanResult.message);
           return;
         }
         this.importInvitationText(scanResult.invitationText, '已从二维码读取并校验邀请');
@@ -682,5 +689,9 @@ export struct PairingPage {
       .catch(() => {
         this.pasteImportStatus = '扫码导入失败，请改用复制邀请字符串导入';
       });
+  }
+
+  private formatMessage(message: UiMessageDescriptor): string {
+    return this.messageFormatter === null ? message.code : this.messageFormatter.format(message);
   }
 }

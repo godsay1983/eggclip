@@ -6,6 +6,7 @@ import {
   SpaceKeyRecoveryResult,
   SpaceKeyRecoveryService
 } from '../services/crypto/SpaceKeyRecoveryService';
+import { UiMessageCode, UiMessageDescriptor, uiMessage } from '../services/localization/UiMessageCodes';
 
 export interface TrustedDeviceSummary {
   deviceId: string;
@@ -17,13 +18,13 @@ export interface TrustedDeviceSummary {
 export interface TrustedDeviceRenameResult {
   ok: boolean;
   displayName?: string;
-  reason?: string;
+  reason?: UiMessageDescriptor;
 }
 
 export interface TrustedDeviceRemovalResult {
   ok: boolean;
   recovery?: SpaceKeyRecoveryResult;
-  reason?: string;
+  reason?: UiMessageDescriptor;
 }
 
 export interface TrustedDeviceReconnectTarget {
@@ -83,12 +84,12 @@ export class TrustedDeviceStore {
   async rename(deviceId: string, displayName: string): Promise<TrustedDeviceRenameResult> {
     const normalized = normalizeTrustedDeviceName(displayName);
     if (normalized.length === 0) {
-      return { ok: false, reason: '设备名称不能为空' };
+      return { ok: false, reason: uiMessage(UiMessageCode.TRUSTED_NAME_EMPTY) };
     }
     const record = await this.devices.get(deviceId);
     if (record === null || record.device.trustState !== DeviceTrustState.TRUSTED ||
       record.revokedAt !== undefined) {
-      return { ok: false, reason: '可信设备记录不存在或已撤销' };
+      return { ok: false, reason: uiMessage(UiMessageCode.TRUSTED_DEVICE_MISSING) };
     }
     record.device.displayName = normalized;
     await this.devices.upsert(record);
@@ -102,13 +103,13 @@ export class TrustedDeviceStore {
     const record = await this.devices.get(deviceId);
     if (record === null || record.device.trustState !== DeviceTrustState.TRUSTED ||
       record.revokedAt !== undefined) {
-      return { ok: false, reason: '可信设备记录不存在或已撤销' };
+      return { ok: false, reason: uiMessage(UiMessageCode.TRUSTED_DEVICE_MISSING) };
     }
     await this.markRevoked(deviceId, revokedAt);
     const recoveryRepository = new TrustedDeviceSpaceRecoveryRepository(this.spaces);
     const recovery = await new SpaceKeyRecoveryService(recoveryRepository).reinitializePairingSecurityState();
     if (!recovery.ok) {
-      return { ok: false, recovery, reason: '设备已撤销，但本机旧空间密钥未能完整清理' };
+      return { ok: false, recovery, reason: uiMessage(UiMessageCode.TRUSTED_KEY_CLEANUP_FAILED) };
     }
     return { ok: true, recovery };
   }

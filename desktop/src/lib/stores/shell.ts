@@ -10,7 +10,6 @@ import {
   clearClipboardHistory,
   deleteLocalSyncSpace,
   deleteClipboardHistoryItem,
-  describePocTransport,
   disconnectAllPocPeers,
   getClipboardHistoryUsed,
   getPocTransportStatus,
@@ -42,6 +41,7 @@ import {
 import type { ClipboardPreview, DeviceSummary, OutboundSyncStatus } from "$lib/types/shell";
 import type { PocRecentEndpoint } from "$lib/types/shell";
 import { countOnlineDevices, mergeRuntimeDevices } from "$lib/stores/shell-state";
+import { uiMessage, type UiMessageDescriptor } from "$lib/i18n";
 
 const snapshot = writable(createInitialShellSnapshot());
 let monitorStarted = false;
@@ -83,8 +83,8 @@ async function captureHistoryText(text: string): Promise<boolean> {
 
 function setCurrentClipboard(
   current: ClipboardPreview,
-  title: string,
-  description: string,
+  title: UiMessageDescriptor,
+  description: UiMessageDescriptor,
   outbound?: OutboundSyncStatus,
 ) {
   snapshot.update((state) => ({
@@ -124,7 +124,7 @@ function rememberPocEndpoint(endpoint: PocRecentEndpoint) {
   }));
 }
 
-function updatePocDevices(title: string, description: string) {
+function updatePocDevices(title: UiMessageDescriptor, description: UiMessageDescriptor) {
   const peers = Array.from(pocPeers)
     .filter((peer) => !authenticatedPeers.has(peer))
     .sort();
@@ -152,8 +152,12 @@ async function refreshTrustedDeviceState(): Promise<void> {
       : device,
   );
   updatePocDevices(
-    trustedDevices.some((device) => device.state === "online") ? "可信设备已连接" : "等待设备连接",
-    trustedDevices.length > 0 ? `已保存 ${trustedDevices.length} 个可信设备` : "尚未完成正式配对",
+    trustedDevices.some((device) => device.state === "online")
+      ? uiMessage("connection.trustedOnlineTitle")
+      : uiMessage("connection.waitingTitle"),
+    trustedDevices.length > 0
+      ? uiMessage("connection.trustedCountDescription", { count: trustedDevices.length })
+      : uiMessage("connection.noTrustedDescription"),
   );
 }
 
@@ -174,8 +178,8 @@ export const shellSnapshot = {
         pocTransport: transport,
         connection: {
           state: "connecting",
-          title: "本机同步服务已启动",
-          description: describePocTransport(transport),
+          title: uiMessage("connection.serviceStartedTitle"),
+          description: uiMessage("connection.serviceStartedDescription", { port: transport.port }),
         },
       }));
     } catch (error) {
@@ -184,8 +188,8 @@ export const shellSnapshot = {
         ...state,
         connection: {
           state: "authFailed",
-          title: "本机同步服务启动失败",
-          description: error instanceof Error ? error.message : "无法启动本机同步服务",
+          title: uiMessage("connection.serviceStartFailedTitle"),
+          description: uiMessage("connection.serviceStartFailedDescription"),
         },
       }));
     }
@@ -202,39 +206,39 @@ export const shellSnapshot = {
           if (event.status === "sent") {
             setOutboundStatus({
               state: "sent",
-              title: "已通过加密会话同步",
-              description: `已发送到 ${event.sentPeers} 个可信设备。`,
+              title: uiMessage("sync.sentTitle"),
+              description: uiMessage("sync.sentDescription", { count: event.sentPeers }),
             });
             return;
           }
           if (event.status === "skippedNoAuthenticatedPeer") {
             setOutboundStatus({
               state: "waiting",
-              title: "本机记录已保存",
-              description: "当前没有已认证设备在线，等待可信设备连接后再同步。",
+              title: uiMessage("sync.localSavedTitle"),
+              description: uiMessage("sync.noPeerDescription"),
             });
             return;
           }
           if (event.status === "skippedAmbiguousSpace") {
             setOutboundStatus({
               state: "waiting",
-              title: "本机记录已保存",
-              description: "当前存在多个认证同步空间，待连接管理器选择目标空间。",
+              title: uiMessage("sync.localSavedTitle"),
+              description: uiMessage("sync.ambiguousSpaceDescription"),
             });
             return;
           }
           if (event.status === "skippedByPolicy") {
             setOutboundStatus({
               state: "paused",
-              title: "同步已暂停",
-              description: "本机记录已保存；重新开启同步后才会发送到可信设备。",
+              title: uiMessage("sync.pausedTitle"),
+              description: uiMessage("sync.pausedDescription"),
             });
             return;
           }
           setOutboundStatus({
             state: "failed",
-            title: "正式同步处理失败",
-            description: "本机复制未受影响；请检查可信设备和本地密钥状态。",
+            title: uiMessage("sync.failedTitle"),
+            description: uiMessage("sync.failedDescription"),
           });
         }),
         onAuthenticatedConnection((event) => {
@@ -253,8 +257,8 @@ export const shellSnapshot = {
               ...state,
               connection: {
                 state: "paused",
-                title: "自动接收已暂停",
-                description: "已忽略可信设备发来的实时预览；重新开启自动接收后才会显示。",
+                title: uiMessage("receive.pausedTitle"),
+                description: uiMessage("receive.trustedPausedDescription"),
               },
             }));
             return;
@@ -262,8 +266,8 @@ export const shellSnapshot = {
           const deviceLabel = event.originDeviceId.slice(0, 8) || "未知设备";
           setCurrentClipboard(
             current,
-            "已收到 Harmony 文本",
-            `来自可信设备 ${deviceLabel}；已通过认证加密会话接收。`,
+            uiMessage("receive.trustedTitle"),
+            uiMessage("receive.trustedDescription", { deviceLabel }),
           );
           void refreshHistorySummaryState();
         }),
@@ -276,8 +280,8 @@ export const shellSnapshot = {
             ...state,
             connection: {
               state: "online",
-              title: "空间密钥已更新",
-              description: `同步空间密钥已安全轮换至 v${event.keyVersion}，旧密钥绑定的历史已清理。`,
+              title: uiMessage("space.keyUpdatedTitle"),
+              description: uiMessage("space.keyUpdatedDescription", { version: event.keyVersion }),
             },
           }));
         }),
@@ -287,20 +291,20 @@ export const shellSnapshot = {
               ...state,
               connection: {
                 state: "paused",
-                title: "自动接收已暂停",
-                description: `已忽略来自 ${peer} 的临时文本；设置开启后才会进入面板预览`,
+                title: uiMessage("receive.pausedTitle"),
+                description: uiMessage("receive.pocPausedDescription", { peer }),
               },
             }));
             return;
           }
           setCurrentClipboard(
             current,
-            "已收到远端文本",
-            `来自 ${peer}；当前实验连接尚未认证，只进入面板预览，请由用户点击复制`,
+            uiMessage("receive.pocTitle"),
+            uiMessage("receive.pocDescription", { peer }),
             {
               state: "idle",
-              title: "远端文本已进入预览",
-              description: "不会自动回传；需要使用时请点击“复制此内容”。",
+              title: uiMessage("receive.previewTitle"),
+              description: uiMessage("receive.previewDescription"),
               updatedAt: current.receivedAt,
             },
           );
@@ -314,8 +318,8 @@ export const shellSnapshot = {
         onPocPeerConnected((peer) => {
           pocPeers.add(peer);
           updatePocDevices(
-            "远端设备已连接",
-            `当前有 ${pocPeers.size} 个实验连接，仅允许用户触发收发`,
+            uiMessage("connection.peerConnectedTitle"),
+            uiMessage("connection.peerConnectedDescription", { count: pocPeers.size }),
           );
           void refreshTrustedDeviceState();
         }),
@@ -323,10 +327,12 @@ export const shellSnapshot = {
           pocPeers.delete(peer);
           authenticatedPeers.delete(peer);
           updatePocDevices(
-            pocPeers.size > 0 ? "远端设备已连接" : "等待设备连接",
             pocPeers.size > 0
-              ? `当前还有 ${pocPeers.size} 个实验连接`
-              : "同步服务继续监听，可通过 mDNS 或手动 IP 连接",
+              ? uiMessage("connection.peerConnectedTitle")
+              : uiMessage("connection.waitingTitle"),
+            pocPeers.size > 0
+              ? uiMessage("connection.peerRemainingDescription", { count: pocPeers.size })
+              : uiMessage("connection.serviceListeningDescription"),
           );
           void refreshTrustedDeviceState();
         }),
@@ -335,8 +341,8 @@ export const shellSnapshot = {
             ...state,
             connection: {
               state: "offline",
-              title: "mDNS 发布失败",
-              description: `${message}；WebSocket 和手动 IP 仍可使用`,
+              title: uiMessage("discovery.publishFailedTitle"),
+              description: uiMessage("discovery.publishFailedDescription"),
             },
           }));
         }),
@@ -352,8 +358,8 @@ export const shellSnapshot = {
         ...state,
         connection: {
           state: "authFailed",
-          title: "同步事件监听失败",
-          description: error instanceof Error ? error.message : "无法监听同步文本事件",
+          title: uiMessage("connection.eventsFailedTitle"),
+          description: uiMessage("connection.eventsFailedDescription"),
         },
       }));
     }
@@ -365,7 +371,9 @@ export const shellSnapshot = {
       pocTransport: transport,
       connection: {
         ...state.connection,
-        description: describePocTransport(transport),
+        description: transport.state === "running"
+          ? uiMessage("connection.serviceStartedDescription", { port: transport.port })
+          : uiMessage("connection.serviceStartFailedDescription"),
       },
     }));
   },
@@ -377,8 +385,8 @@ export const shellSnapshot = {
         ...state,
         connection: {
           state: "authFailed",
-          title: "可信设备读取失败",
-          description: error instanceof Error ? error.message : "无法读取可信设备",
+          title: uiMessage("connection.deviceReadFailedTitle"),
+          description: uiMessage("connection.deviceReadFailedDescription"),
         },
       }));
     }
@@ -398,8 +406,11 @@ export const shellSnapshot = {
       ...state,
       connection: {
         state: result.deliveredPeers > 0 ? "online" : "offline",
-        title: "可信设备已移除",
-        description: `空间密钥已轮换至 v${result.keyVersion}，已通知 ${result.deliveredPeers} 个在线设备`,
+        title: uiMessage("device.removedTitle"),
+        description: uiMessage("device.removedDescription", {
+          version: result.keyVersion,
+          count: result.deliveredPeers,
+        }),
       },
     }));
     return result;
@@ -453,7 +464,7 @@ export const shellSnapshot = {
           ...state.syncSpace,
           state: "error",
           invitation: state.syncSpace.invitation,
-          errorMessage: error instanceof Error ? error.message : "无法读取同步空间",
+          errorMessage: uiMessage("space.loadFailed"),
         },
       }));
     }
@@ -495,7 +506,7 @@ export const shellSnapshot = {
           ...state.syncSpace,
           state: "error",
           invitation: state.syncSpace.invitation,
-          errorMessage: error instanceof Error ? error.message : "无法初始化默认同步空间",
+          errorMessage: uiMessage("space.initializeFailed"),
         },
       }));
     }
@@ -533,8 +544,8 @@ export const shellSnapshot = {
         },
         connection: {
           state: "online",
-          title: "已创建同步空间",
-          description: "空间密钥已保存到 Windows 凭据库，数据库只保存密钥引用。",
+          title: uiMessage("space.createdTitle"),
+          description: uiMessage("space.createdDescription"),
         },
       }));
     } catch (error) {
@@ -544,12 +555,12 @@ export const shellSnapshot = {
           ...state.syncSpace,
           state: "error",
           invitation: state.syncSpace.invitation,
-          errorMessage: error instanceof Error ? error.message : "无法创建同步空间",
+          errorMessage: uiMessage("space.createFailedDescription"),
         },
         connection: {
           state: "authFailed",
-          title: "创建同步空间失败",
-          description: error instanceof Error ? error.message : "无法创建同步空间",
+          title: uiMessage("space.createFailedTitle"),
+          description: uiMessage("space.createFailedDescription"),
         },
       }));
     }
@@ -577,12 +588,12 @@ export const shellSnapshot = {
           invitationCopiedAt: null,
           errorMessage: result.credentialDeleted
             ? null
-            : "空间已删除，但系统凭据库中的旧密钥引用未能清理",
+            : uiMessage("space.credentialCleanupFailed"),
         },
         connection: {
           state: "offline",
-          title: "同步空间已删除",
-          description: "已切换到保留的同步空间；删除的空间及其本地记录不会恢复。",
+          title: uiMessage("space.deletedTitle"),
+          description: uiMessage("space.deletedDescription"),
         },
       }));
     } catch (error) {
@@ -591,7 +602,7 @@ export const shellSnapshot = {
         syncSpace: {
           ...state.syncSpace,
           state: "error",
-          errorMessage: error instanceof Error ? error.message : "无法删除同步空间",
+          errorMessage: uiMessage("space.deleteFailed"),
         },
       }));
       throw error;
@@ -621,12 +632,12 @@ export const shellSnapshot = {
           invitationCopiedAt: null,
           errorMessage: result.credentialDeleted
             ? null
-            : "已离开空间，但系统凭据库中的旧密钥引用未能清理",
+            : uiMessage("space.leaveCredentialCleanupFailed"),
         },
         connection: {
           state: "offline",
-          title: "已离开同步空间",
-          description: "可信连接和该空间的本地记录已移除，后续需要新邀请才能再次加入。",
+          title: uiMessage("space.leftTitle"),
+          description: uiMessage("space.leftDescription"),
         },
       }));
     } catch (error) {
@@ -635,7 +646,7 @@ export const shellSnapshot = {
         syncSpace: {
           ...state.syncSpace,
           state: "error",
-          errorMessage: error instanceof Error ? error.message : "无法离开同步空间",
+          errorMessage: uiMessage("space.leaveFailed"),
         },
       }));
       throw error;
@@ -663,8 +674,8 @@ export const shellSnapshot = {
         },
         connection: {
           state: "online",
-          title: "已切换活动同步空间",
-          description: `后续本机剪贴板会发送到“${selected.displayName}”。`,
+          title: uiMessage("space.selectedTitle"),
+          description: uiMessage("space.selectedDescription", { spaceName: selected.displayName }),
         },
       }));
     } catch (error) {
@@ -673,7 +684,7 @@ export const shellSnapshot = {
         syncSpace: {
           ...state.syncSpace,
           state: "error",
-          errorMessage: error instanceof Error ? error.message : "无法切换活动同步空间",
+          errorMessage: uiMessage("space.selectFailed"),
         },
       }));
     }
@@ -707,7 +718,7 @@ export const shellSnapshot = {
           ...state.syncSpace,
           state: "error",
           hmacDiagnostic: null,
-          errorMessage: error instanceof Error ? error.message : "无法运行空间 HMAC 诊断",
+          errorMessage: uiMessage("space.diagnosticFailed"),
         },
       }));
     }
@@ -735,8 +746,10 @@ export const shellSnapshot = {
         },
         connection: {
           state: "connecting",
-          title: "已生成配对邀请",
-          description: `邀请 ${invitation.expiresInSeconds / 60} 分钟内有效，确认码 ${invitation.confirmationCode}`,
+          title: uiMessage("pairing.invitationCreatedTitle"),
+          description: uiMessage("pairing.invitationCreatedDescription", {
+            minutes: invitation.expiresInSeconds / 60,
+          }),
         },
       }));
     } catch (error) {
@@ -745,12 +758,12 @@ export const shellSnapshot = {
         syncSpace: {
           ...state.syncSpace,
           state: "error",
-          errorMessage: error instanceof Error ? error.message : "无法生成配对邀请",
+          errorMessage: uiMessage("pairing.invitationCreateFailedDescription"),
         },
         connection: {
           state: "authFailed",
-          title: "生成配对邀请失败",
-          description: error instanceof Error ? error.message : "无法生成配对邀请",
+          title: uiMessage("pairing.invitationCreateFailedTitle"),
+          description: uiMessage("pairing.invitationCreateFailedDescription"),
         },
       }));
     }
@@ -776,8 +789,8 @@ export const shellSnapshot = {
         },
         connection: {
           state: "connecting",
-          title: "配对邀请已复制",
-          description: "邀请已通过安全复制入口写入系统剪贴板，本机历史监听会忽略这次写入。",
+          title: uiMessage("pairing.invitationCopiedTitle"),
+          description: uiMessage("pairing.invitationCopiedDescription"),
         },
       }));
     } catch (error) {
@@ -786,12 +799,12 @@ export const shellSnapshot = {
         syncSpace: {
           ...state.syncSpace,
           state: "error",
-          errorMessage: error instanceof Error ? error.message : "无法复制配对邀请",
+          errorMessage: uiMessage("pairing.invitationCopyFailedDescription"),
         },
         connection: {
           state: "authFailed",
-          title: "复制配对邀请失败",
-          description: error instanceof Error ? error.message : "无法复制配对邀请",
+          title: uiMessage("pairing.invitationCopyFailedTitle"),
+          description: uiMessage("pairing.invitationCopyFailedDescription"),
         },
       }));
     }
@@ -801,8 +814,10 @@ export const shellSnapshot = {
       ...state,
       connection: {
         state: "connecting",
-        title: "正在连接远端设备",
-        description: `${host.trim()}:${port}`,
+        title: uiMessage("connection.connectingTitle"),
+        description: uiMessage("connection.endpointDescription", {
+          endpoint: `${host.trim()}:${port}`,
+        }),
       },
     }));
     try {
@@ -812,8 +827,8 @@ export const shellSnapshot = {
         ...state,
         connection: {
           state: "connecting",
-          title: "远端连接已建立",
-          description: `已连接 ${endpoint.label}；等待连接事件确认`,
+          title: uiMessage("connection.establishedTitle"),
+          description: uiMessage("connection.establishedDescription", { endpoint: endpoint.label }),
         },
       }));
     } catch (error) {
@@ -821,8 +836,8 @@ export const shellSnapshot = {
         ...state,
         connection: {
           state: "authFailed",
-          title: "连接远端设备失败",
-          description: error instanceof Error ? error.message : "无法连接目标设备",
+          title: uiMessage("connection.connectFailedTitle"),
+          description: uiMessage("connection.connectFailedDescription"),
         },
       }));
       throw error;
@@ -832,8 +847,8 @@ export const shellSnapshot = {
     const disconnected = await disconnectAllPocPeers();
     pocPeers.clear();
     updatePocDevices(
-      "已断开远端连接",
-      disconnected > 0 ? `已断开 ${disconnected} 个临时连接` : "当前没有已连接设备",
+      uiMessage("connection.disconnectedTitle"),
+      uiMessage("connection.disconnectedDescription", { count: disconnected }),
     );
   },
   async startClipboardMonitor() {
@@ -845,12 +860,12 @@ export const shellSnapshot = {
       await onLocalClipboardText((current) => {
         setCurrentClipboard(
           current,
-          "已监听到本机剪贴板",
-          "本机文本变化已进入面板，并将按可信设备状态处理同步",
+          uiMessage("clipboard.monitoringTitle"),
+          uiMessage("clipboard.monitoringDescription"),
           {
             state: "pending",
-            title: "正在处理本机记录",
-            description: "正在保存本机事件，并在可信设备在线时通过加密会话同步。",
+            title: uiMessage("sync.sendingTitle"),
+            description: uiMessage("sync.sendingDescription"),
             updatedAt: current.receivedAt,
           },
         );
@@ -861,8 +876,8 @@ export const shellSnapshot = {
         ...state,
         connection: {
           state: "authFailed",
-          title: "剪贴板监听启动失败",
-          description: error instanceof Error ? error.message : "无法启动本机剪贴板监听",
+          title: uiMessage("clipboard.monitorFailedTitle"),
+          description: uiMessage("clipboard.monitorFailedDescription"),
         },
       }));
     }
@@ -872,41 +887,41 @@ export const shellSnapshot = {
       ...current,
       connection: {
         state: "connecting",
-        title: "正在读取本机剪贴板",
-        description: "只读取纯文本，并执行大小边界检查",
+        title: uiMessage("clipboard.readingTitle"),
+        description: uiMessage("clipboard.readingDescription"),
       },
     }));
     try {
       const current = await readSystemClipboardText();
       setCurrentClipboard(
         current,
-        "已读取本机剪贴板",
-        "当前内容已进入面板，尚未同步到其他设备",
+        uiMessage("clipboard.readTitle"),
+        uiMessage("clipboard.readDescription"),
         {
           state: "local",
-          title: "本机文本已就绪",
-          description: "未自动发送；点击“发送到 Harmony”后才会通过 POC 连接发送。",
+          title: uiMessage("clipboard.localReadyTitle"),
+          description: uiMessage("clipboard.localReadyDescription"),
           updatedAt: current.receivedAt,
         },
       );
       await captureHistoryText(current.text);
       setOutboundStatus({
         state: "local",
-        title: "本机记录已处理",
-        description: "可由用户点击“发送到 Harmony”进行 POC 发送。",
+        title: uiMessage("clipboard.localProcessedTitle"),
+        description: uiMessage("clipboard.localProcessedDescription"),
       });
     } catch (error) {
       setOutboundStatus({
         state: "failed",
-        title: "读取或保存失败",
-        description: error instanceof Error ? error.message : "无法读取或保存本机剪贴板文本。",
+        title: uiMessage("clipboard.readFailedTitle"),
+        description: uiMessage("clipboard.readFailedDescription"),
       });
       snapshot.update((state) => ({
         ...state,
         connection: {
           state: "authFailed",
-          title: "读取剪贴板失败",
-          description: error instanceof Error ? error.message : "无法读取本机剪贴板",
+          title: uiMessage("clipboard.readFailedTitle"),
+          description: uiMessage("clipboard.readFailedDescription"),
         },
       }));
     }
@@ -942,8 +957,8 @@ export const shellSnapshot = {
         ...state,
         connection: {
           state: "authFailed",
-          title: "读取历史数量失败",
-          description: error instanceof Error ? error.message : "无法读取本机历史数量",
+          title: uiMessage("history.readFailedTitle"),
+          description: uiMessage("history.readFailedDescription"),
         },
       }));
     }
@@ -960,11 +975,11 @@ export const shellSnapshot = {
         },
         connection: {
           state: "online",
-          title: "已清空本机历史",
+          title: uiMessage("history.clearedTitle"),
           description:
             cleared > 0
-              ? `已从本机历史中移除 ${cleared} 条记录；不会清空系统剪贴板`
-              : "当前没有可清空的本机历史记录",
+              ? uiMessage("history.clearedDescription", { count: cleared })
+              : uiMessage("history.emptyDescription"),
         },
       }));
     } catch (error) {
@@ -972,8 +987,8 @@ export const shellSnapshot = {
         ...state,
         connection: {
           state: "authFailed",
-          title: "清空历史失败",
-          description: error instanceof Error ? error.message : "无法清空本机历史",
+          title: uiMessage("history.clearFailedTitle"),
+          description: uiMessage("history.clearFailedDescription"),
         },
       }));
       throw error;
@@ -987,10 +1002,12 @@ export const shellSnapshot = {
         ...state,
         connection: {
           state: "online",
-          title: deleted ? "已删除历史记录" : "历史记录已不存在",
+          title: deleted
+            ? uiMessage("history.deletedTitle")
+            : uiMessage("history.missingTitle"),
           description: deleted
-            ? "已从本机历史中移除此记录；不会修改当前系统剪贴板"
-            : "该记录可能已被清空或删除",
+            ? uiMessage("history.deletedDescription")
+            : uiMessage("history.missingDescription"),
         },
       }));
     } catch (error) {
@@ -998,8 +1015,8 @@ export const shellSnapshot = {
         ...state,
         connection: {
           state: "authFailed",
-          title: "删除历史记录失败",
-          description: error instanceof Error ? error.message : "无法删除本机历史记录",
+          title: uiMessage("history.deleteFailedTitle"),
+          description: uiMessage("history.deleteFailedDescription"),
         },
       }));
       throw error;
@@ -1009,15 +1026,15 @@ export const shellSnapshot = {
     if (!syncEnabled) {
       setOutboundStatus({
         state: "paused",
-        title: "同步已暂停",
-        description: "当前设置关闭了自动同步，未向远端发送当前文本。",
+        title: uiMessage("sync.pausedTitle"),
+        description: uiMessage("sync.pausedDescription"),
       });
       snapshot.update((state) => ({
         ...state,
         connection: {
           state: "paused",
-          title: "同步已暂停",
-          description: "当前设置关闭了自动同步，未向 Harmony 发送文本",
+          title: uiMessage("sync.pausedTitle"),
+          description: uiMessage("sync.pausedDescription"),
         },
       }));
       return;
@@ -1035,41 +1052,45 @@ export const shellSnapshot = {
     try {
       setOutboundStatus({
         state: "pending",
-        title: "正在安全发送",
-        description: "正在通过正式认证会话发送 ITEM_LIVE。",
+        title: uiMessage("sync.sendingTitle"),
+        description: uiMessage("sync.sendingDescription"),
       });
       const sentCount = await sendAuthenticatedClipboardText(text);
       setOutboundStatus({
         state: sentCount > 0 ? "sent" : "waiting",
-        title: sentCount > 0 ? "已发送到远端" : "等待连接",
+        title: sentCount > 0
+          ? uiMessage("sync.remoteSentTitle")
+          : uiMessage("sync.waitingTitle"),
         description:
           sentCount > 0
-            ? `已向 ${sentCount} 个认证设备发送 ITEM_LIVE。`
-            : "当前没有已认证设备；完成正式连接后可重新发送。",
+            ? uiMessage("sync.remoteSentDescription", { count: sentCount })
+            : uiMessage("sync.waitingDescription"),
       });
       snapshot.update((state) => ({
         ...state,
         connection: {
           state: sentCount > 0 ? "online" : "offline",
-          title: sentCount > 0 ? "已发送到远端设备" : "没有已连接设备",
+          title: sentCount > 0
+            ? uiMessage("sync.remoteSentTitle")
+            : uiMessage("sync.noConnectionTitle"),
           description:
             sentCount > 0
-              ? `已向 ${sentCount} 个连接发送当前文本`
-              : "请先与 Harmony 建立正式认证连接",
+              ? uiMessage("sync.remoteSentDescription", { count: sentCount })
+              : uiMessage("sync.noConnectionDescription"),
         },
       }));
     } catch (error) {
       setOutboundStatus({
         state: "failed",
-        title: "发送失败",
-        description: error instanceof Error ? error.message : "无法发送当前文本。",
+        title: uiMessage("sync.failedTitle"),
+        description: uiMessage("sync.failedDescription"),
       });
       snapshot.update((state) => ({
         ...state,
         connection: {
           state: "authFailed",
-          title: "发送到 Harmony 失败",
-          description: error instanceof Error ? error.message : "无法发送当前文本",
+          title: uiMessage("sync.failedTitle"),
+          description: uiMessage("sync.failedDescription"),
         },
       }));
     }

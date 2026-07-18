@@ -1,11 +1,12 @@
 <script lang="ts">
   import type { ClipboardPreview, OutboundSyncStatus } from "$lib/types/shell";
+  import { effectiveLocale, formatUiMessage, uiMessage } from "$lib/i18n";
 
   export let current: ClipboardPreview | null = null;
   export let outbound: OutboundSyncStatus = {
     state: "idle",
-    title: "等待本机文本",
-    description: "读取或监听到本机剪贴板后，会先进入本机历史，再由用户触发发送。",
+    title: uiMessage("clipboard.waitingTitle"),
+    description: uiMessage("clipboard.waitingDescription"),
     updatedAt: "",
   };
   export let onRead: () => void = () => {};
@@ -75,8 +76,8 @@
   {#if current || outbound.state !== "idle"}
     <div class={`outbound-status ${outbound.state}`} aria-label="发送状态">
       <div>
-        <strong>{outbound.title}</strong>
-        <p>{outbound.description}</p>
+        <strong>{formatUiMessage($effectiveLocale, outbound.title)}</strong>
+        <p>{formatUiMessage($effectiveLocale, outbound.description)}</p>
         {#if outbound.updatedAt}
           <span class="metadata">更新时间：{outbound.updatedAt}</span>
         {/if}

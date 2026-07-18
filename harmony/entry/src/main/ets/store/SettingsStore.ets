@@ -19,6 +19,12 @@ import {
   SpaceKeyRecoveryResult,
   SpaceKeyRecoveryService
 } from '../services/crypto/SpaceKeyRecoveryService';
+import {
+  UiMessageCode,
+  UiMessageDescriptor,
+  cloneUiMessage,
+  uiMessage
+} from '../services/localization/UiMessageCodes';
 
 export enum SettingsStoreState {
   IDLE = 'idle',
@@ -31,7 +37,7 @@ export enum SettingsStoreState {
 export interface SettingsStoreSnapshot {
   state: SettingsStoreState;
   settings: AppSettings;
-  errorMessage: string;
+  errorMessage: UiMessageDescriptor | null;
 }
 
 export class SettingsStore {
@@ -42,7 +48,7 @@ export class SettingsStore {
   private readonly spaceKeyRecovery: SpaceKeyRecoveryService;
   private currentState: SettingsStoreState = SettingsStoreState.IDLE;
   private currentSettings: AppSettings = defaultAppSettings();
-  private currentErrorMessage: string = '';
+  private currentErrorMessage: UiMessageDescriptor | null = null;
 
   constructor(context: common.Context) {
     this.repository = new SettingsRdbRepository(context);
@@ -63,13 +69,13 @@ export class SettingsStore {
     return {
       state: this.currentState,
       settings: cloneSettings(this.currentSettings),
-      errorMessage: this.currentErrorMessage
+      errorMessage: this.currentErrorMessage === null ? null : cloneUiMessage(this.currentErrorMessage)
     };
   }
 
   async load(): Promise<SettingsStoreSnapshot> {
     this.currentState = SettingsStoreState.LOADING;
-    this.currentErrorMessage = '';
+    this.currentErrorMessage = null;
     try {
       const loaded = await this.repository.loadAppSettings();
       const storedSettings = loaded === null ? defaultAppSettings() : loaded;
@@ -80,7 +86,7 @@ export class SettingsStore {
       this.currentState = SettingsStoreState.READY;
     } catch (_) {
       this.currentState = SettingsStoreState.ERROR;
-      this.currentErrorMessage = '读取设置失败';
+      this.currentErrorMessage = uiMessage(UiMessageCode.SETTINGS_READ_FAILED);
     }
     return this.snapshot();
   }
@@ -90,13 +96,13 @@ export class SettingsStore {
     const validation = validateAppSettings(normalizedSettings);
     if (!validation.ok) {
       this.currentState = SettingsStoreState.ERROR;
-      this.currentErrorMessage = '设置参数无效';
+      this.currentErrorMessage = uiMessage(UiMessageCode.SETTINGS_INVALID);
       return this.snapshot();
     }
 
     this.currentState = SettingsStoreState.SAVING;
     this.currentSettings = normalizedSettings;
-    this.currentErrorMessage = '';
+    this.currentErrorMessage = null;
     try {
       const nowMs = Date.now();
       await this.repository.saveAppSettings(this.currentSettings, nowMs);
@@ -104,7 +110,7 @@ export class SettingsStore {
       this.currentState = SettingsStoreState.READY;
     } catch (_) {
       this.currentState = SettingsStoreState.ERROR;
-      this.currentErrorMessage = '保存设置失败';
+      this.currentErrorMessage = uiMessage(UiMessageCode.SETTINGS_SAVE_FAILED);
     }
     return this.snapshot();
   }
@@ -117,13 +123,13 @@ export class SettingsStore {
 
   async clearLocalHistory(): Promise<SettingsStoreSnapshot> {
     this.currentState = SettingsStoreState.SAVING;
-    this.currentErrorMessage = '';
+    this.currentErrorMessage = null;
     try {
       await this.clipboardRepository.clearAllHistory(Date.now());
       this.currentState = SettingsStoreState.READY;
     } catch (_) {
       this.currentState = SettingsStoreState.ERROR;
-      this.currentErrorMessage = '清空历史失败';
+      this.currentErrorMessage = uiMessage(UiMessageCode.SETTINGS_CLEAR_HISTORY_FAILED);
     }
     return this.snapshot();
   }
@@ -170,7 +176,7 @@ export function createInitialSettingsSnapshot(): SettingsStoreSnapshot {
   return {
     state: SettingsStoreState.IDLE,
     settings: defaultAppSettings(),
-    errorMessage: ''
+    errorMessage: null
   };
 }
 

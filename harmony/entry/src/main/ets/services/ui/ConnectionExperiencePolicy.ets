@@ -1,3 +1,5 @@
+import { ConnectionState } from '../../models/ShellModels';
+
 export interface ConnectionExperiencePolicy {
   showFirstUse: boolean;
   showRetry: boolean;
@@ -6,13 +8,13 @@ export interface ConnectionExperiencePolicy {
 
 export function connectionExperiencePolicy(
   trustedDeviceCount: number,
-  connectionTitle: string,
+  connectionState: ConnectionState,
   appInForeground: boolean,
   retrying: boolean
 ): ConnectionExperiencePolicy {
   const hasTrustedDevice = Number.isSafeInteger(trustedDeviceCount) && trustedDeviceCount > 0;
   const showRetry = hasTrustedDevice &&
-    (connectionTitle.indexOf('失败') >= 0 || connectionTitle.indexOf('断开') >= 0);
+    (connectionState === ConnectionState.OFFLINE || connectionState === ConnectionState.AUTH_FAILED);
   return {
     showFirstUse: !hasTrustedDevice,
     showRetry,

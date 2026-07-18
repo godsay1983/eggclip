@@ -1,6 +1,7 @@
 use super::*;
 
 use crate::{
+    app_error::{AppErrorCode, AppErrorDto},
     pairing::{
         client_handshake::{
             PairingClientHandshake, PairingClientHandshakeError, PairingClientHandshakeEvent,
@@ -53,28 +54,34 @@ pub async fn connect_trusted_peer(
     candidate_id: Option<String>,
     manual_host: Option<String>,
     manual_port: Option<u16>,
-) -> Result<TrustedOutboundConnectionSummary, String> {
+) -> Result<TrustedOutboundConnectionSummary, AppErrorDto> {
     let (host, port) = if let Some(candidate_id) = candidate_id {
         let candidate = join_runtime
-            .endpoint_for_candidate(&attempt_id, &candidate_id, now_ms()?)
-            .map_err(crate::pairing::client::describe_join_error)?;
+            .endpoint_for_candidate(
+                &attempt_id,
+                &candidate_id,
+                now_ms().map_err(|_| pairing_error(AppErrorCode::PairingFailed, false))?,
+            )
+            .map_err(crate::pairing::client::join_error_dto)?;
         (candidate.host.to_string(), candidate.port)
     } else {
         (
-            manual_host.ok_or_else(|| "请输入桌面端局域网 IPv4 地址".to_string())?,
-            manual_port.ok_or_else(|| "请输入桌面端连接端口".to_string())?,
+            manual_host
+                .ok_or_else(|| pairing_error(AppErrorCode::PairingInvalidEndpoint, false))?,
+            manual_port
+                .ok_or_else(|| pairing_error(AppErrorCode::PairingInvalidEndpoint, false))?,
         )
     };
     let endpoint = validate_poc_endpoint(&host, port)
-        .map_err(|_| "可信连接地址无效，请重新选择局域网地址".to_string())?;
+        .map_err(|_| pairing_error(AppErrorCode::PairingInvalidEndpoint, false))?;
     let operation_key = attempt_id.clone();
     {
         let mut connecting = transport_runtime
             .formal_connecting
             .lock()
-            .map_err(|_| "可信连接状态暂时不可用".to_string())?;
+            .map_err(|_| pairing_error(AppErrorCode::PairingBusy, false))?;
         if !connecting.insert(operation_key.clone()) {
-            return Err("该可信连接正在进行".to_string());
+            return Err(pairing_error(AppErrorCode::PairingBusy, false));
         }
     }
 
@@ -94,15 +101,17 @@ async fn connect_trusted_peer_inner(
     endpoint: String,
     host: String,
     port: u16,
-) -> Result<TrustedOutboundConnectionSummary, String> {
+) -> Result<TrustedOutboundConnectionSummary, AppErrorDto> {
     let url = format!("ws://{endpoint}");
     let (mut websocket, _) = timeout(POC_CONNECT_TIMEOUT, connect_async(&url))
         .await
-        .map_err(|_| "连接可信设备超时".to_string())?
-        .map_err(|_| "无法连接可信设备，请检查局域网和防火墙".to_string())?;
+        .map_err(|_| pairing_error(AppErrorCode::PairingNetworkUnavailable, true))?
+        .map_err(|_| pairing_error(AppErrorCode::PairingNetworkUnavailable, true))?;
 
-    let path = database_path(&app)?;
-    let mut connection = open_database(path).map_err(|_| "无法打开本地数据库".to_string())?;
+    let path = database_path(&app)
+        .map_err(|_| pairing_error(AppErrorCode::PairingStorageFailed, false))?;
+    let mut connection = open_database(path)
+        .map_err(|_| pairing_error(AppErrorCode::PairingStorageFailed, false))?;
     #[cfg(windows)]
     let mut secret_store = crate::secret_store::WindowsCredentialSecretStore;
     #[cfg(not(windows))]
@@ -112,10 +121,11 @@ async fn connect_trusted_peer_inner(
         &attempt_id,
         &mut connection,
         &mut secret_store,
-        now_ms()?,
+        now_ms().map_err(|_| pairing_error(AppErrorCode::PairingFailed, false))?,
     )
-    .map_err(describe_initial_handshake_error)?;
-    let address = Ipv4Addr::from_str(host.trim()).map_err(|_| "可信连接地址无效".to_string())?;
+    .map_err(initial_handshake_error_dto)?;
+    let address = Ipv4Addr::from_str(host.trim())
+        .map_err(|_| pairing_error(AppErrorCode::PairingInvalidEndpoint, false))?;
     started.handshake.set_connected_endpoint(address, port);
 
     let ready = timeout(
@@ -123,7 +133,7 @@ async fn connect_trusted_peer_inner(
         complete_initial_pairing(&mut websocket, started, &mut connection, &mut secret_store),
     )
     .await
-    .map_err(|_| "可信握手超时".to_string())??;
+    .map_err(|_| pairing_error(AppErrorCode::PairingNetworkUnavailable, true))??;
     let space_id = ready.summary.space_id;
     let device_id = ready.summary.coordinator_device_id;
     attach_formal_connection(
@@ -135,6 +145,7 @@ async fn connect_trusted_peer_inner(
         endpoint,
     )
     .await
+    .map_err(|_| pairing_error(AppErrorCode::PairingFailed, false))
 }
 
 pub(crate) async fn connect_saved_trusted_peer(
@@ -379,7 +390,7 @@ async fn complete_initial_pairing<S, Store>(
     started: crate::pairing::client_handshake::PairingClientHandshakeStarted,
     connection: &mut rusqlite::Connection,
     secret_store: &mut Store,
-) -> Result<PairingClientReadySession, String>
+) -> Result<PairingClientReadySession, AppErrorDto>
 where
     S: AsyncRead + AsyncWrite + Unpin,
     Store: crate::identity::IdentitySecretStore + crate::secret_store::SecretBytesStore,
@@ -388,94 +399,115 @@ where
     websocket
         .send(Message::Text(started.client_hello_frame.into()))
         .await
-        .map_err(|_| "无法发送可信握手".to_string())?;
+        .map_err(|_| pairing_error(AppErrorCode::PairingNetworkUnavailable, true))?;
     loop {
-        let frame = next_handshake_text_frame(websocket).await?;
+        let frame = next_handshake_text_frame(websocket)
+            .await
+            .map_err(|_| pairing_error(AppErrorCode::PairingNetworkUnavailable, true))?;
         match handshake
-            .accept_server_frame(&frame, now_ms()?)
-            .map_err(describe_initial_handshake_error)?
+            .accept_server_frame(
+                &frame,
+                now_ms().map_err(|_| pairing_error(AppErrorCode::PairingFailed, false))?,
+            )
+            .map_err(initial_handshake_error_dto)?
         {
             PairingClientHandshakeEvent::SendAuthProof(proof) => websocket
                 .send(Message::Text(proof.into()))
                 .await
-                .map_err(|_| "无法发送可信认证证明".to_string())?,
+                .map_err(|_| pairing_error(AppErrorCode::PairingNetworkUnavailable, true))?,
             PairingClientHandshakeEvent::ServerProofVerified => {}
             PairingClientHandshakeEvent::AwaitingSpaceKey(pending) => {
-                let key_frame = next_handshake_text_frame(websocket).await?;
+                let key_frame = next_handshake_text_frame(websocket)
+                    .await
+                    .map_err(|_| pairing_error(AppErrorCode::PairingNetworkUnavailable, true))?;
                 return pending
-                    .accept_initial_space_key(&key_frame, connection, secret_store, now_ms()?)
-                    .map_err(describe_join_commit_error);
+                    .accept_initial_space_key(
+                        &key_frame,
+                        connection,
+                        secret_store,
+                        now_ms().map_err(|_| pairing_error(AppErrorCode::PairingFailed, false))?,
+                    )
+                    .map_err(join_commit_error_dto);
             }
             PairingClientHandshakeEvent::TrustedReady(_) => {
-                return Err("首次配对意外进入可信重连状态".to_string())
+                return Err(pairing_error(
+                    AppErrorCode::PairingAuthenticationFailed,
+                    false,
+                ))
             }
         }
     }
 }
 
-fn describe_initial_handshake_error(error: PairingClientHandshakeError) -> String {
+fn pairing_error(code: AppErrorCode, retryable: bool) -> AppErrorDto {
+    AppErrorDto::new(code, retryable)
+}
+
+fn initial_handshake_error_dto(error: PairingClientHandshakeError) -> AppErrorDto {
     match error {
         PairingClientHandshakeError::JoinAttempt(error) => {
-            crate::pairing::client::describe_join_error(error)
+            crate::pairing::client::join_error_dto(error)
         }
         PairingClientHandshakeError::InvitationExpired
         | PairingClientHandshakeError::RemoteRejected(
             PairingClientRemoteRejectCode::InvitationExpired,
-        ) => "配对邀请已过期，请在另一台电脑重新生成".to_string(),
+        ) => pairing_error(AppErrorCode::PairingInvitationExpired, false),
         PairingClientHandshakeError::RemoteRejected(
-            PairingClientRemoteRejectCode::InvitationConsumed,
-        ) => "配对邀请已使用，请在另一台电脑重新生成".to_string(),
-        PairingClientHandshakeError::RemoteRejected(
-            PairingClientRemoteRejectCode::InvitationMissing,
-        ) => "另一台电脑找不到该邀请，请重新生成后再试".to_string(),
+            PairingClientRemoteRejectCode::InvitationConsumed
+            | PairingClientRemoteRejectCode::InvitationMissing,
+        ) => pairing_error(AppErrorCode::PairingInvitationUnavailable, false),
         PairingClientHandshakeError::ServerIdentityMismatch
         | PairingClientHandshakeError::RemoteRejected(
             PairingClientRemoteRejectCode::IdentityOrSpaceMismatch,
-        ) => "设备身份与邀请不匹配，请确认连接的是生成邀请的电脑".to_string(),
+        ) => pairing_error(AppErrorCode::PairingIdentityMismatch, false),
+        PairingClientHandshakeError::IdentityUnavailable => {
+            pairing_error(AppErrorCode::PairingStorageFailed, false)
+        }
+        PairingClientHandshakeError::Timeout => {
+            pairing_error(AppErrorCode::PairingNetworkUnavailable, true)
+        }
         PairingClientHandshakeError::InvalidServerProof
         | PairingClientHandshakeError::ServerAuthenticationFailed
         | PairingClientHandshakeError::RemoteRejected(
             PairingClientRemoteRejectCode::AuthProofFailed,
-        ) => "设备认证失败，请核对确认码并重新生成邀请".to_string(),
-        PairingClientHandshakeError::IdentityUnavailable => {
-            "无法读取或保存本机设备身份，请重启应用后重试".to_string()
-        }
-        PairingClientHandshakeError::RandomUnavailable => {
-            "无法生成安全握手材料，请重启应用后重试".to_string()
-        }
-        PairingClientHandshakeError::Timeout => "可信握手超时，请检查局域网连接".to_string(),
-        PairingClientHandshakeError::RemoteRejected(_)
+        )
+        | PairingClientHandshakeError::RemoteRejected(_)
         | PairingClientHandshakeError::InvalidServerHello
         | PairingClientHandshakeError::UnexpectedFrame
         | PairingClientHandshakeError::ProtocolRejected
         | PairingClientHandshakeError::SessionKeyDerivationFailed => {
-            "设备认证失败，远端返回了无效的握手响应".to_string()
+            pairing_error(AppErrorCode::PairingAuthenticationFailed, false)
+        }
+        PairingClientHandshakeError::RandomUnavailable => {
+            pairing_error(AppErrorCode::PairingFailed, false)
         }
         #[cfg(test)]
-        PairingClientHandshakeError::ConnectionClosed => "可信连接在握手期间关闭".to_string(),
+        PairingClientHandshakeError::ConnectionClosed => {
+            pairing_error(AppErrorCode::PairingNetworkUnavailable, true)
+        }
     }
 }
 
-fn describe_join_commit_error(error: PairingJoinCommitError) -> String {
+fn join_commit_error_dto(error: PairingJoinCommitError) -> AppErrorDto {
     match error {
         PairingJoinCommitError::CredentialStore
         | PairingJoinCommitError::CredentialConflict
         | PairingJoinCommitError::CompensationFailed => {
-            "空间密钥保存失败，请重启应用后重新配对".to_string()
+            pairing_error(AppErrorCode::PairingCredentialFailed, false)
         }
         PairingJoinCommitError::DeviceIdentityMismatch => {
-            "设备身份与本机已有记录不匹配，请移除旧设备后重试".to_string()
+            pairing_error(AppErrorCode::PairingIdentityMismatch, false)
         }
-        PairingJoinCommitError::AlreadyJoined => "本机已经加入该同步空间，无需重复配对".to_string(),
         PairingJoinCommitError::Database | PairingJoinCommitError::SpaceConflict => {
-            "本机数据库写入失败，未保存本次配对".to_string()
+            pairing_error(AppErrorCode::PairingStorageFailed, false)
         }
-        PairingJoinCommitError::MissingConnectedEndpoint
+        PairingJoinCommitError::AlreadyJoined
+        | PairingJoinCommitError::MissingConnectedEndpoint
         | PairingJoinCommitError::Timeout
         | PairingJoinCommitError::UnexpectedInitialMessage
         | PairingJoinCommitError::InvalidSpaceKeyPayload
         | PairingJoinCommitError::SpaceKeyVersionMismatch => {
-            "空间密钥验证失败，请重新生成邀请后配对".to_string()
+            pairing_error(AppErrorCode::PairingAuthenticationFailed, false)
         }
     }
 }
@@ -687,24 +719,29 @@ mod tests {
     #[test]
     fn initial_join_errors_map_to_actionable_user_categories() {
         assert_eq!(
-            describe_initial_handshake_error(PairingClientHandshakeError::RemoteRejected(
+            initial_handshake_error_dto(PairingClientHandshakeError::RemoteRejected(
                 PairingClientRemoteRejectCode::InvitationConsumed,
-            )),
-            "配对邀请已使用，请在另一台电脑重新生成"
+            ))
+            .code,
+            AppErrorCode::PairingInvitationUnavailable
         );
-        assert!(describe_initial_handshake_error(
-            PairingClientHandshakeError::ServerIdentityMismatch
-        )
-        .contains("身份"));
-        assert!(describe_initial_handshake_error(
-            PairingClientHandshakeError::ServerAuthenticationFailed
-        )
-        .contains("认证"));
-        assert!(
-            describe_join_commit_error(PairingJoinCommitError::CredentialStore)
-                .contains("密钥保存失败")
+        assert_eq!(
+            initial_handshake_error_dto(PairingClientHandshakeError::ServerIdentityMismatch).code,
+            AppErrorCode::PairingIdentityMismatch
         );
-        assert!(describe_join_commit_error(PairingJoinCommitError::Database).contains("数据库"));
+        assert_eq!(
+            initial_handshake_error_dto(PairingClientHandshakeError::ServerAuthenticationFailed)
+                .code,
+            AppErrorCode::PairingAuthenticationFailed
+        );
+        assert_eq!(
+            join_commit_error_dto(PairingJoinCommitError::CredentialStore).code,
+            AppErrorCode::PairingCredentialFailed
+        );
+        assert_eq!(
+            join_commit_error_dto(PairingJoinCommitError::Database).code,
+            AppErrorCode::PairingStorageFailed
+        );
     }
 
     #[tokio::test]
