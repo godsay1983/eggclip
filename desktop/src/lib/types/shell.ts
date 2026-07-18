@@ -12,9 +12,7 @@ export interface DeviceSummary {
   state: ConnectionState;
   trustKind: "trusted" | "poc" | "placeholder";
   shortFingerprint: string;
-  lastSeen: string;
   endpoint?: string;
-  note: string;
   pairedAtMs?: number | null;
   lastSeenAtMs?: number | null;
 }
@@ -28,11 +26,12 @@ export interface TrustedDeviceRemovalSummary {
 
 export interface ClipboardPreview {
   id: string;
-  title: string;
   text: string;
   preview: string;
-  source: string;
-  receivedAt: string;
+  byteLength: number;
+  sourceKind: "local" | "localMonitor" | "poc" | "trusted";
+  sourceDevice?: string;
+  receivedAtMs: number;
   canCopy: boolean;
 }
 
@@ -49,7 +48,7 @@ export interface OutboundSyncStatus {
   state: OutboundSyncState;
   title: UiMessageDescriptor;
   description: UiMessageDescriptor;
-  updatedAt: string;
+  updatedAtMs: number | null;
 }
 
 export interface HistorySummary {
@@ -60,10 +59,9 @@ export interface HistorySummary {
 
 export interface HistoryItemSummary {
   id: string;
-  title: string;
   preview: string;
-  source: string;
-  receivedAt: string;
+  originDeviceId: string;
+  receivedAtMs: number;
   contentLength: number;
   text: string | null;
   canCopy: boolean;
@@ -121,7 +119,6 @@ export interface PocRecentEndpoint {
   host: string;
   port: number;
   label: string;
-  connectedAt: string;
   connectedAtMs: number;
 }
 
@@ -131,7 +128,7 @@ export interface SyncSpaceSummary {
   keyVersion: number;
   shortId: string;
   keyRefKind: "credential" | "unknown";
-  createdAt: string;
+  createdAtMs: number;
   localRole: "owner" | "member";
 }
 
@@ -140,7 +137,7 @@ export interface PairingInvitationSummary {
   spaceId: string;
   spaceDisplayName: string;
   qrSvg: string;
-  expiresAt: string;
+  expiresAtMs: number;
   expiresInSeconds: number;
   issuerDeviceName: string;
   issuerDeviceId: string;
@@ -161,7 +158,7 @@ export interface SyncSpaceState {
   hmacDiagnostic: SpaceHmacDiagnosticSummary | null;
   invitation: PairingInvitationSummary | null;
   errorMessage: UiMessageDescriptor | null;
-  invitationCopiedAt: string | null;
+  invitationCopiedAtMs: number | null;
 }
 
 export interface ShellSnapshot {

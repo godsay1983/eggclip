@@ -1,5 +1,6 @@
 <script lang="ts">
   import StatusDot from "$lib/components/common/StatusDot.svelte";
+  import { effectiveLocale, formatDateTime, text } from "$lib/i18n";
   import type { DeviceSummary } from "$lib/types/shell";
 
   export let devices: DeviceSummary[] = [];
@@ -36,45 +37,69 @@
 
   function statusLabel(state: DeviceSummary["state"]) {
     if (state === "online") {
-      return "在线";
+      return text($effectiveLocale, "status.online");
     }
     if (state === "connecting") {
-      return "连接中";
+      return text($effectiveLocale, "status.connecting");
     }
     if (state === "authFailed") {
-      return "认证失败";
+      return text($effectiveLocale, "status.authFailed");
     }
     if (state === "paused") {
-      return "已暂停";
+      return text($effectiveLocale, "status.paused");
     }
-    return "离线";
+    return text($effectiveLocale, "status.offline");
   }
 
   function trustLabel(kind: DeviceSummary["trustKind"]) {
     if (kind === "trusted") {
-      return "可信设备";
+      return text($effectiveLocale, "device.trusted");
     }
     if (kind === "poc") {
-      return "实验连接";
+      return text($effectiveLocale, "device.experimental");
     }
-    return "待配对";
+    return text($effectiveLocale, "device.pending");
+  }
+
+  function deviceName(device: DeviceSummary): string {
+    if (device.trustKind === "poc") return text($effectiveLocale, "device.pocName");
+    if (device.trustKind === "placeholder") return text($effectiveLocale, "device.placeholderName");
+    return device.name;
+  }
+
+  function fingerprint(device: DeviceSummary): string {
+    if (device.trustKind === "poc") return text($effectiveLocale, "device.notPaired");
+    if (device.trustKind === "placeholder") return text($effectiveLocale, "device.waitingPairing");
+    return device.shortFingerprint || text($effectiveLocale, "common.notRecorded");
+  }
+
+  function lastSeen(device: DeviceSummary): string {
+    if (device.state === "online") return text($effectiveLocale, "device.sessionOnline");
+    if (device.lastSeenAtMs) return formatDateTime(device.lastSeenAtMs, $effectiveLocale);
+    return text($effectiveLocale, "common.notRecorded");
+  }
+
+  function deviceNote(device: DeviceSummary): string {
+    if (device.trustKind === "poc") return text($effectiveLocale, "device.pocHint");
+    if (device.trustKind === "placeholder") return text($effectiveLocale, "device.emptyHint");
+    return text($effectiveLocale, device.state === "online" ? "device.authenticatedOnline" : "device.waitingReconnect");
   }
 </script>
 
 <section class="device-section">
   <div class="section-heading compact">
     <div>
-      <h2>设备</h2>
-      <span class="metadata">已配对设备会在连接后显示在线状态</span>
+      <h2>{text($effectiveLocale, "device.title")}</h2>
+      <span class="metadata">{text($effectiveLocale, "device.subtitle")}</span>
     </div>
   </div>
   <div class="device-list">
     {#if devices.length === 0}
       <div class="device-empty">
-        <span aria-hidden="true">备</span>
+        <span aria-hidden="true">◇</span>
         <div>
-          <strong>暂无可信设备</strong>
-          <p>正式配对完成后，这里会显示设备状态和最后在线时间。</p>
+          <strong>{text($effectiveLocale, "device.empty")}</strong>
+          <p>{text($effectiveLocale, "device.emptyHint")}</p>
         </div>
       </div>
     {:else}
@@ -87,37 +112,37 @@
           class:poc-device={device.trustKind === "poc"}
           class:placeholder-device={device.trustKind === "placeholder"}
           class="device-card"
-          title={`${device.name}：${statusLabel(device.state)}`}
+          title={`${deviceName(device)}: ${statusLabel(device.state)}`}
         >
           <div class="device-card-header">
             <StatusDot state={device.state} />
             <div>
-              <strong>{device.name}</strong>
+              <strong>{deviceName(device)}</strong>
               <p>{trustLabel(device.trustKind)} · {statusLabel(device.state)}</p>
             </div>
           </div>
           <dl class="device-meta-grid">
             <div>
-              <dt>短指纹</dt>
-              <dd>{device.shortFingerprint}</dd>
+              <dt>{text($effectiveLocale, "device.fingerprint")}</dt>
+              <dd>{fingerprint(device)}</dd>
             </div>
             <div>
-              <dt>最后在线</dt>
-              <dd>{device.lastSeen}</dd>
+              <dt>{text($effectiveLocale, "device.lastOnline")}</dt>
+              <dd>{lastSeen(device)}</dd>
             </div>
             {#if device.endpoint}
               <div>
-                <dt>端点</dt>
+                <dt>{text($effectiveLocale, "device.endpoint")}</dt>
                 <dd>{device.endpoint}</dd>
               </div>
             {/if}
           </dl>
-          <p class="device-note">{device.note}</p>
+          <p class="device-note">{deviceNote(device)}</p>
           {#if device.trustKind === "trusted"}
             <div class="device-management-actions">
               {#if editingDeviceId === device.id}
                 <input
-                  aria-label="可信设备名称"
+                  aria-label={text($effectiveLocale, "device.nameLabel")}
                   maxlength="32"
                   bind:value={editingName}
                   disabled={busyDeviceId === device.id}
@@ -127,8 +152,8 @@
                   type="button"
                   disabled={busyDeviceId === device.id || editingName.trim().length === 0}
                   on:click={() => saveName(device)}
-                >保存</button>
-                <button class="text-button" type="button" on:click={() => (editingDeviceId = "")}>取消</button>
+                >{text($effectiveLocale, "common.save")}</button>
+                <button class="text-button" type="button" on:click={() => (editingDeviceId = "")}>{text($effectiveLocale, "common.cancel")}</button>
               {:else}
                 <button
                   class="text-button"
@@ -138,34 +163,34 @@
                     editingDeviceId = device.id;
                     editingName = device.name;
                   }}
-                >重命名</button>
+                >{text($effectiveLocale, "device.rename")}</button>
                 {#if canRemove(device)}
                   <button
                     class="text-button danger-action"
                     type="button"
                     disabled={busyDeviceId === device.id}
                     on:click={() => (pendingRemovalDeviceId = device.id)}
-                  >{busyDeviceId === device.id ? "处理中…" : "移除并轮换密钥"}</button>
+                  >{text($effectiveLocale, busyDeviceId === device.id ? "common.loading" : "device.remove")}</button>
                 {/if}
               {/if}
             </div>
             {#if pendingRemovalDeviceId === device.id}
               <div class="device-removal-confirmation" role="alert" aria-live="polite">
-                <strong>确认移除“{device.name}”？</strong>
-                <p>设备会立即断开并需要重新配对；空间密钥轮换时，本空间历史也会被清空。</p>
+                <strong>{text($effectiveLocale, "device.removeQuestion", { name: device.name })}</strong>
+                <p>{text($effectiveLocale, "device.removeHint")}</p>
                 <div>
                   <button
                     class="compact-danger-action"
                     type="button"
                     disabled={busyDeviceId === device.id}
                     on:click={() => removeDevice(device)}
-                  >{busyDeviceId === device.id ? "正在移除…" : "确认移除"}</button>
+                  >{text($effectiveLocale, busyDeviceId === device.id ? "device.removing" : "device.confirmRemove")}</button>
                   <button
                     class="text-button"
                     type="button"
                     disabled={busyDeviceId === device.id}
                     on:click={() => (pendingRemovalDeviceId = "")}
-                  >取消</button>
+                  >{text($effectiveLocale, "common.cancel")}</button>
                 </div>
               </div>
             {/if}

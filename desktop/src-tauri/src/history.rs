@@ -25,9 +25,8 @@ const LOCAL_HISTORY_ENCRYPTED_PLACEHOLDER: &[u8] = b"eggclip-local-history-metad
 #[serde(rename_all = "camelCase")]
 pub struct HistoryItemSummary {
     pub id: String,
-    pub title: String,
     pub preview: String,
-    pub source: String,
+    pub origin_device_id: String,
     pub received_at_ms: u64,
     pub content_length: usize,
     pub text: Option<String>,
@@ -228,16 +227,10 @@ fn to_history_item_summary_with_text(
     record: &ClipboardItemRecord,
     text: Option<String>,
 ) -> HistoryItemSummary {
-    let device = record.item.origin_device_id.to_string();
-    let short_device = device.get(0..8).unwrap_or("unknown");
     HistoryItemSummary {
         id: record.item.item_id.to_string(),
-        title: format!("{} 字节文本", record.item.content_length),
-        preview: text
-            .as_deref()
-            .map(history_preview)
-            .unwrap_or_else(|| "内容暂不可用".to_string()),
-        source: format!("来源设备 {short_device}"),
+        preview: text.as_deref().map(history_preview).unwrap_or_default(),
+        origin_device_id: record.item.origin_device_id.to_string(),
         received_at_ms: record.received_at,
         content_length: record.item.content_length,
         can_copy: text.is_some(),
@@ -345,7 +338,7 @@ mod tests {
         assert_eq!(items.len(), 2);
         assert_eq!(items[0].id, second_item_id);
         assert_eq!(items[0].content_length, 8);
-        assert_eq!(items[0].preview, "内容暂不可用");
+        assert!(items[0].preview.is_empty());
         assert!(
             delete_clipboard_history_item_at_path(&path, &second_item_id, 1_700_000_001_500)
                 .expect("item should delete")
@@ -397,8 +390,8 @@ mod tests {
                 .expect("history should be enabled by default");
 
         assert_eq!(captured.content_length, text.len());
-        assert!(captured.title.contains(&text.len().to_string()));
-        assert_eq!(captured.preview, "内容暂不可用");
+        assert!(!captured.origin_device_id.is_empty());
+        assert!(captured.preview.is_empty());
         assert_eq!(
             get_clipboard_history_used_at_path(&path).expect("history count should reload"),
             1

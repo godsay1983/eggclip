@@ -1,5 +1,6 @@
 <script lang="ts">
   import { shellSnapshot } from "$lib/stores/shell";
+  import { effectiveLocale, formatTime, text } from "$lib/i18n";
   import type { PocRejectionReason } from "$lib/types/shell";
 
   let host = "127.0.0.1";
@@ -48,35 +49,35 @@
   function rejectionLabel(reason: PocRejectionReason | null): string {
     switch (reason) {
       case "frameTooLarge":
-        return "帧超限";
+        return text($effectiveLocale, "poc.frameTooLarge");
       case "invalidMessage":
-        return "消息无效";
+        return text($effectiveLocale, "poc.invalidMessage");
       case "emptyText":
-        return "文本为空";
+        return text($effectiveLocale, "poc.emptyText");
       case "textTooLarge":
-        return "正文超限";
+        return text($effectiveLocale, "poc.textTooLarge");
       case "binaryUnsupported":
-        return "不支持二进制";
+        return text($effectiveLocale, "poc.binaryUnsupported");
       case "authenticatedFrameRejected":
-        return "已认证帧被拒绝";
+        return text($effectiveLocale, "poc.authenticatedRejected");
       case "pairingClientHelloRejected":
-        return "配对邀请不匹配";
+        return text($effectiveLocale, "poc.clientHelloRejected");
       case "pairingInvitationMissing":
-        return "配对邀请不存在";
+        return text($effectiveLocale, "poc.invitationMissing");
       case "pairingInvitationExpired":
-        return "配对邀请已过期";
+        return text($effectiveLocale, "poc.invitationExpired");
       case "pairingInvitationConsumed":
-        return "配对邀请已使用";
+        return text($effectiveLocale, "poc.invitationConsumed");
       case "pairingAuthProofRejected":
-        return "配对认证无效";
+        return text($effectiveLocale, "poc.authProofRejected");
       case "pairingAuthSignatureRejected":
-        return "配对签名无效";
+        return text($effectiveLocale, "poc.signatureRejected");
       case "pairingServerStateMissing":
-        return "配对状态丢失";
+        return text($effectiveLocale, "poc.stateMissing");
       case "pairingInternalError":
-        return "配对内部错误";
+        return text($effectiveLocale, "poc.internalError");
       default:
-        return "无";
+        return text($effectiveLocale, "common.none");
     }
   }
 </script>
@@ -84,28 +85,28 @@
 <section class="poc-connect-card" aria-labelledby="poc-connect-title">
   <div class="section-heading compact">
     <div>
-      <span class="eyebrow">手动连接</span>
-      <h2 id="poc-connect-title">连接局域网设备</h2>
+      <span class="eyebrow">{text($effectiveLocale, "poc.manual")}</span>
+      <h2 id="poc-connect-title">{text($effectiveLocale, "poc.connectTitle")}</h2>
     </div>
   </div>
   <div class="endpoint-row">
     <label>
-      <span>IPv4 地址</span>
+      <span>{text($effectiveLocale, "poc.ipv4")}</span>
       <input bind:value={host} inputmode="decimal" autocomplete="off" />
     </label>
     <label>
-      <span>端口</span>
-      <input bind:value={port} inputmode="numeric" placeholder="例如 43210" autocomplete="off" />
+      <span>{text($effectiveLocale, "poc.port")}</span>
+      <input bind:value={port} inputmode="numeric" placeholder={text($effectiveLocale, "poc.portExample")} autocomplete="off" />
     </label>
   </div>
-  <p>自动发现不可用时，可输入另一台设备显示的 IPv4 和端口。候选地址不代表设备已经可信。</p>
+  <p>{text($effectiveLocale, "poc.hint")}</p>
   {#if $shellSnapshot.lastPocEndpoint}
     <div class="recent-endpoint">
       <div>
-        <strong>最近成功地址</strong>
+        <strong>{text($effectiveLocale, "poc.recent")}</strong>
         <p>
-          {$shellSnapshot.lastPocEndpoint.label} · {$shellSnapshot.lastPocEndpoint.connectedAt}
-          · 仅代表 POC 地址，不代表设备可信
+          {$shellSnapshot.lastPocEndpoint.label} · {formatTime($shellSnapshot.lastPocEndpoint.connectedAtMs, $effectiveLocale)}
+          · {text($effectiveLocale, "poc.recentHint")}
         </p>
       </div>
       <button
@@ -114,17 +115,18 @@
         disabled={busy}
         onclick={connectRecent}
       >
-        回填并连接
+        {text($effectiveLocale, "poc.fillConnect")}
       </button>
     </div>
   {/if}
-  <p class="poc-diagnostics">
-    帧诊断：接收 {$shellSnapshot.pocDiagnostics.receivedFrames} · 接受
-    {$shellSnapshot.pocDiagnostics.acceptedItems} · 拒绝 {$shellSnapshot.pocDiagnostics.rejectedFrames} ·
-    上次拒绝 {rejectionLabel($shellSnapshot.pocDiagnostics.lastRejection)}
-  </p>
+  <p class="poc-diagnostics">{text($effectiveLocale, "poc.diagnostics", {
+    received: $shellSnapshot.pocDiagnostics.receivedFrames,
+    accepted: $shellSnapshot.pocDiagnostics.acceptedItems,
+    rejected: $shellSnapshot.pocDiagnostics.rejectedFrames,
+    reason: rejectionLabel($shellSnapshot.pocDiagnostics.lastRejection)
+  })}</p>
   <div class="poc-action-row">
-    <button class="secondary-action" type="button" disabled={busy} onclick={disconnect}>断开连接</button>
-    <button class="primary-action" type="button" disabled={busy || !hasValidPort()} onclick={connect}>连接</button>
+    <button class="secondary-action" type="button" disabled={busy} onclick={disconnect}>{text($effectiveLocale, "poc.disconnect")}</button>
+    <button class="primary-action" type="button" disabled={busy || !hasValidPort()} onclick={connect}>{text($effectiveLocale, "poc.connect")}</button>
   </div>
 </section>

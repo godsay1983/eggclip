@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { effectiveLocale, text } from "$lib/i18n";
   import type { SpaceHmacDiagnosticSummary, SyncSpaceState } from "$lib/types/shell";
 
   export let state: SyncSpaceState["state"] = "idle";
@@ -6,18 +7,18 @@
   export let onRun: () => Promise<void> | void = () => {};
 </script>
 
-<section class="poc-connect-card" aria-label="空间密钥诊断">
+<section class="poc-connect-card" aria-label={text($effectiveLocale, "diagnostic.keyLabel")}>
   <div class="section-heading compact">
     <div>
-      <span class="eyebrow">密钥诊断</span>
-      <h2>跨端 HMAC 确认</h2>
+      <span class="eyebrow">{text($effectiveLocale, "diagnostic.eyebrow")}</span>
+      <h2>{text($effectiveLocale, "diagnostic.hmacTitle")}</h2>
     </div>
   </div>
 
-  <p>两端确认码一致，表示当前同步空间密钥可正常使用。</p>
+  <p>{text($effectiveLocale, "diagnostic.hmacHint")}</p>
   {#if diagnostic}
     <div class="confirmation-code">
-      <span>六位确认码</span>
+      <span>{text($effectiveLocale, "diagnostic.sixDigit")}</span>
       <strong>{diagnostic.confirmationCode}</strong>
     </div>
     <p>{diagnostic.spaceDisplayName}</p>
@@ -28,6 +29,6 @@
     disabled={state === "loading"}
     on:click={onRun}
   >
-    {state === "loading" ? "诊断中…" : "生成确认码"}
+    {text($effectiveLocale, state === "loading" ? "diagnostic.running" : "diagnostic.generate")}
   </button>
 </section>

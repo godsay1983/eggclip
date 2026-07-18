@@ -14,12 +14,12 @@
   import { autostartSnapshot } from "$lib/stores/autostart";
   import { shellSnapshot } from "$lib/stores/shell";
   import { canManageSyncSpace } from "$lib/pairing-join";
-  import type { AppSettings, ThemeMode } from "$lib/types/settings";
+  import type { AppSettings, LanguageMode, ThemeMode } from "$lib/types/settings";
   import type { SyncSpaceSummary } from "$lib/types/shell";
   import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
   import packageMetadata from "../../package.json";
-  import { effectiveLocale, formatUiMessage } from "$lib/i18n";
+  import { effectiveLocale, formatTime, formatUiMessage, pluralText, text } from "$lib/i18n";
 
   let settingsVisible = false;
   let aboutVisible = false;
@@ -120,6 +120,10 @@
     return value === "light" || value === "dark" ? value : "system";
   }
 
+  function languageModeFromValue(value: string): LanguageMode {
+    return value === "zh-CN" || value === "en-US" ? value : "system";
+  }
+
   function applyTheme(themeMode: ThemeMode) {
     if (typeof document === "undefined") {
       return;
@@ -145,7 +149,7 @@
 <svelte:head>
   <meta
     name="description"
-    content="EggClip 蛋定 Clip 局域网剪贴板同步"
+    content={text($effectiveLocale, "app.description")}
   />
 </svelte:head>
 
@@ -154,14 +158,14 @@
     <img class="brand-mark" src="/app-icon.png" alt="" aria-hidden="true" />
     <div class="brand-copy">
       <div class="title-line">
-        <h1>蛋定 Clip</h1>
+        <h1>{text($effectiveLocale, "app.title")}</h1>
       </div>
-      <p>局域网剪贴板同步</p>
+      <p>{text($effectiveLocale, "app.tagline")}</p>
     </div>
     <button
       class="icon-button"
       type="button"
-      aria-label="打开设置"
+      aria-label={text($effectiveLocale, "settings.open")}
       aria-expanded={settingsVisible}
       on:click={() => {
         aboutVisible = false;
@@ -181,7 +185,7 @@
       onCopy={() => shellSnapshot.copyCurrentToClipboard()}
       onSend={() => shellSnapshot.sendCurrentToHarmony($settingsSnapshot.settings.syncEnabled)}
       sendDisabled={!$settingsSnapshot.settings.syncEnabled}
-      sendLabel={$settingsSnapshot.settings.syncEnabled ? "发送到 Harmony" : "同步已暂停"}
+      sendLabel={text($effectiveLocale, $settingsSnapshot.settings.syncEnabled ? "clipboard.sendHarmony" : "settings.syncPaused")}
     />
 
       <HistoryList
@@ -198,36 +202,36 @@
   {/if}
 
   {#if settingsVisible}
-    <section class="settings-popover" aria-label="设置">
+    <section class="settings-popover" aria-label={text($effectiveLocale, "settings.title")}>
       <div class="section-heading compact">
         <div>
-          <h2>设置</h2>
+          <h2>{text($effectiveLocale, "settings.title")}</h2>
           <p class="metadata">
             {$settingsSnapshot.state === "error"
               ? $settingsSnapshot.errorMessage
                 ? formatUiMessage($effectiveLocale, $settingsSnapshot.errorMessage)
                 : ""
-              : "更改后自动保存到本机"}
+              : text($effectiveLocale, "settings.autoSave")}
           </p>
         </div>
       </div>
 
-      <nav class="settings-tabs" aria-label="设置分类">
-        <button class:active={settingsSection === "general"} type="button" on:click={() => (settingsSection = "general")}>常规</button>
-        <button class:active={settingsSection === "devices"} type="button" on:click={() => (settingsSection = "devices")}>设备</button>
-        <button class:active={settingsSection === "advanced"} type="button" on:click={() => (settingsSection = "advanced")}>高级</button>
+      <nav class="settings-tabs" aria-label={text($effectiveLocale, "settings.categories")}>
+        <button class:active={settingsSection === "general"} type="button" on:click={() => (settingsSection = "general")}>{text($effectiveLocale, "settings.general")}</button>
+        <button class:active={settingsSection === "devices"} type="button" on:click={() => (settingsSection = "devices")}>{text($effectiveLocale, "settings.devices")}</button>
+        <button class:active={settingsSection === "advanced"} type="button" on:click={() => (settingsSection = "advanced")}>{text($effectiveLocale, "settings.advanced")}</button>
       </nav>
 
       {#if settingsSection === "general"}
         <div class="setting-grid">
         <label>
           <span class="setting-copy">
-            <strong>开机自动启动</strong>
-            <small>登录 Windows 后在托盘运行</small>
+            <strong>{text($effectiveLocale, "settings.autostart")}</strong>
+            <small>{text($effectiveLocale, "settings.autostartHint")}</small>
           </span>
           <input
             type="checkbox"
-            aria-label="开机自动启动"
+            aria-label={text($effectiveLocale, "settings.autostart")}
             checked={$autostartSnapshot.enabled}
             disabled={$autostartSnapshot.state === "loading" || $autostartSnapshot.state === "saving"}
             on:change={(event) =>
@@ -238,7 +242,7 @@
           <p class="setting-inline-error" role="status">{formatUiMessage($effectiveLocale, $autostartSnapshot.errorMessage)}</p>
         {/if}
         <label>
-          <span>自动同步</span>
+          <span>{text($effectiveLocale, "settings.sync")}</span>
           <input
             type="checkbox"
             checked={$settingsSnapshot.settings.syncEnabled}
@@ -248,7 +252,7 @@
           />
         </label>
         <label>
-          <span>自动接收</span>
+          <span>{text($effectiveLocale, "settings.receive")}</span>
           <input
             type="checkbox"
             checked={$settingsSnapshot.settings.autoReceiveEnabled}
@@ -258,7 +262,7 @@
           />
         </label>
         <label>
-          <span>桌面自动写入剪贴板</span>
+          <span>{text($effectiveLocale, "settings.autoWrite")}</span>
           <input
             type="checkbox"
             checked={$settingsSnapshot.settings.autoWriteEnabled}
@@ -268,7 +272,7 @@
           />
         </label>
         <label>
-          <span>保存历史</span>
+          <span>{text($effectiveLocale, "settings.history")}</span>
           <input
             type="checkbox"
             checked={$settingsSnapshot.settings.historyEnabled}
@@ -278,21 +282,21 @@
           />
         </label>
         <label>
-          <span>历史数量</span>
+          <span>{text($effectiveLocale, "settings.historyLimit")}</span>
           <select
             value={String($settingsSnapshot.settings.historyLimit)}
             disabled={$settingsSnapshot.state === "saving"}
             on:change={(event) =>
               saveSetting("historyLimit", historyLimitFromValue(event.currentTarget.value))}
           >
-            <option value="0">不保存</option>
-            <option value="20">20 条</option>
-            <option value="50">50 条</option>
-            <option value="100">100 条</option>
+            <option value="0">{text($effectiveLocale, "settings.historyNone")}</option>
+            <option value="20">{pluralText($effectiveLocale, 20, "settings.historyCountOne", "settings.historyCountOther")}</option>
+            <option value="50">{pluralText($effectiveLocale, 50, "settings.historyCountOne", "settings.historyCountOther")}</option>
+            <option value="100">{pluralText($effectiveLocale, 100, "settings.historyCountOne", "settings.historyCountOther")}</option>
           </select>
         </label>
         <label>
-          <span>最长保留天数</span>
+          <span>{text($effectiveLocale, "settings.retention")}</span>
           <input
             type="number"
             min="0"
@@ -304,26 +308,42 @@
           />
         </label>
         <label>
-          <span>主题</span>
+          <span>{text($effectiveLocale, "settings.theme")}</span>
           <select
             value={$settingsSnapshot.settings.themeMode}
             disabled={$settingsSnapshot.state === "saving"}
             on:change={(event) =>
               saveSetting("themeMode", themeModeFromValue(event.currentTarget.value))}
           >
-            <option value="system">跟随系统</option>
-            <option value="light">浅色</option>
-            <option value="dark">深色</option>
+            <option value="system">{text($effectiveLocale, "settings.themeSystem")}</option>
+            <option value="light">{text($effectiveLocale, "settings.themeLight")}</option>
+            <option value="dark">{text($effectiveLocale, "settings.themeDark")}</option>
+          </select>
+        </label>
+        <label>
+          <span class="setting-copy">
+            <strong>{text($effectiveLocale, "settings.language")}</strong>
+            <small>{text($effectiveLocale, "settings.languageHint")}</small>
+          </span>
+          <select
+            value={$settingsSnapshot.settings.languageMode}
+            disabled={$settingsSnapshot.state === "saving"}
+            on:change={(event) =>
+              saveSetting("languageMode", languageModeFromValue(event.currentTarget.value))}
+          >
+            <option value="system">{text($effectiveLocale, "language.system")}</option>
+            <option value="zh-CN">{text($effectiveLocale, "language.zhCN")}</option>
+            <option value="en-US">{text($effectiveLocale, "language.enUS")}</option>
           </select>
         </label>
         </div>
-        <p class="settings-footnote">只在局域网同步纯文本；设置和历史保存在本机。</p>
+        <p class="settings-footnote">{text($effectiveLocale, "settings.footnote")}</p>
       {:else if settingsSection === "devices"}
 
-      <section class="device-entry-panel" aria-label="设备配对入口">
+      <section class="device-entry-panel" aria-label={text($effectiveLocale, "device.entryLabel")}>
         <div>
-          <strong>连接新设备</strong>
-          <p>向手机、平板或电脑发出邀请，也可以加入另一台电脑。</p>
+          <strong>{text($effectiveLocale, "device.connectNew")}</strong>
+          <p>{text($effectiveLocale, "device.connectNewHint")}</p>
         </div>
         <div class="device-entry-actions">
           <button
@@ -340,8 +360,8 @@
               </svg>
             </span>
             <span class="device-entry-copy">
-              <strong>添加设备</strong>
-              <small>生成配对邀请</small>
+              <strong>{text($effectiveLocale, "device.add")}</strong>
+              <small>{text($effectiveLocale, "device.addHint")}</small>
             </span>
             <span class="device-entry-chevron" aria-hidden="true">›</span>
           </button>
@@ -359,25 +379,25 @@
               </svg>
             </span>
             <span class="device-entry-copy">
-              <strong>加入另一台电脑</strong>
-              <small>粘贴邀请并连接</small>
+              <strong>{text($effectiveLocale, "device.joinComputer")}</strong>
+              <small>{text($effectiveLocale, "device.joinHint")}</small>
             </span>
             <span class="device-entry-chevron" aria-hidden="true">›</span>
           </button>
         </div>
         {#if !invitationTargetSpace()}
-          <p class="device-entry-hint">当前没有可发出邀请的协调端空间；仍可通过邀请加入另一台电脑。</p>
+          <p class="device-entry-hint">{text($effectiveLocale, "device.noOwnerSpace")}</p>
         {/if}
       </section>
 
-      <section class="space-summary" aria-label="同步空间">
+      <section class="space-summary" aria-label={text($effectiveLocale, "space.label")}>
         <div class="section-heading compact">
           <div>
-            <h2>同步空间</h2>
+            <h2>{text($effectiveLocale, "space.label")}</h2>
             <p class="metadata">
               {$shellSnapshot.syncSpace.errorMessage
                 ? formatUiMessage($effectiveLocale, $shellSnapshot.syncSpace.errorMessage)
-                : "空间密钥保存到系统凭据库，界面不显示密钥"}
+                : text($effectiveLocale, "space.keySafe")}
             </p>
           </div>
           <button
@@ -386,14 +406,14 @@
             disabled={$shellSnapshot.syncSpace.state === "creating"}
             on:click={() => shellSnapshot.createDefaultSyncSpace()}
           >
-            {$shellSnapshot.syncSpace.spaces.length > 0 ? "新增空间" : "创建默认空间"}
+            {text($effectiveLocale, $shellSnapshot.syncSpace.spaces.length > 0 ? "space.add" : "space.createDefault")}
           </button>
         </div>
 
         {#if $shellSnapshot.syncSpace.spaces.length === 0}
           <div class="space-empty">
-            <strong>尚未创建正式同步空间</strong>
-            <p>添加设备前，请先创建一个同步空间。</p>
+            <strong>{text($effectiveLocale, "space.empty")}</strong>
+            <p>{text($effectiveLocale, "space.emptyHint")}</p>
           </div>
         {:else}
           <div class="space-list">
@@ -403,17 +423,20 @@
                   <strong>{space.displayName}</strong>
                   <p>
                     #{space.shortId} ·
-                    {space.localRole === "owner" ? "协调端" : "成员端"} ·
-                    {$shellSnapshot.devices.filter((device) =>
-                      device.trustKind === "trusted" && device.spaceId === space.id).length}
-                    台可信设备
+                    {text($effectiveLocale, space.localRole === "owner" ? "space.owner" : "space.member")} ·
+                    {pluralText(
+                      $effectiveLocale,
+                      $shellSnapshot.devices.filter((device) => device.trustKind === "trusted" && device.spaceId === space.id).length,
+                      "space.deviceCountOne",
+                      "space.deviceCountOther",
+                    )}
                   </p>
                 </div>
                 <div class="space-card-actions">
                   <span>
                     {$shellSnapshot.syncSpace.activeSpaceId === space.id
-                      ? "当前"
-                      : "可用"}
+                      ? text($effectiveLocale, "space.current")
+                      : text($effectiveLocale, "space.available")}
                   </span>
                   <div class="space-card-controls">
                     {#if space.localRole === "owner"}
@@ -423,7 +446,7 @@
                         disabled={$shellSnapshot.syncSpace.state === "inviting"}
                         on:click={() => shellSnapshot.createPairingInvitation(space.id)}
                       >
-                        添加设备
+                        {text($effectiveLocale, "device.add")}
                       </button>
                     {/if}
                     <button
@@ -431,7 +454,7 @@
                       type="button"
                       aria-expanded={expandedSpaceActionsId === space.id}
                       on:click={() => (expandedSpaceActionsId = expandedSpaceActionsId === space.id ? "" : space.id)}
-                    >更多</button>
+                    >{text($effectiveLocale, "common.more")}</button>
                   </div>
                 </div>
                 {#if expandedSpaceActionsId === space.id}
@@ -442,35 +465,36 @@
                       disabled={$shellSnapshot.syncSpace.state === "loading" ||
                         $shellSnapshot.syncSpace.activeSpaceId === space.id}
                       on:click={() => shellSnapshot.selectActiveSyncSpace(space.id)}
-                    >{$shellSnapshot.syncSpace.activeSpaceId === space.id ? "当前空间" : "设为当前"}</button>
+                    >{text($effectiveLocale, $shellSnapshot.syncSpace.activeSpaceId === space.id ? "space.currentSpace" : "space.makeCurrent")}</button>
                     <button
                       class="text-button danger-action"
                       type="button"
                       disabled={$shellSnapshot.syncSpace.state === "loading" ||
                         (space.localRole === "owner" && $shellSnapshot.syncSpace.spaces.length <= 1)}
                       on:click={() => (pendingSpaceDeletionId = space.id)}
-                    >{space.localRole === "member" ? "离开空间" : "删除空间"}</button>
+                    >{text($effectiveLocale, space.localRole === "member" ? "space.leave" : "space.delete")}</button>
                   </div>
                 {/if}
                 {#if pendingSpaceDeletionId === space.id}
                   <div class="device-removal-confirmation space-deletion-confirmation" role="alert">
-                    <strong>{space.localRole === "member" ? "确认离开" : "确认删除"}“{space.displayName}”？</strong>
-                    <p>{space.localRole === "member"
-                      ? "与协调端的可信连接、该空间的本地记录和密钥将被移除；再次加入需要新的邀请。"
-                      : "该空间、本地同步记录和旧密钥引用将被删除，操作无法撤销。有可信设备在线或尚未移除时会拒绝删除。"}</p>
+                    <strong>{text($effectiveLocale, "space.confirmQuestion", {
+                      action: text($effectiveLocale, space.localRole === "member" ? "space.confirmLeave" : "space.confirmDelete"),
+                      name: space.displayName
+                    })}</strong>
+                    <p>{text($effectiveLocale, space.localRole === "member" ? "space.leaveHint" : "space.deleteHint")}</p>
                     <div>
                       <button
                         class="compact-danger-action"
                         type="button"
                         disabled={$shellSnapshot.syncSpace.state === "loading"}
                         on:click={() => removeSyncSpace(space)}
-                      >{space.localRole === "member" ? "确认离开" : "确认删除"}</button>
+                      >{text($effectiveLocale, space.localRole === "member" ? "space.confirmLeave" : "space.confirmDelete")}</button>
                       <button
                         class="text-button"
                         type="button"
                         disabled={$shellSnapshot.syncSpace.state === "loading"}
                         on:click={() => (pendingSpaceDeletionId = "")}
-                      >取消</button>
+                      >{text($effectiveLocale, "common.cancel")}</button>
                     </div>
                   </div>
                 {/if}
@@ -479,24 +503,32 @@
           </div>
           {#if $shellSnapshot.syncSpace.invitation}
             <div class="invitation-card">
-              <strong>配对邀请已生成</strong>
+              <strong>{text($effectiveLocale, "pairing.generated")}</strong>
               <p>
                 {$shellSnapshot.syncSpace.invitation.spaceDisplayName} ·
-                {$shellSnapshot.syncSpace.invitation.expiresInSeconds / 60} 分钟内有效 ·
-                到期 {$shellSnapshot.syncSpace.invitation.expiresAt}
+                {pluralText(
+                  $effectiveLocale,
+                  Math.max(1, Math.ceil($shellSnapshot.syncSpace.invitation.expiresInSeconds / 60)),
+                  "pairing.validForOne",
+                  "pairing.validForOther",
+                  {
+                    minutes: Math.max(1, Math.ceil($shellSnapshot.syncSpace.invitation.expiresInSeconds / 60)),
+                    time: formatTime($shellSnapshot.syncSpace.invitation.expiresAtMs, $effectiveLocale),
+                  },
+                )}
               </p>
               <div class="confirmation-code">
-                <span>配对确认码</span>
+                <span>{text($effectiveLocale, "pairing.code")}</span>
                 <strong>{$shellSnapshot.syncSpace.invitation.confirmationCode}</strong>
               </div>
-              <div class="invitation-qr" aria-label="配对二维码">
+              <div class="invitation-qr" aria-label={text($effectiveLocale, "pairing.qrLabel")}>
                 {@html $shellSnapshot.syncSpace.invitation.qrSvg}
-                <span>用鸿蒙端扫码导入，或复制邀请字符串手动导入。</span>
+                <span>{text($effectiveLocale, "pairing.qrHint")}</span>
                 <button
                   class="invitation-qr-expand"
                   type="button"
                   on:click={() => (qrExpanded = true)}
-                >放大扫码</button>
+                >{text($effectiveLocale, "pairing.enlarge")}</button>
               </div>
               <button
                 class="secondary-action invitation-copy"
@@ -510,19 +542,21 @@
                 <span aria-hidden="true">⧉</span>
                 <strong>
                   {$shellSnapshot.syncSpace.state === "copyingInvitation"
-                    ? "正在复制邀请"
-                    : "复制邀请"}
+                    ? text($effectiveLocale, "pairing.copying")
+                    : text($effectiveLocale, "pairing.copy")}
                 </strong>
-                <em>安全</em>
+                <em>{text($effectiveLocale, "pairing.safe")}</em>
               </button>
-              {#if $shellSnapshot.syncSpace.invitationCopiedAt}
+              {#if $shellSnapshot.syncSpace.invitationCopiedAtMs !== null}
                 <p class="copy-hint">
-                  已在 {$shellSnapshot.syncSpace.invitationCopiedAt} 复制；本机历史会忽略这次写入。
+                  {text($effectiveLocale, "pairing.copiedAt", { time: formatTime($shellSnapshot.syncSpace.invitationCopiedAtMs, $effectiveLocale) })}
                 </p>
               {/if}
               <p>
-                发行设备 {$shellSnapshot.syncSpace.invitation.issuerDeviceName} ·
-                #{$shellSnapshot.syncSpace.invitation.issuerShortFingerprint}。邀请字符串包含一次性秘密，不在界面展开明文；请只发给要配对的设备。
+                {text($effectiveLocale, "pairing.issuer", {
+                  name: $shellSnapshot.syncSpace.invitation.issuerDeviceName,
+                  fingerprint: $shellSnapshot.syncSpace.invitation.issuerShortFingerprint
+                })}
               </p>
             </div>
           {/if}
@@ -540,7 +574,7 @@
         />
       </div>
       {:else}
-        <p class="advanced-intro">仅在连接或密钥异常时使用。诊断信息不包含剪贴板正文或密钥。</p>
+        <p class="advanced-intro">{text($effectiveLocale, "advanced.intro")}</p>
 
         <HmacDiagnosticCard
           state={$shellSnapshot.syncSpace.state}
@@ -571,7 +605,7 @@
       <button
         class="qr-dialog-backdrop"
         type="button"
-        aria-label="关闭放大二维码"
+        aria-label={text($effectiveLocale, "pairing.closeExpanded")}
         on:click={() => (qrExpanded = false)}
       ></button>
       <dialog
@@ -583,25 +617,25 @@
       >
         <header class="qr-dialog-header">
           <div>
-            <h2 id="qr-dialog-title">扫描配对二维码</h2>
-            <p id="qr-dialog-description">请用鸿蒙端保持镜头稳定并完整框住二维码。</p>
+            <h2 id="qr-dialog-title">{text($effectiveLocale, "pairing.scanTitle")}</h2>
+            <p id="qr-dialog-description">{text($effectiveLocale, "pairing.scanHint")}</p>
           </div>
           <button
             class="qr-dialog-close"
             type="button"
-            aria-label="关闭放大二维码"
+            aria-label={text($effectiveLocale, "pairing.closeExpanded")}
             on:click={() => (qrExpanded = false)}
           >×</button>
         </header>
-        <div class="expanded-invitation-qr" aria-label="放大的配对二维码">
+        <div class="expanded-invitation-qr" aria-label={text($effectiveLocale, "pairing.expandedQrLabel")}>
           {@html $shellSnapshot.syncSpace.invitation.qrSvg}
         </div>
         <div class="qr-dialog-confirmation">
-          <span>配对确认码</span>
+          <span>{text($effectiveLocale, "pairing.code")}</span>
           <strong>{$shellSnapshot.syncSpace.invitation.confirmationCode}</strong>
         </div>
         <p class="qr-dialog-expiry">
-          邀请将在 {$shellSnapshot.syncSpace.invitation.expiresAt} 到期；关闭后仍可复制邀请字符串。
+          {text($effectiveLocale, "pairing.expiresAt", { time: formatTime($shellSnapshot.syncSpace.invitation.expiresAtMs, $effectiveLocale) })}
         </p>
       </dialog>
     </div>
@@ -623,7 +657,7 @@
         settingsSnapshot.setSyncEnabled(!$settingsSnapshot.settings.syncEnabled)}
     >
       <StatusDot state={$settingsSnapshot.settings.syncEnabled ? "online" : "paused"} />
-      {$settingsSnapshot.settings.syncEnabled ? "同步已开启" : "同步已暂停"}
+      {text($effectiveLocale, $settingsSnapshot.settings.syncEnabled ? "settings.syncEnabled" : "settings.syncPaused")}
     </button>
     </footer>
   {/if}

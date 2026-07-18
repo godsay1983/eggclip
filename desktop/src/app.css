@@ -954,6 +954,7 @@ footer {
 .space-empty p,
 .invitation-card p {
   margin-top: 4px;
+  overflow-wrap: anywhere;
   color: var(--muted);
   font-size: 11px;
   line-height: 1.45;
@@ -1533,6 +1534,8 @@ footer {
 .setting-copy {
   display: grid;
   gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .setting-copy strong {
@@ -1562,6 +1565,7 @@ footer {
 .setting-grid input[type="number"],
 .setting-grid select {
   width: 124px;
+  max-width: 100%;
   height: 36px;
   padding: 0 10px;
   border: 1px solid var(--line);
@@ -1645,6 +1649,7 @@ footer {
 .device-card-header p,
 .device-note {
   margin-top: 3px;
+  overflow-wrap: anywhere;
   color: var(--muted);
   font-size: 11px;
   line-height: 1.45;

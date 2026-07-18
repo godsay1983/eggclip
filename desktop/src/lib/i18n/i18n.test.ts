@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_LANGUAGE_MODE,
@@ -5,10 +7,14 @@ import {
   formatTime,
   formatUiMessage,
   isLanguageMode,
+  pluralText,
   resolveEffectiveLocale,
   resolveSystemLocale,
   translate,
+  text,
   uiMessage,
+  enUSText,
+  zhCNText,
 } from "$lib/i18n";
 import type { UiMessageCode } from "$lib/i18n";
 
@@ -58,5 +64,51 @@ describe("desktop i18n foundation", () => {
     })).toBe("The operation failed. Please try again.");
     expect(() => uiMessage("sync.sentDescription", { content: "clipboard text" }))
       .toThrow("unsafe ui message parameter");
+  });
+
+  it("keeps every desktop text key and parameter aligned in both languages", () => {
+    expect(Object.keys(enUSText).sort()).toEqual(Object.keys(zhCNText).sort());
+    const placeholders = (value: string) =>
+      [...value.matchAll(/\{([A-Za-z][A-Za-z0-9]*)\}/g)].map((match) => match[1]).sort();
+    for (const key of Object.keys(zhCNText) as Array<keyof typeof zhCNText>) {
+      expect(placeholders(enUSText[key]), key).toEqual(placeholders(zhCNText[key]));
+    }
+    expect(text("en-US", "pairing.progressCandidate", {
+      current: 1,
+      total: 3,
+      endpoint: "192.168.1.8:43210",
+    })).toBe("Trying address 1/3 · 192.168.1.8:43210");
+  });
+
+  it("uses English singular and plural forms for desktop counts and remaining time", () => {
+    expect(pluralText("en-US", 1, "space.deviceCountOne", "space.deviceCountOther"))
+      .toBe("1 trusted device");
+    expect(pluralText("en-US", 2, "space.deviceCountOne", "space.deviceCountOther"))
+      .toBe("2 trusted devices");
+    expect(pluralText("en-US", 1, "pairing.validForOne", "pairing.validForOther", {
+      minutes: 1,
+      time: "10:30 AM",
+    })).toContain("1 minute");
+  });
+
+  it("keeps Svelte components free of hard-coded Chinese and protects long copy layout", () => {
+    const sourceRoot = fileURLToPath(new URL("../../", import.meta.url));
+    const svelteFiles: string[] = [];
+    const visit = (directory: string) => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const path = `${directory}/${entry.name}`;
+        if (entry.isDirectory()) visit(path);
+        else if (entry.name.endsWith(".svelte")) svelteFiles.push(path);
+      }
+    };
+    visit(sourceRoot);
+    expect(svelteFiles.length).toBeGreaterThan(0);
+    for (const path of svelteFiles) {
+      expect(readFileSync(path, "utf8"), path).not.toMatch(/\p{Script=Han}/u);
+    }
+
+    const css = readFileSync(fileURLToPath(new URL("../../app.css", import.meta.url)), "utf8");
+    expect(css).toContain("overflow-wrap: anywhere");
+    expect(enUSText["device.removeHint"].length).toBeGreaterThan(100);
   });
 });

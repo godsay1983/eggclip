@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { effectiveLocale, text } from "$lib/i18n";
   import type { PocTransportSummary } from "$lib/types/shell";
 
   export let transport: PocTransportSummary = {
@@ -25,70 +26,75 @@
 
   function stateLabel(state: PocTransportSummary["state"]): string {
     if (state === "running") {
-      return "运行中";
+      return text($effectiveLocale, "network.running");
     }
     if (state === "failed") {
-      return "异常";
+      return text($effectiveLocale, "network.error");
     }
-    return "未启动";
+    return text($effectiveLocale, "network.stopped");
   }
 </script>
 
 <section class="poc-connect-card" aria-labelledby="network-diagnostics-title">
   <div class="section-heading compact">
     <div>
-      <span class="eyebrow">局域网诊断</span>
-      <h2 id="network-diagnostics-title">发现与监听状态</h2>
+      <span class="eyebrow">{text($effectiveLocale, "network.eyebrow")}</span>
+      <h2 id="network-diagnostics-title">{text($effectiveLocale, "network.title")}</h2>
     </div>
     <button class="text-button" type="button" disabled={refreshing} on:click={refresh}>
-      {refreshing ? "刷新中" : "刷新"}
+      {text($effectiveLocale, refreshing ? "common.refreshing" : "common.refresh")}
     </button>
   </div>
 
-  <p>
-    WebSocket：{stateLabel(transport.state)} · 端口：{transport.port > 0 ? transport.port : "未分配"}
-    · mDNS：{transport.discoveryPublished ? "已发布" : "未发布"}
-    · POC 连接：{transport.connectedPeers}
-  </p>
+  <p>{text($effectiveLocale, "network.transportSummary", {
+    state: stateLabel(transport.state),
+    port: transport.port > 0 ? transport.port : text($effectiveLocale, "common.unassigned"),
+    mdns: text($effectiveLocale, transport.discoveryPublished ? "network.published" : "network.unpublished"),
+    count: transport.connectedPeers
+  })}</p>
 
   {#if transport.networkAddresses.length > 0}
-    <div class="history-list" aria-label="本机候选 IPv4 地址">
+    <div class="history-list" aria-label={text($effectiveLocale, "network.addresses")}>
       {#each transport.networkAddresses.slice(0, 5) as item (`${item.interfaceName}-${item.address}`)}
         <article class="history-item">
           <div class="history-item-copy">
             <div>
               <strong>{item.address}</strong>
-              <p>{item.interfaceName}{item.isTunnel ? " · 隧道/TUN" : " · 普通网卡"}</p>
+              <p>{item.interfaceName} · {text($effectiveLocale, item.isTunnel ? "network.tunnel" : "network.normalAdapter")}</p>
             </div>
           </div>
         </article>
       {/each}
     </div>
   {:else}
-    <p>未发现可用 IPv4。请检查 Wi‑Fi、VPN/TUN、虚拟网卡、Windows 防火墙或 AP 隔离。</p>
+    <p>{text($effectiveLocale, "network.noIpv4")}</p>
   {/if}
 
-  <div class="history-list" aria-label="mDNS 浏览结果">
+  <div class="history-list" aria-label={text($effectiveLocale, "network.mdnsResults")}>
     {#if transport.discoveredServices.length > 0}
       {#each transport.discoveredServices.slice(0, 5) as service (service.instanceId)}
         <article class="history-item">
           <div class="history-item-copy">
             <div>
               <strong>{service.addresses[0]}:{service.port}</strong>
-              <p>协议 v{service.protocolVersion} · 设备 {service.deviceId.slice(0, 8)} · {service.capabilities.join(" / ")}</p>
+              <p>{text($effectiveLocale, "network.serviceMeta", {
+                version: service.protocolVersion,
+                device: service.deviceId.slice(0, 8),
+                capabilities: service.capabilities.join(" / ")
+              })}</p>
             </div>
           </div>
         </article>
       {/each}
     {:else}
       <article class="history-item">
-        <strong>未发现其他 EggClip 服务</strong>
-        <p>点击刷新可查看正式 mDNS 浏览结果；可信设备仍会使用最近成功地址回退。</p>
+        <strong>{text($effectiveLocale, "network.noService")}</strong>
+        <p>{text($effectiveLocale, "network.noServiceHint")}</p>
       </article>
     {/if}
   </div>
 
   {#if transport.lastError}
-    <p class="poc-diagnostics">最近错误：{transport.lastError}</p>
+    <p class="poc-diagnostics">{text($effectiveLocale, "network.lastErrorGeneric")}</p>
   {/if}
 </section>

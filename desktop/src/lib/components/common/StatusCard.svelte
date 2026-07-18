@@ -1,24 +1,25 @@
 <script lang="ts">
+  import { effectiveLocale, text } from "$lib/i18n";
   import StatusDot from "$lib/components/common/StatusDot.svelte";
   import type { ConnectionState } from "$lib/types/shell";
 
   export let state: ConnectionState = "offline";
-  export let title = "等待配对设备";
-  export let description = "桌面端将在局域网中自动发现可信设备";
+  export let title = "";
+  export let description = "";
 
   $: statusLabel =
     state === "online"
-      ? "在线"
+      ? text($effectiveLocale, "status.online")
       : state === "connecting"
-        ? "连接中"
+        ? text($effectiveLocale, "status.connecting")
         : state === "authFailed"
-          ? "认证失败"
+          ? text($effectiveLocale, "status.authFailed")
           : state === "paused"
-            ? "已暂停"
-            : "离线";
+            ? text($effectiveLocale, "status.paused")
+            : text($effectiveLocale, "status.offline");
 </script>
 
-<section class="status-card" aria-label="连接状态">
+<section class="status-card" aria-label={text($effectiveLocale, "status.connection")}>
   <div class="status-icon">
     <StatusDot {state} />
   </div>

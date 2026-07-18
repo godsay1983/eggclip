@@ -52,7 +52,9 @@ describe("desktop shell", () => {
 
     expect(preview.id).toBe("item-1");
     expect(preview.text).toBe("来自 Harmony 的文本");
-    expect(preview.source).toBe("可信设备 · 15a91e5a");
+    expect(preview.sourceKind).toBe("trusted");
+    expect(preview.sourceDevice).toBe("15a91e5a");
+    expect(preview.byteLength).toBe(24);
   });
 
   it("keeps desktop settings defaults and local validation aligned with v1 policy", () => {
@@ -116,9 +118,8 @@ describe("desktop shell", () => {
       state: "online",
       trustKind: "trusted",
       shortFingerprint: "12345678",
-      lastSeen: "当前会话在线",
       endpoint: "192.168.1.9:4567",
-      note: "认证会话在线",
+      lastSeenAtMs: Date.now(),
     }];
     const devices = mergeRuntimeDevices(
       trusted,

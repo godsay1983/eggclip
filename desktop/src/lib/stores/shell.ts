@@ -99,20 +99,12 @@ function setCurrentClipboard(
   }));
 }
 
-function currentTimeLabel() {
-  return new Date().toLocaleTimeString("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-}
-
-function setOutboundStatus(status: Omit<OutboundSyncStatus, "updatedAt">) {
+function setOutboundStatus(status: Omit<OutboundSyncStatus, "updatedAtMs">) {
   snapshot.update((state) => ({
     ...state,
     outbound: {
       ...status,
-      updatedAt: currentTimeLabel(),
+      updatedAtMs: Date.now(),
     },
   }));
 }
@@ -146,8 +138,6 @@ async function refreshTrustedDeviceState(): Promise<void> {
       ? {
           ...device,
           state: "online" as const,
-          lastSeen: "当前会话在线",
-          note: "认证会话在线",
         }
       : device,
   );
@@ -263,7 +253,7 @@ export const shellSnapshot = {
             }));
             return;
           }
-          const deviceLabel = event.originDeviceId.slice(0, 8) || "未知设备";
+          const deviceLabel = event.originDeviceId.slice(0, 8);
           setCurrentClipboard(
             current,
             uiMessage("receive.trustedTitle"),
@@ -305,7 +295,7 @@ export const shellSnapshot = {
               state: "idle",
               title: uiMessage("receive.previewTitle"),
               description: uiMessage("receive.previewDescription"),
-              updatedAt: current.receivedAt,
+              updatedAtMs: current.receivedAtMs,
             },
           );
         }),
@@ -453,7 +443,7 @@ export const shellSnapshot = {
             ? state.syncSpace.hmacDiagnostic
             : null,
           invitation: state.syncSpace.invitation,
-          invitationCopiedAt: state.syncSpace.invitationCopiedAt,
+          invitationCopiedAtMs: state.syncSpace.invitationCopiedAtMs,
           errorMessage: null,
         },
       }));
@@ -494,7 +484,7 @@ export const shellSnapshot = {
             activeSpaceId,
             hmacDiagnostic: state.syncSpace.hmacDiagnostic,
             invitation: state.syncSpace.invitation,
-            invitationCopiedAt: state.syncSpace.invitationCopiedAt,
+            invitationCopiedAtMs: state.syncSpace.invitationCopiedAtMs,
             errorMessage: null,
           },
         };
@@ -539,7 +529,7 @@ export const shellSnapshot = {
           activeSpaceId,
           hmacDiagnostic: null,
           invitation: null,
-          invitationCopiedAt: null,
+          invitationCopiedAtMs: null,
           errorMessage: null,
         },
         connection: {
@@ -585,7 +575,7 @@ export const shellSnapshot = {
           activeSpaceId: result.activeSpaceId,
           hmacDiagnostic: null,
           invitation: null,
-          invitationCopiedAt: null,
+          invitationCopiedAtMs: null,
           errorMessage: result.credentialDeleted
             ? null
             : uiMessage("space.credentialCleanupFailed"),
@@ -629,7 +619,7 @@ export const shellSnapshot = {
           activeSpaceId: result.activeSpaceId,
           hmacDiagnostic: null,
           invitation: null,
-          invitationCopiedAt: null,
+          invitationCopiedAtMs: null,
           errorMessage: result.credentialDeleted
             ? null
             : uiMessage("space.leaveCredentialCleanupFailed"),
@@ -729,7 +719,7 @@ export const shellSnapshot = {
       syncSpace: {
         ...state.syncSpace,
         state: "inviting",
-        invitationCopiedAt: null,
+        invitationCopiedAtMs: null,
         errorMessage: null,
       },
     }));
@@ -741,7 +731,7 @@ export const shellSnapshot = {
           ...state.syncSpace,
           state: "ready",
           invitation,
-          invitationCopiedAt: null,
+          invitationCopiedAtMs: null,
           errorMessage: null,
         },
         connection: {
@@ -784,7 +774,7 @@ export const shellSnapshot = {
         syncSpace: {
           ...state.syncSpace,
           state: "ready",
-          invitationCopiedAt: currentTimeLabel(),
+          invitationCopiedAtMs: Date.now(),
           errorMessage: null,
         },
         connection: {
@@ -866,7 +856,7 @@ export const shellSnapshot = {
             state: "pending",
             title: uiMessage("sync.sendingTitle"),
             description: uiMessage("sync.sendingDescription"),
-            updatedAt: current.receivedAt,
+            updatedAtMs: current.receivedAtMs,
           },
         );
       });
@@ -901,7 +891,7 @@ export const shellSnapshot = {
           state: "local",
           title: uiMessage("clipboard.localReadyTitle"),
           description: uiMessage("clipboard.localReadyDescription"),
-          updatedAt: current.receivedAt,
+          updatedAtMs: current.receivedAtMs,
         },
       );
       await captureHistoryText(current.text);

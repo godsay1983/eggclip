@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { effectiveLocale, formatTime, text } from "$lib/i18n";
   import type { HistorySummary } from "$lib/types/shell";
 
   export let history: HistorySummary = { used: 0, limit: 50, items: [] };
@@ -48,7 +49,7 @@
 <section class="history-section">
   <div class="section-heading compact">
     <div>
-      <h2>最近记录</h2>
+      <h2>{text($effectiveLocale, "history.title")}</h2>
       <span class="metadata">{history.used} / {history.limit}</span>
     </div>
     <button
@@ -57,44 +58,46 @@
       disabled={clearing || history.items.length === 0}
       on:click={() => (clearConfirmationVisible = true)}
     >
-      {clearing ? "清理中" : "清空历史"}
+      {text($effectiveLocale, clearing ? "history.clearing" : "history.clear")}
     </button>
   </div>
   {#if clearConfirmationVisible}
     <div class="history-confirmation" role="alert">
-      <span>清空全部本机历史？</span>
+      <span>{text($effectiveLocale, "history.clearQuestion")}</span>
       <div>
         <button class="text-button danger" type="button" disabled={clearing} on:click={clearHistory}>
-          {clearing ? "清理中" : "确认清空"}
+          {text($effectiveLocale, clearing ? "history.clearing" : "history.confirmClear")}
         </button>
-        <button class="text-button" type="button" disabled={clearing} on:click={() => (clearConfirmationVisible = false)}>取消</button>
+        <button class="text-button" type="button" disabled={clearing} on:click={() => (clearConfirmationVisible = false)}>{text($effectiveLocale, "common.cancel")}</button>
       </div>
     </div>
   {/if}
   {#if history.items.length > 0}
-    <div class="history-list" aria-label="最近历史记录">
+    <div class="history-list" aria-label={text($effectiveLocale, "history.listLabel")}>
       {#each history.items as item (item.id)}
+        {@const itemTitle = text($effectiveLocale, "history.textBytes", { count: item.contentLength })}
+        {@const deviceLabel = item.originDeviceId.slice(0, 8) || "—"}
         <article class="history-item" class:expanded={actionsItemId === item.id}>
           <div class="history-item-row">
             <button
               class="history-item-main"
               type="button"
               disabled={!item.canCopy}
-              aria-label={`复制 ${item.title}`}
+              aria-label={text($effectiveLocale, "history.copyItem", { title: itemTitle })}
               on:click={() => copyItem(item.id)}
             >
               <span class="history-item-heading">
-                <strong>{item.title}</strong>
-                <span>{copiedItemId === item.id ? "已复制" : item.receivedAt}</span>
+                <strong>{itemTitle}</strong>
+                <span>{copiedItemId === item.id ? text($effectiveLocale, "common.copied") : formatTime(item.receivedAtMs, $effectiveLocale)}</span>
               </span>
               <span class="history-item-preview">
-                {expandedItemId === item.id && item.text ? item.text : item.preview}
+                {expandedItemId === item.id && item.text ? item.text : item.preview || text($effectiveLocale, "history.contentUnavailable")}
               </span>
             </button>
             <button
               class="history-more"
               type="button"
-              aria-label={`${item.title}更多操作`}
+              aria-label={text($effectiveLocale, "history.moreActions", { title: itemTitle })}
               aria-expanded={actionsItemId === item.id}
               on:click={() => {
                 actionsItemId = actionsItemId === item.id ? null : item.id;
@@ -104,28 +107,28 @@
           </div>
           {#if actionsItemId === item.id}
             <div class="history-item-actions">
-              <span class="metadata">{item.source}</span>
+              <span class="metadata">{text($effectiveLocale, "history.sourceDevice", { device: deviceLabel })}</span>
               {#if item.text && item.text !== item.preview}
                 <button class="text-button" type="button" on:click={() => {
                   expandedItemId = expandedItemId === item.id ? null : item.id;
-                }}>{expandedItemId === item.id ? "收起详情" : "查看详情"}</button>
+                }}>{text($effectiveLocale, expandedItemId === item.id ? "history.hideDetails" : "history.showDetails")}</button>
               {/if}
               <button
                 class="text-button danger"
                 type="button"
                 disabled={deletingItemId === item.id}
                 on:click={() => (pendingDeleteItemId = item.id)}
-              >删除</button>
+              >{text($effectiveLocale, "common.delete")}</button>
             </div>
           {/if}
           {#if pendingDeleteItemId === item.id}
             <div class="history-confirmation" role="alert">
-              <span>删除这条记录？</span>
+              <span>{text($effectiveLocale, "history.deleteQuestion")}</span>
               <div>
                 <button class="text-button danger" type="button" disabled={deletingItemId === item.id} on:click={() => deleteItem(item.id)}>
-                  {deletingItemId === item.id ? "删除中" : "确认删除"}
+                  {text($effectiveLocale, deletingItemId === item.id ? "history.deleting" : "history.confirmDelete")}
                 </button>
-                <button class="text-button" type="button" disabled={deletingItemId === item.id} on:click={() => (pendingDeleteItemId = null)}>取消</button>
+                <button class="text-button" type="button" disabled={deletingItemId === item.id} on:click={() => (pendingDeleteItemId = null)}>{text($effectiveLocale, "common.cancel")}</button>
               </div>
             </div>
           {/if}
@@ -135,11 +138,11 @@
   {:else}
     <div class="empty-state">
       <span aria-hidden="true">{historyEnabled ? "↔" : "·"}</span>
-      <strong>{historyEnabled ? "还没有本机历史" : "历史保存已关闭"}</strong>
+      <strong>{text($effectiveLocale, historyEnabled ? "history.empty" : "history.disabled")}</strong>
       <p>
         {historyEnabled
-          ? "复制或收到文本后会显示在这里。"
-          : "当前只同步实时内容，可在设置中重新开启历史。"}
+          ? text($effectiveLocale, "history.emptyHint")
+          : text($effectiveLocale, "history.disabledHint")}
       </p>
     </div>
   {/if}

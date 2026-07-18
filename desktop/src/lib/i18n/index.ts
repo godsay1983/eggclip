@@ -40,6 +40,8 @@ export function translate<Key extends MessageKey>(
 }
 
 export type { LanguageMode, MessageKey, SupportedLocale } from "$lib/i18n/types";
+export { enUSText, pluralText, text, zhCNText } from "$lib/i18n/ui-text";
+export type { UiTextKey, UiTextParameters } from "$lib/i18n/ui-text";
 export { formatDateTime, formatTime } from "$lib/i18n/format";
 export {
   DEFAULT_LANGUAGE_MODE,

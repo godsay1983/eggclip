@@ -95,9 +95,8 @@ export interface AuthenticatedClipboardTextEvent {
 
 interface HistoryItemSummaryDto {
   id: string;
-  title: string;
   preview: string;
-  source: string;
+  originDeviceId: string;
   receivedAtMs: number;
   contentLength: number;
   text: string | null;
@@ -186,17 +185,15 @@ export function createInitialShellSnapshot(): ShellSnapshot {
       state: "idle",
       title: uiMessage("clipboard.waitingTitle"),
       description: uiMessage("clipboard.waitingDescription"),
-      updatedAt: "",
+      updatedAtMs: null,
     },
     devices: [
       {
         id: "placeholder",
-        name: "等待配对设备",
+        name: "",
         state: "offline",
         trustKind: "placeholder",
-        shortFingerprint: "未生成",
-        lastSeen: "暂无",
-        note: "正式配对完成后，这里会显示可信设备。",
+        shortFingerprint: "",
       },
     ],
     history: {
@@ -227,7 +224,7 @@ export function createInitialShellSnapshot(): ShellSnapshot {
       hmacDiagnostic: null,
       invitation: null,
       errorMessage: null,
-      invitationCopiedAt: null,
+      invitationCopiedAtMs: null,
     },
     syncEnabled: true,
   };
@@ -236,7 +233,7 @@ export function createInitialShellSnapshot(): ShellSnapshot {
 export async function readSystemClipboardText(): Promise<ClipboardPreview> {
   const result = await invoke<ClipboardReadResult>("read_clipboard_text");
   if (result.item) {
-    return toClipboardPreview(result.item, "本机剪贴板");
+    return toClipboardPreview(result.item, "local");
   }
   throw new Error(formatClipboardError(result.error));
 }
@@ -383,7 +380,7 @@ export async function onLocalClipboardText(
   const unlisten = await listen<ClipboardMonitorEvent>(
     "clipboard://local-text",
     (event) => {
-      handler(toClipboardPreview(event.payload.item, "本机剪贴板 · 自动监听"));
+      handler(toClipboardPreview(event.payload.item, "localMonitor"));
     },
   );
 
@@ -436,7 +433,7 @@ export async function onPocClipboardText(
     "transport://poc-clipboard-text",
     (event) => {
       handler(
-        toClipboardPreview(event.payload.item, `远端 POC · ${event.payload.peer}`),
+        toClipboardPreview(event.payload.item, "poc", event.payload.peer),
         event.payload.peer,
       );
     },
@@ -477,21 +474,6 @@ export async function onPocDiagnostics(
   });
 }
 
-export function describePocTransport(status: PocTransportSummary): string {
-  if (status.state === "running") {
-    const discovery = status.discoveryPublished
-      ? "mDNS POC 服务已发布"
-      : "mDNS 发布失败，可继续使用手动 IP";
-    const addresses = formatPocNetworkAddresses(status.networkAddresses);
-    const peers = status.connectedPeers > 0 ? `；已连接 ${status.connectedPeers} 个 POC` : "";
-    return `WebSocket POC 端口 ${status.port}；${discovery}；${addresses}${peers}`;
-  }
-  if (status.state === "failed") {
-    return status.lastError ?? "WebSocket POC 服务启动失败";
-  }
-  return "WebSocket POC 尚未启动";
-}
-
 function toPocTransportSummary(status: PocTransportStatus): PocTransportSummary {
   return {
     state: status.state,
@@ -520,24 +502,11 @@ function toPocRecentEndpoint(endpoint: PocRecentEndpointDto): PocRecentEndpoint 
     host: endpoint.host,
     port: endpoint.port,
     label: `${endpoint.host}:${endpoint.port}`,
-    connectedAt: new Date(endpoint.connectedAtMs).toLocaleTimeString("zh-CN", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }),
     connectedAtMs: endpoint.connectedAtMs,
   };
 }
 
 function toTrustedDeviceSummary(device: TrustedDeviceSummaryDto): DeviceSummary {
-  const lastSeen = device.lastSeenAtMs === null
-    ? "尚未记录"
-    : new Date(device.lastSeenAtMs).toLocaleString("zh-CN", {
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
   return {
     id: device.deviceId,
     spaceId: device.spaceId,
@@ -545,9 +514,7 @@ function toTrustedDeviceSummary(device: TrustedDeviceSummaryDto): DeviceSummary 
     state: device.connectionState,
     trustKind: "trusted",
     shortFingerprint: device.shortFingerprint,
-    lastSeen,
     endpoint: device.endpoint ?? undefined,
-    note: device.connectionState === "online" ? "认证会话在线" : "已配对，等待可信重连",
     pairedAtMs: device.pairedAtMs,
     lastSeenAtMs: device.lastSeenAtMs,
   };
@@ -560,11 +527,7 @@ function toSyncSpaceSummary(space: SyncSpaceSummaryDto): SyncSpaceSummary {
     keyVersion: space.keyVersion,
     shortId: space.spaceId.slice(-8),
     keyRefKind: space.spaceKeyRef.startsWith("credential://") ? "credential" : "unknown",
-    createdAt: new Date(space.createdAtMs).toLocaleTimeString("zh-CN", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }),
+    createdAtMs: space.createdAtMs,
     localRole: space.localRole,
   };
 }
@@ -577,11 +540,7 @@ function toPairingInvitationSummary(
     spaceId: invitation.spaceId,
     spaceDisplayName: invitation.spaceDisplayName,
     qrSvg: invitation.qrSvg,
-    expiresAt: new Date(invitation.expiresAtMs).toLocaleTimeString("zh-CN", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }),
+    expiresAtMs: invitation.expiresAtMs,
     expiresInSeconds: invitation.expiresInSeconds,
     issuerDeviceName: invitation.issuerDeviceName,
     issuerDeviceId: invitation.issuerDeviceId,
@@ -590,33 +549,19 @@ function toPairingInvitationSummary(
   };
 }
 
-function formatPocNetworkAddresses(addresses: PocNetworkAddress[]): string {
-  if (addresses.length === 0) {
-    return "未找到可用 IPv4，请检查网络适配器";
-  }
-  const visible = addresses.slice(0, 5).map((item) => {
-    const tunnel = item.isTunnel ? "，隧道" : "";
-    return `${item.interfaceName} ${item.address}${tunnel}`;
-  });
-  const remaining = addresses.length - visible.length;
-  return `候选地址：${visible.join("；")}${remaining > 0 ? `；另有 ${remaining} 个` : ""}`;
-}
-
 function toClipboardPreview(
   item: ClipboardTextItem,
-  source: string,
+  sourceKind: ClipboardPreview["sourceKind"],
+  sourceDevice?: string,
 ): ClipboardPreview {
   return {
     id: `local-${item.digest}`,
-    title: `${item.byteLen} 字节文本`,
     text: item.text,
     preview: trimPreview(item.text),
-    source,
-    receivedAt: new Date().toLocaleTimeString("zh-CN", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }),
+    byteLength: item.byteLen,
+    sourceKind,
+    sourceDevice,
+    receivedAtMs: Date.now(),
     canCopy: true,
   };
 }
@@ -624,9 +569,9 @@ function toClipboardPreview(
 export function toAuthenticatedClipboardPreview(
   event: AuthenticatedClipboardTextEvent,
 ): ClipboardPreview {
-  const deviceLabel = event.originDeviceId.slice(0, 8) || "未知设备";
+  const deviceLabel = event.originDeviceId.slice(0, 8);
   return {
-    ...toClipboardPreview(event.item, `可信设备 · ${deviceLabel}`),
+    ...toClipboardPreview(event.item, "trusted", deviceLabel),
     id: event.itemId,
   };
 }
@@ -634,14 +579,9 @@ export function toAuthenticatedClipboardPreview(
 function toHistoryItemSummary(item: HistoryItemSummaryDto): HistoryItemSummary {
   return {
     id: item.id,
-    title: item.title,
     preview: item.preview,
-    source: item.source,
-    receivedAt: new Date(item.receivedAtMs).toLocaleTimeString("zh-CN", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }),
+    originDeviceId: item.originDeviceId,
+    receivedAtMs: item.receivedAtMs,
     contentLength: item.contentLength,
     text: item.text,
     canCopy: item.canCopy,
@@ -657,10 +597,10 @@ function trimPreview(text: string): string {
 
 function formatClipboardError(error: ClipboardTextError | null): string {
   if (error === "empty") {
-    return "剪贴板为空，或当前内容不是可同步的纯文本。";
+    return "clipboard-read-empty";
   }
   if (error && typeof error === "object" && "tooLarge" in error) {
-    return `剪贴板文本过大：${error.tooLarge.actualBytes} 字节，当前上限为 ${error.tooLarge.maxBytes} 字节。`;
+    return `clipboard-read-too-large:${error.tooLarge.actualBytes}:${error.tooLarge.maxBytes}`;
   }
-  return "无法读取可同步的剪贴板文本。";
+  return "clipboard-read-failed";
 }

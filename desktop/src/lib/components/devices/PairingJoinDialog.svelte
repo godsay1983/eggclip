@@ -12,7 +12,7 @@
     type PairingJoinIssue,
   } from "$lib/pairing-join";
   import type { PairingJoinAttemptSummary } from "$lib/types/pairing";
-  import { effectiveLocale, formatUiMessage } from "$lib/i18n";
+  import { effectiveLocale, formatTime, formatUiMessage, text } from "$lib/i18n";
 
   export let onClose: () => void = () => {};
   export let onConnected: () => Promise<void> | void = () => {};
@@ -86,7 +86,9 @@
     issue = null;
     try {
       if (useManualAddress) {
-        progress = `正在连接 ${manualHost.trim()}:${manualPort}`;
+        progress = text($effectiveLocale, "pairing.progressManual", {
+          endpoint: `${manualHost.trim()}:${manualPort}`,
+        });
         await connectTrustedPeer(attempt.attemptId, {
           manualHost: manualHost.trim(),
           manualPort,
@@ -96,7 +98,11 @@
         let lastNetworkIssue: PairingJoinIssue | null = null;
         for (let index = 0; index < candidates.length; index += 1) {
           const candidate = candidates[index];
-          progress = `正在尝试地址 ${index + 1}/${candidates.length} · ${candidate.displayAddress}`;
+          progress = text($effectiveLocale, "pairing.progressCandidate", {
+            current: index + 1,
+            total: candidates.length,
+            endpoint: candidate.displayAddress,
+          });
           try {
             await connectTrustedPeer(attempt.attemptId, { candidateId: candidate.candidateId });
             lastNetworkIssue = null;
@@ -113,7 +119,7 @@
       }
       clearSensitiveState();
       state = "success";
-      progress = "已建立加密连接并保存可信设备";
+      progress = text($effectiveLocale, "pairing.connected");
       await onConnected();
     } catch (error) {
       issue = classifyPairingJoinError(error);
@@ -126,17 +132,14 @@
   }
 
   function expiryLabel(expiresAtMs: number): string {
-    return new Date(expiresAtMs).toLocaleTimeString("zh-CN", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    return formatTime(new Date(expiresAtMs), $effectiveLocale);
   }
 </script>
 
 <svelte:window on:keydown={(event) => event.key === "Escape" && void closeDialog()} />
 
 <div class="pairing-dialog-layer">
-  <button class="pairing-dialog-backdrop" type="button" aria-label="取消加入设备" on:click={() => closeDialog()}></button>
+  <button class="pairing-dialog-backdrop" type="button" aria-label={text($effectiveLocale, "pairing.joinCancelLabel")} on:click={() => closeDialog()}></button>
   <dialog open class="pairing-dialog-card" aria-modal="true" aria-labelledby="pairing-dialog-title">
     <header class="pairing-dialog-header">
       <div class="pairing-dialog-heading">
@@ -149,17 +152,17 @@
           </svg>
         </span>
         <div>
-          <span class="pairing-dialog-eyebrow">可信设备配对</span>
-          <h2 id="pairing-dialog-title">加入另一台电脑</h2>
-          <p>粘贴邀请并核对确认码，建立加密连接。</p>
+          <span class="pairing-dialog-eyebrow">{text($effectiveLocale, "pairing.trusted")}</span>
+          <h2 id="pairing-dialog-title">{text($effectiveLocale, "pairing.joinTitle")}</h2>
+          <p>{text($effectiveLocale, "pairing.joinDescription")}</p>
         </div>
       </div>
-      <button class="qr-dialog-close" type="button" aria-label="关闭" on:click={() => closeDialog()}>×</button>
+      <button class="qr-dialog-close" type="button" aria-label={text($effectiveLocale, "common.close")} on:click={() => closeDialog()}>×</button>
     </header>
 
     {#if state === "input" || state === "parsing" || (state === "error" && !attempt)}
       <label class="pairing-invitation-input">
-        <span>配对邀请</span>
+        <span>{text($effectiveLocale, "pairing.invitation")}</span>
         <textarea
           rows="4"
           maxlength="4096"
@@ -170,7 +173,7 @@
           disabled={state === "parsing"}
         ></textarea>
       </label>
-      <p class="pairing-privacy-note">邀请只在本次配对期间使用，校验后不会继续显示完整内容。</p>
+      <p class="pairing-privacy-note">{text($effectiveLocale, "pairing.privacy")}</p>
       {#if issue}
         <div class="pairing-issue" role="alert">
           <strong>{formatUiMessage($effectiveLocale, issue.title)}</strong>
@@ -182,47 +185,47 @@
         type="button"
         disabled={state === "parsing" || invitationText.trim().length === 0}
         on:click={() => validateInvitation()}
-      >{state === "parsing" ? "正在校验…" : "校验邀请"}</button>
+      >{text($effectiveLocale, state === "parsing" ? "pairing.validating" : "pairing.validate")}</button>
     {:else if state === "success"}
       <div class="pairing-success" role="status">
         <span aria-hidden="true">✓</span>
-        <strong>配对成功</strong>
+        <strong>{text($effectiveLocale, "pairing.success")}</strong>
         <p>{progress}</p>
       </div>
-      <button class="primary-action" type="button" on:click={() => closeDialog()}>完成</button>
+      <button class="primary-action" type="button" on:click={() => closeDialog()}>{text($effectiveLocale, "pairing.finish")}</button>
     {:else if attempt}
-      <section class="pairing-summary" aria-label="邀请摘要">
+      <section class="pairing-summary" aria-label={text($effectiveLocale, "pairing.summary")}>
         <div>
-          <span>邀请设备</span>
+          <span>{text($effectiveLocale, "pairing.inviter")}</span>
           <strong>{attempt.issuerDeviceName}</strong>
         </div>
         <div>
-          <span>设备短指纹</span>
+          <span>{text($effectiveLocale, "pairing.deviceFingerprint")}</span>
           <strong>#{attempt.issuerShortFingerprint}</strong>
         </div>
         <div>
-          <span>同步空间</span>
+          <span>{text($effectiveLocale, "pairing.space")}</span>
           <strong>#{attempt.spaceShortId}</strong>
         </div>
         <div>
-          <span>有效期</span>
-          <strong>{expiryLabel(attempt.expiresAtMs)} 前</strong>
+          <span>{text($effectiveLocale, "pairing.expiry")}</span>
+          <strong>{text($effectiveLocale, "pairing.before", { time: expiryLabel(attempt.expiresAtMs) })}</strong>
         </div>
       </section>
 
       <div class="pairing-confirmation-code">
-        <span>请与另一台电脑核对确认码</span>
+        <span>{text($effectiveLocale, "pairing.compareCode")}</span>
         <strong>{attempt.confirmationCode}</strong>
       </div>
       <label class="pairing-confirmation-check">
         <input type="checkbox" bind:checked={confirmationMatches} disabled={state === "connecting"} />
-        <span>两台电脑显示的确认码一致</span>
+        <span>{text($effectiveLocale, "pairing.codeMatches")}</span>
       </label>
 
       {#if attempt.addresses.length > 0}
         <fieldset class="pairing-addresses" disabled={state === "connecting" || useManualAddress}>
-          <legend>候选地址</legend>
-          <p>默认依次尝试全部地址；选择项会优先尝试。</p>
+          <legend>{text($effectiveLocale, "pairing.candidates")}</legend>
+          <p>{text($effectiveLocale, "pairing.candidatesHint")}</p>
           {#each attempt.addresses as address}
             <label>
               <input type="radio" name="pairing-address" value={address.candidateId} bind:group={selectedCandidateId} />
@@ -233,15 +236,15 @@
       {/if}
 
       <details class="pairing-advanced" bind:open={advancedOpen}>
-        <summary>高级：手动输入地址</summary>
+        <summary>{text($effectiveLocale, "pairing.manualAdvanced")}</summary>
         <label class="pairing-manual-toggle">
           <input type="checkbox" bind:checked={useManualAddress} disabled={state === "connecting"} />
-          <span>忽略邀请候选地址，使用手动地址</span>
+          <span>{text($effectiveLocale, "pairing.useManual")}</span>
         </label>
         {#if useManualAddress}
           <div class="pairing-manual-fields">
             <label><span>IPv4</span><input placeholder="192.168.1.10" bind:value={manualHost} /></label>
-            <label><span>端口</span><input type="number" min="1" max="65535" bind:value={manualPort} /></label>
+            <label><span>{text($effectiveLocale, "pairing.port")}</span><input type="number" min="1" max="65535" bind:value={manualPort} /></label>
           </div>
         {/if}
       </details>
@@ -261,8 +264,8 @@
           type="button"
           disabled={state === "connecting" || !confirmationMatches || (useManualAddress && (manualHost.trim().length === 0 || manualPort < 1 || manualPort > 65535))}
           on:click={() => connect()}
-        >{state === "connecting" ? "正在连接…" : "确认并连接"}</button>
-        <button class="text-button" type="button" disabled={state === "connecting"} on:click={() => closeDialog()}>取消</button>
+        >{text($effectiveLocale, state === "connecting" ? "pairing.connecting" : "pairing.confirmConnect")}</button>
+        <button class="text-button" type="button" disabled={state === "connecting"} on:click={() => closeDialog()}>{text($effectiveLocale, "common.cancel")}</button>
       </div>
     {/if}
   </dialog>
