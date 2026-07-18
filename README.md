@@ -109,7 +109,7 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 - 国际化：10 个资源门禁测试通过，中英文 key、占位参数、程序生成名称、硬编码界面文案和安全参数扫描通过。
 - 桌面：托盘菜单已接入在线数、暂停/恢复、设备管理入口和动态 tooltip，完整交互仍需 Windows 人工回归。
 - HarmonyOS：同步、连接管理、stores、首页状态策略和跨端协议向量自动化测试已通过 `hvigorw test`，release 模式未签名 HAP 构建和包安全扫描通过。
-- 内部包：Windows `1.0.5` NSIS 安装器和 HarmonyOS `1.0.5` 未签名 HAP 已生成；Windows 包没有 Authenticode 签名，只能用于内部验收。
+- 候选版本：Windows 和 HarmonyOS 元数据已统一提升至 `1.0.6`；现有 `1.0.5` 内部验收包不代表本次候选版本，需要重新打包。Windows 包没有 Authenticode 签名，只能用于内部验收。
 - 桌面 POC server 启动时会发布 `_eggclip._tcp.local.` 临时服务；mDNS 只提供候选地址，不代表设备可信。
 - 当前手动回归清单包含 Windows 剪贴板隐私标记样本工具和 POC WebSocket 帧探针脚本，D1/H1 手动验收已通过。
 - `protocol/README.md`、`protocol/v1.schema.json` 及握手、密码学、同步和错误测试向量已由桌面 Rust 与 HarmonyOS ArkTS 共同消费。
@@ -117,9 +117,8 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 
 ## 发布前收尾
 
-1. 按 `docs/MANUAL_REGRESSION.md` 完成 Windows、HarmonyOS phone 和 tablet 的中英文真机矩阵。
-2. 确认无阻断缺陷后统一提升双端版本号，重新生成候选包。
-3. 使用正式证书签名并验证 Windows 安装器和 HarmonyOS HAP，再提交对应商店资料。
+1. 重新生成版本 `1.0.6` 的 Windows 安装器和 HarmonyOS 候选包。
+2. 使用正式证书签名并验证 Windows 安装器和 HarmonyOS HAP，再提交对应商店资料。
 
 ## 相关文档
 
