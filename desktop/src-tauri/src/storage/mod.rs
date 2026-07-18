@@ -4,7 +4,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 pub mod repositories;
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 3;
+pub const CURRENT_SCHEMA_VERSION: i64 = 4;
 pub const BUSY_TIMEOUT_MS: u64 = 5_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -271,6 +271,33 @@ CREATE INDEX idx_space_members_device
 CREATE INDEX idx_space_members_dial_route
   ON space_members(route_role, trust_state, revoked_at)
   WHERE route_role = 'dialCoordinator';
+"#,
+    },
+    Migration {
+        version: 4,
+        name: "localized_generated_display_names",
+        sql: r#"
+ALTER TABLE spaces ADD COLUMN name_origin TEXT NOT NULL DEFAULT 'custom'
+  CHECK(name_origin IN ('generated', 'custom'));
+
+ALTER TABLE space_members ADD COLUMN name_origin TEXT NOT NULL DEFAULT 'custom'
+  CHECK(name_origin IN ('generated', 'custom'));
+
+UPDATE spaces
+SET name_origin = 'generated'
+WHERE display_name IN ('默认空间', '本机历史')
+   OR (
+     display_name LIKE '同步空间 %'
+     AND CAST(substr(display_name, 6) AS INTEGER) > 0
+     AND display_name = '同步空间 ' || CAST(CAST(substr(display_name, 6) AS INTEGER) AS TEXT)
+   );
+
+UPDATE space_members
+SET name_origin = 'generated'
+WHERE display_name IN ('Windows', 'HarmonyOS', 'Windows 桌面')
+   OR display_name GLOB 'EggClip 设备 #[A-Za-z0-9_-]*'
+   OR display_name GLOB 'HarmonyOS 设备 #[A-Za-z0-9_-]*'
+   OR display_name GLOB 'Windows 设备 #[A-Za-z0-9_-]*';
 "#,
     },
 ];
@@ -577,13 +604,9 @@ mod tests {
             .expect("legacy sync head");
 
         let applied = migrate(&mut connection).expect("v3 migration should apply");
-        assert_eq!(
-            applied,
-            vec![AppliedMigration {
-                version: 3,
-                name: "space_membership_and_trusted_routes"
-            }]
-        );
+        assert_eq!(applied.len(), 2);
+        assert_eq!(applied[0].version, 3);
+        assert_eq!(applied[1].version, 4);
         assert_eq!(
             connection
                 .query_row(
@@ -649,6 +672,110 @@ mod tests {
             ),
             (1, 1, 1, 0)
         );
+        assert!(migrate(&mut connection).unwrap().is_empty());
+    }
+
+    #[test]
+    fn migration_v4_marks_only_known_generated_names_and_preserves_schema_integrity() {
+        let mut connection = Connection::open_in_memory().expect("database should open");
+        configure_connection(&connection).expect("database should configure");
+        for migration in MIGRATIONS.iter().take(3) {
+            connection
+                .execute_batch(migration.sql)
+                .expect("legacy migration should apply");
+            connection
+                .execute(
+                    "INSERT INTO schema_migrations(version, name, applied_at) VALUES (?1, ?2, 0)",
+                    params![migration.version, migration.name],
+                )
+                .expect("legacy migration should be recorded");
+        }
+
+        let generated_space_id = Uuid::now_v7().to_string();
+        let custom_space_id = Uuid::now_v7().to_string();
+        let generated_device_id = Uuid::now_v7().to_string();
+        let custom_device_id = Uuid::now_v7().to_string();
+        for (space_id, name) in [
+            (&generated_space_id, "同步空间 12"),
+            (&custom_space_id, "我的默认空间"),
+        ] {
+            connection
+                .execute(
+                    "INSERT INTO spaces(space_id, display_name, key_version, state, created_at, updated_at, local_role)
+                     VALUES (?1, ?2, 1, 'active', 1, 1, 'owner')",
+                    params![space_id, name],
+                )
+                .expect("legacy space");
+        }
+        for (device_id, space_id, name) in [
+            (
+                &generated_device_id,
+                &generated_space_id,
+                "EggClip 设备 #Abc_123",
+            ),
+            (
+                &custom_device_id,
+                &custom_space_id,
+                "我的 EggClip 设备 #Abc_123",
+            ),
+        ] {
+            connection
+                .execute(
+                    "INSERT INTO device_identities(device_id, identity_public_key) VALUES (?1, ?2)",
+                    params![device_id, format!("key-{device_id}")],
+                )
+                .expect("identity");
+            connection
+                .execute(
+                    "INSERT INTO space_members(space_id, device_id, display_name, trust_state, connection_state)
+                     VALUES (?1, ?2, ?3, 'trusted', 'offline')",
+                    params![space_id, device_id, name],
+                )
+                .expect("legacy member");
+        }
+
+        let applied = migrate(&mut connection).expect("v4 migration should apply");
+        assert_eq!(applied.len(), 1);
+        assert_eq!(applied[0].version, 4);
+        for (table, id_column, generated_id, custom_id) in [
+            ("spaces", "space_id", &generated_space_id, &custom_space_id),
+            (
+                "space_members",
+                "device_id",
+                &generated_device_id,
+                &custom_device_id,
+            ),
+        ] {
+            let generated: String = connection
+                .query_row(
+                    &format!("SELECT name_origin FROM {table} WHERE {id_column} = ?1"),
+                    params![generated_id],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            let custom: String = connection
+                .query_row(
+                    &format!("SELECT name_origin FROM {table} WHERE {id_column} = ?1"),
+                    params![custom_id],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(generated, "generated");
+            assert_eq!(custom, "custom");
+        }
+        let foreign_key_errors: i64 = connection
+            .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let member_index: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_space_members_device'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!((foreign_key_errors, member_index), (0, 1));
         assert!(migrate(&mut connection).unwrap().is_empty());
     }
 

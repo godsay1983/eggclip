@@ -181,7 +181,7 @@ function buildSummary(payload: PairingInvitationPayload, nowMs: number, payloadB
     spaceId: payload.spaceId,
     spaceShortId: payload.spaceId.substring(payload.spaceId.length - 8),
     spaceKeyVersion: payload.spaceKeyVersion,
-    issuerDeviceName: normalizeIssuerDeviceName(payload.issuerDeviceName) ?? `桌面端 #${payload.issuerIdentityPublicKey.substring(0, 8)}`,
+    issuerDeviceName: normalizeIssuerDeviceName(payload.issuerDeviceName) ?? `EggClip Desktop #${payload.issuerIdentityPublicKey.substring(0, 8)}`,
     issuerDeviceId: payload.issuerDeviceId,
     issuerShortFingerprint: payload.issuerIdentityPublicKey.substring(0, 8),
     expiresAtMs: payload.expiresAtMs,

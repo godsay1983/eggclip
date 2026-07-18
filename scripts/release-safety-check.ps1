@@ -1,5 +1,6 @@
 param(
-  [string[]]$PackagePaths = @()
+  [string[]]$PackagePaths = @(),
+  [switch]$SkipI18nCheck
 )
 
 $ErrorActionPreference = 'Stop'
@@ -71,6 +72,13 @@ if (-not (Test-Path -LiteralPath $fixtureValidator -PathType Leaf)) {
   & node $fixtureValidator
   if ($LASTEXITCODE -ne 0) {
     $violations.Add('protocol/test-vectors [shared fixture validation failed]')
+  }
+}
+
+if (-not $SkipI18nCheck) {
+  & (Join-Path $repoRoot 'scripts/check-i18n.ps1')
+  if ($LASTEXITCODE -ne 0) {
+    $violations.Add('scripts/check-i18n.ps1 [internationalization validation failed]')
   }
 }
 

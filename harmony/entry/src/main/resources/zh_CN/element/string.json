@@ -249,6 +249,7 @@
     { "name": "devices_troubleshoot_security_desc", "value": "候选地址只代表发现到服务，不代表设备已可信；正式同步仍需要配对和认证。" },
     { "name": "devices_trusted", "value": "可信设备" },
     { "name": "devices_name_placeholder", "value": "设备名称" },
+    { "name": "devices_generated_name", "value": "EggClip 设备 #%s" },
     { "name": "devices_removing", "value": "正在移除" },
     { "name": "devices_remove", "value": "移除设备" },
     { "name": "devices_empty_trusted", "value": "还没有可信设备。点击下方“添加设备”完成配对。" },

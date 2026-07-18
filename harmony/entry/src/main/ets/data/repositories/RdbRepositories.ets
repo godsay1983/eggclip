@@ -20,6 +20,7 @@ import { RdbCommandRunner } from '../db/RdbCommandRunner';
 import {
   ClipboardItemRecord,
   ClipboardRepository,
+  DisplayNameOrigin,
   DeviceRecord,
   DeviceRepository,
   SettingsRepository,
@@ -122,7 +123,7 @@ export class SpaceRdbRepository {
   async get(spaceId: string): Promise<SpaceRecord | null> {
     const store = await Database.getStore(this.context);
     const resultSet = await store.querySql(
-      `SELECT space_id, display_name, encrypted_space_key_ref, key_version, state, created_at, updated_at
+      `SELECT space_id, display_name, name_origin, encrypted_space_key_ref, key_version, state, created_at, updated_at
         FROM spaces WHERE space_id = ? LIMIT 1`,
       [spaceId]
     );
@@ -139,7 +140,7 @@ export class SpaceRdbRepository {
   async latestActiveWithKeyRef(): Promise<SpaceRecord | null> {
     const store = await Database.getStore(this.context);
     const resultSet = await store.querySql(
-      `SELECT space_id, display_name, encrypted_space_key_ref, key_version, state, created_at, updated_at
+      `SELECT space_id, display_name, name_origin, encrypted_space_key_ref, key_version, state, created_at, updated_at
         FROM spaces
         WHERE state = ? AND encrypted_space_key_ref IS NOT NULL AND encrypted_space_key_ref <> ''
         ORDER BY updated_at DESC
@@ -215,7 +216,7 @@ export class DeviceRdbRepository {
   async get(deviceId: string): Promise<DeviceRecord | null> {
     const store = await Database.getStore(this.context);
     const resultSet = await store.querySql(
-      `SELECT device_id, space_id, display_name, identity_public_key, trust_state,
+      `SELECT device_id, space_id, display_name, name_origin, identity_public_key, trust_state,
         connection_state, paired_at, last_seen_at, revoked_at
         FROM devices WHERE device_id = ? LIMIT 1`,
       [deviceId]
@@ -607,6 +608,7 @@ function readSpaceRecord(resultSet: relationalStore.ResultSet): SpaceRecord {
   };
   return {
     space,
+    nameOrigin: getString(resultSet, 'name_origin') as DisplayNameOrigin,
     encryptedSpaceKeyRef: encryptedSpaceKeyRef ?? undefined,
     updatedAt: getNumber(resultSet, 'updated_at')
   };
@@ -625,6 +627,7 @@ function readDeviceRecord(resultSet: relationalStore.ResultSet): DeviceRecord {
   };
   return {
     device,
+    nameOrigin: getString(resultSet, 'name_origin') as DisplayNameOrigin,
     pairedAt: getNullableNumber(resultSet, 'paired_at') ?? undefined,
     revokedAt: getNullableNumber(resultSet, 'revoked_at') ?? undefined
   };

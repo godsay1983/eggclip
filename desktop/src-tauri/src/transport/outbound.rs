@@ -943,6 +943,7 @@ mod tests {
                 state: SpaceState::Active,
                 created_at: now,
             },
+            name_origin: crate::storage::repositories::DisplayNameOrigin::Custom,
             local_role: LocalSpaceRole::Member,
             encrypted_space_key_ref: Some(client_key_ref),
             updated_at: now + 2,
@@ -960,6 +961,7 @@ mod tests {
                 connection_state: DeviceConnectionState::Offline,
                 last_seen_at: None,
             },
+            name_origin: crate::storage::repositories::DisplayNameOrigin::Custom,
             route: TrustedDeviceRoute {
                 role: TrustedRouteRole::DialCoordinator,
                 last_successful_host: Some("192.168.1.8".to_string()),
@@ -982,6 +984,7 @@ mod tests {
                     connection_state: DeviceConnectionState::Offline,
                     last_seen_at: None,
                 },
+                name_origin: crate::storage::repositories::DisplayNameOrigin::Custom,
                 route: TrustedDeviceRoute::default(),
                 paired_at: Some(now),
                 revoked_at: None,

@@ -12,7 +12,7 @@
     "dev": "vite dev",
     "build": "vite build",
     "test": "vitest run",
-    "release:check": "pnpm check && pnpm test && pnpm build && cd src-tauri && cargo fmt -- --check && cargo check && cargo test && cd ../.. && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-safety-check.ps1",
+    "release:check": "pnpm check && pnpm test && pnpm build && cd src-tauri && cargo fmt -- --check && cargo check && cargo test && cd ../.. && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-i18n.ps1 && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-safety-check.ps1 -SkipI18nCheck",
     "release:bundle": "powershell -NoProfile -ExecutionPolicy Bypass -File ../scripts/build-desktop-release.ps1",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",

@@ -514,10 +514,10 @@ export const shellSnapshot = {
       const existingSpaces = await listLocalSyncSpaces();
       const usedNames = new Set(existingSpaces.map((space) => space.displayName));
       let suffix = existingSpaces.length + 1;
-      let displayName = `同步空间 ${suffix}`;
+      let displayName = `EggClip space ${suffix}`;
       while (usedNames.has(displayName)) {
         suffix += 1;
-        displayName = `同步空间 ${suffix}`;
+        displayName = `EggClip space ${suffix}`;
       }
       const space = await createLocalSyncSpace(displayName);
       const activeSpaceId = await loadActiveSyncSpaceId();

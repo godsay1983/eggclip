@@ -47,10 +47,12 @@ export class MigrationRunner {
   }
 
   private async ensureBaselineSchema(store: relationalStore.RdbStore): Promise<void> {
-    for (const migration of SCHEMA_MIGRATIONS) {
-      for (const statement of migration.statements) {
-        await store.executeSql(statement);
-      }
+    const baseline = SCHEMA_MIGRATIONS[0];
+    if (baseline === undefined) {
+      throw new Error('RDB baseline schema is missing');
+    }
+    for (const statement of baseline.statements) {
+      await store.executeSql(statement);
     }
   }
 
@@ -61,7 +63,8 @@ export class MigrationRunner {
       { name: 'key_version', definition: 'INTEGER NOT NULL DEFAULT 1' },
       { name: 'state', definition: `TEXT NOT NULL DEFAULT 'active'` },
       { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
-      { name: 'updated_at', definition: 'INTEGER NOT NULL DEFAULT 0' }
+      { name: 'updated_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
+      { name: 'name_origin', definition: `TEXT NOT NULL DEFAULT 'custom'` }
     ]);
     await this.ensureColumns(store, 'devices', [
       { name: 'space_id', definition: `TEXT NOT NULL DEFAULT ''` },
@@ -71,7 +74,8 @@ export class MigrationRunner {
       { name: 'connection_state', definition: `TEXT NOT NULL DEFAULT 'offline'` },
       { name: 'paired_at', definition: 'INTEGER' },
       { name: 'last_seen_at', definition: 'INTEGER' },
-      { name: 'revoked_at', definition: 'INTEGER' }
+      { name: 'revoked_at', definition: 'INTEGER' },
+      { name: 'name_origin', definition: `TEXT NOT NULL DEFAULT 'custom'` }
     ]);
   }
 

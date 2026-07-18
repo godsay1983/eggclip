@@ -24,6 +24,7 @@ import { PairingPage } from './PairingPage';
 import { UiMessageDescriptor } from '../services/localization/UiMessageCodes';
 import { UiMessageFormatter } from '../services/localization/UiMessageFormatter';
 import { LocalizedFormatter } from '../services/localization/LocalizedFormatter';
+import { DisplayNameOrigin } from '../data/repositories/RepositoryCommands';
 
 @Component
 export struct DevicesPage {
@@ -874,7 +875,7 @@ export struct DevicesPage {
           Column({ space: 10 }) {
             Row({ space: 10 }) {
               Column({ space: 5 }) {
-                Text(device.displayName)
+                Text(this.trustedDeviceDisplayName(device))
                   .fontSize(EggClipTypography.bodySize)
                   .fontWeight(FontWeight.Medium)
                   .fontColor(EggClipColors.textPrimary)
@@ -945,7 +946,7 @@ export struct DevicesPage {
                   .enabled(this.busyDeviceId.length === 0)
                   .onClick(() => {
                     this.editingDeviceId = device.deviceId;
-                    this.deviceNameDraft = device.displayName;
+                    this.deviceNameDraft = this.trustedDeviceDisplayName(device);
                     this.deviceActionStatus = '';
                   })
 
@@ -1045,7 +1046,7 @@ export struct DevicesPage {
 
   private confirmRemoveDevice(device: TrustedDeviceSummary): void {
     this.getUIContext().showAlertDialog({
-      title: this.resourceText('devices_remove_dialog_title', device.displayName),
+      title: this.resourceText('devices_remove_dialog_title', this.trustedDeviceDisplayName(device)),
       message: $r('app.string.devices_remove_message'),
       primaryButton: {
         value: $r('app.string.common_cancel'),
@@ -1084,6 +1085,11 @@ export struct DevicesPage {
         this.deviceActionStatus = this.resourceText('devices_remove_failed');
         this.loadTrustedDevices();
       });
+  }
+
+  private trustedDeviceDisplayName(device: TrustedDeviceSummary): string {
+    return device.nameOrigin === DisplayNameOrigin.GENERATED ?
+      this.resourceText('devices_generated_name', device.shortFingerprint) : device.displayName;
   }
 
   private trustedDeviceStateLabel(deviceId: string): string {

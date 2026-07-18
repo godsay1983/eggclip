@@ -91,6 +91,17 @@ describe("desktop i18n foundation", () => {
     })).toContain("1 minute");
   });
 
+  it("localizes generated space and device names while leaving custom names untouched", () => {
+    expect(text("zh-CN", "space.generatedName", { id: "018ff6ef" }))
+      .toBe("同步空间 #018ff6ef");
+    expect(text("en-US", "space.generatedName", { id: "018ff6ef" }))
+      .toBe("Sync space #018ff6ef");
+    expect(text("zh-CN", "device.generatedName", { fingerprint: "Abc_123" }))
+      .toBe("EggClip 设备 #Abc_123");
+    expect(text("en-US", "device.generatedName", { fingerprint: "Abc_123" }))
+      .toBe("EggClip device #Abc_123");
+  });
+
   it("keeps Svelte components free of hard-coded Chinese and protects long copy layout", () => {
     const sourceRoot = fileURLToPath(new URL("../../", import.meta.url));
     const svelteFiles: string[] = [];

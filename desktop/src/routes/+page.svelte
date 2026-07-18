@@ -420,7 +420,9 @@
             {#each $shellSnapshot.syncSpace.spaces as space (space.id)}
               <article class="space-card">
                 <div>
-                  <strong>{space.displayName}</strong>
+                  <strong>{space.nameOrigin === "generated"
+                    ? text($effectiveLocale, "space.generatedName", { id: space.shortId })
+                    : space.displayName}</strong>
                   <p>
                     #{space.shortId} ·
                     {text($effectiveLocale, space.localRole === "owner" ? "space.owner" : "space.member")} ·
@@ -479,7 +481,9 @@
                   <div class="device-removal-confirmation space-deletion-confirmation" role="alert">
                     <strong>{text($effectiveLocale, "space.confirmQuestion", {
                       action: text($effectiveLocale, space.localRole === "member" ? "space.confirmLeave" : "space.confirmDelete"),
-                      name: space.displayName
+                      name: space.nameOrigin === "generated"
+                        ? text($effectiveLocale, "space.generatedName", { id: space.shortId })
+                        : space.displayName
                     })}</strong>
                     <p>{text($effectiveLocale, space.localRole === "member" ? "space.leaveHint" : "space.deleteHint")}</p>
                     <div>
@@ -505,7 +509,9 @@
             <div class="invitation-card">
               <strong>{text($effectiveLocale, "pairing.generated")}</strong>
               <p>
-                {$shellSnapshot.syncSpace.invitation.spaceDisplayName} ·
+                {$shellSnapshot.syncSpace.invitation.spaceNameOrigin === "generated"
+                  ? text($effectiveLocale, "space.generatedName", { id: $shellSnapshot.syncSpace.invitation.spaceId.slice(-8) })
+                  : $shellSnapshot.syncSpace.invitation.spaceDisplayName} ·
                 {pluralText(
                   $effectiveLocale,
                   Math.max(1, Math.ceil($shellSnapshot.syncSpace.invitation.expiresInSeconds / 60)),

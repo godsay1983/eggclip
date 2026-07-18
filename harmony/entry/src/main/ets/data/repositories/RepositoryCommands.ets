@@ -32,14 +32,21 @@ export interface ClipboardItemRecord {
 
 export interface SpaceRecord {
   space: Space;
+  nameOrigin: DisplayNameOrigin;
   encryptedSpaceKeyRef?: string;
   updatedAt: number;
 }
 
 export interface DeviceRecord {
   device: Device;
+  nameOrigin: DisplayNameOrigin;
   pairedAt?: number;
   revokedAt?: number;
+}
+
+export enum DisplayNameOrigin {
+  GENERATED = 'generated',
+  CUSTOM = 'custom'
 }
 
 export interface SyncHeadRecord {
@@ -279,7 +286,8 @@ export class SpaceRepository {
     const encryptedSpaceKeyRefPlaceholder = record.encryptedSpaceKeyRef === undefined ? 'NULL' : '?';
     const args: SqlValue[] = [
       record.space.spaceId,
-      record.space.displayName
+      record.space.displayName,
+      record.nameOrigin
     ];
     if (record.encryptedSpaceKeyRef !== undefined) {
       args.push(record.encryptedSpaceKeyRef);
@@ -292,10 +300,11 @@ export class SpaceRepository {
     );
     return {
       sql: `INSERT INTO spaces(
-        space_id, display_name, encrypted_space_key_ref, key_version, state, created_at, updated_at
-      ) VALUES (?, ?, ${encryptedSpaceKeyRefPlaceholder}, ?, ?, ?, ?)
+        space_id, display_name, name_origin, encrypted_space_key_ref, key_version, state, created_at, updated_at
+      ) VALUES (?, ?, ?, ${encryptedSpaceKeyRefPlaceholder}, ?, ?, ?, ?)
       ON CONFLICT(space_id) DO UPDATE SET
         display_name = excluded.display_name,
+        name_origin = excluded.name_origin,
         encrypted_space_key_ref = excluded.encrypted_space_key_ref,
         key_version = excluded.key_version,
         state = excluded.state,
@@ -314,6 +323,7 @@ export class DeviceRepository {
       record.device.deviceId,
       record.device.spaceId,
       record.device.displayName,
+      record.nameOrigin,
       record.device.identityPublicKeyRef,
       record.device.trustState,
       record.device.connectionState
@@ -329,11 +339,12 @@ export class DeviceRepository {
     }
     return {
       sql: `INSERT INTO devices(
-        device_id, space_id, display_name, identity_public_key, trust_state,
+        device_id, space_id, display_name, name_origin, identity_public_key, trust_state,
         connection_state, paired_at, last_seen_at, revoked_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ${pairedAtPlaceholder}, ${lastSeenAtPlaceholder}, ${revokedAtPlaceholder})
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ${pairedAtPlaceholder}, ${lastSeenAtPlaceholder}, ${revokedAtPlaceholder})
       ON CONFLICT(device_id) DO UPDATE SET
         display_name = excluded.display_name,
+        name_origin = excluded.name_origin,
         identity_public_key = excluded.identity_public_key,
         trust_state = excluded.trust_state,
         connection_state = excluded.connection_state,
@@ -345,7 +356,7 @@ export class DeviceRepository {
 
   listBySpace(spaceId: string): RepositoryCommand {
     return {
-      sql: `SELECT device_id, space_id, display_name, identity_public_key, trust_state,
+      sql: `SELECT device_id, space_id, display_name, name_origin, identity_public_key, trust_state,
         connection_state, paired_at, last_seen_at, revoked_at
         FROM devices WHERE space_id = ? ORDER BY display_name, device_id`,
       args: [spaceId]

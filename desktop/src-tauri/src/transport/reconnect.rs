@@ -237,6 +237,7 @@ mod tests {
                 connection_state: DeviceConnectionState::Offline,
                 last_seen_at: None,
             },
+            name_origin: crate::storage::repositories::DisplayNameOrigin::Custom,
             route: TrustedDeviceRoute {
                 role: TrustedRouteRole::DialCoordinator,
                 last_successful_host: Some("192.168.1.8".to_string()),

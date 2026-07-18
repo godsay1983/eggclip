@@ -249,6 +249,7 @@
     { "name": "devices_troubleshoot_security_desc", "value": "A discovered address is not trusted. Formal sync still requires pairing and authentication." },
     { "name": "devices_trusted", "value": "Trusted devices" },
     { "name": "devices_name_placeholder", "value": "Device name" },
+    { "name": "devices_generated_name", "value": "EggClip device #%s" },
     { "name": "devices_removing", "value": "Removing" },
     { "name": "devices_remove", "value": "Remove device" },
     { "name": "devices_empty_trusted", "value": "No trusted devices yet. Tap Add device below to pair." },

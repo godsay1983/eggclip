@@ -1,6 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { DeviceConnectionState, DeviceTrustState } from '../models/DomainModels';
 import { DeviceRdbRepository, SpaceRdbRepository } from '../data/repositories/RdbRepositories';
+import { DisplayNameOrigin } from '../data/repositories/RepositoryCommands';
 import {
   SpaceKeyRecoveryRepository,
   SpaceKeyRecoveryResult,
@@ -11,6 +12,7 @@ import { UiMessageCode, UiMessageDescriptor, uiMessage } from '../services/local
 export interface TrustedDeviceSummary {
   deviceId: string;
   displayName: string;
+  nameOrigin: DisplayNameOrigin;
   shortFingerprint: string;
   lastSeenAt?: number;
 }
@@ -52,6 +54,7 @@ export class TrustedDeviceStore {
       .map((record): TrustedDeviceSummary => ({
         deviceId: record.device.deviceId,
         displayName: record.device.displayName,
+        nameOrigin: record.nameOrigin,
         shortFingerprint: shortId(record.device.identityPublicKeyRef),
         lastSeenAt: record.device.lastSeenAt
       }));
@@ -92,6 +95,7 @@ export class TrustedDeviceStore {
       return { ok: false, reason: uiMessage(UiMessageCode.TRUSTED_DEVICE_MISSING) };
     }
     record.device.displayName = normalized;
+    record.nameOrigin = DisplayNameOrigin.CUSTOM;
     await this.devices.upsert(record);
     return { ok: true, displayName: normalized };
   }

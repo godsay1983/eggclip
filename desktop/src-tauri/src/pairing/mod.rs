@@ -105,9 +105,9 @@ use crate::{
     storage::{
         open_database,
         repositories::{
-            DeviceRecord, DeviceRepository, PairingInvitationRecord, PairingInvitationRepository,
-            PairingInvitationState, SettingsRepository, SpaceRecord, SpaceRepository,
-            TrustedDeviceRoute,
+            DeviceRecord, DeviceRepository, DisplayNameOrigin, PairingInvitationRecord,
+            PairingInvitationRepository, PairingInvitationState, SettingsRepository, SpaceRecord,
+            SpaceRepository, TrustedDeviceRoute,
         },
     },
     sync::{
@@ -132,6 +132,7 @@ pub const SPACE_HMAC_DIAGNOSTIC_TEXT: &str = "EggClip HUKS space key hmac self-t
 pub struct SyncSpaceSummary {
     pub space_id: String,
     pub display_name: String,
+    pub name_origin: String,
     pub key_version: u32,
     pub space_key_ref: String,
     pub created_at_ms: u64,
@@ -159,6 +160,7 @@ pub struct MemberSpaceLeaveSummary {
 pub struct SpaceHmacDiagnosticSummary {
     pub space_id: String,
     pub space_display_name: String,
+    pub space_name_origin: String,
     pub confirmation_code: String,
 }
 
@@ -168,6 +170,7 @@ pub struct TrustedDeviceSummary {
     pub device_id: String,
     pub space_id: String,
     pub display_name: String,
+    pub name_origin: String,
     pub connection_state: String,
     pub short_fingerprint: String,
     pub paired_at_ms: Option<u64>,
@@ -189,6 +192,7 @@ pub struct PairingInvitationSummary {
     pub invitation_id: String,
     pub space_id: String,
     pub space_display_name: String,
+    pub space_name_origin: String,
     #[serde(skip_serializing)]
     pub invitation: String,
     pub qr_svg: String,
@@ -661,6 +665,7 @@ pub fn create_sync_space<S: SecretBytesStore>(
             state: SpaceState::Active,
             created_at: now_ms,
         },
+        name_origin: DisplayNameOrigin::Generated,
         local_role: LocalSpaceRole::Owner,
         encrypted_space_key_ref: Some(space_key_ref.clone()),
         updated_at: now_ms,
@@ -679,6 +684,7 @@ pub fn create_sync_space<S: SecretBytesStore>(
                 connection_state: DeviceConnectionState::Offline,
                 last_seen_at: None,
             },
+            name_origin: DisplayNameOrigin::Generated,
             route: TrustedDeviceRoute::default(),
             paired_at: Some(now_ms),
             revoked_at: None,
@@ -688,6 +694,7 @@ pub fn create_sync_space<S: SecretBytesStore>(
     Ok(SyncSpaceSummary {
         space_id: space_id.to_string(),
         display_name,
+        name_origin: display_name_origin_wire(DisplayNameOrigin::Generated),
         key_version,
         space_key_ref,
         created_at_ms: now_ms,
@@ -893,6 +900,7 @@ pub fn list_sync_spaces(connection: &Connection) -> Result<Vec<SyncSpaceSummary>
         .map(|record| SyncSpaceSummary {
             space_id: record.space.space_id.to_string(),
             display_name: record.space.display_name,
+            name_origin: display_name_origin_wire(record.name_origin),
             key_version: record.space.key_version,
             space_key_ref: record.encrypted_space_key_ref.unwrap_or_default(),
             created_at_ms: record.space.created_at,
@@ -993,6 +1001,7 @@ pub fn rename_trusted_device_in_database(
         return Err(PairingError::InvalidInvitation);
     }
     record.device.display_name = normalized;
+    record.name_origin = DisplayNameOrigin::Custom;
     repository
         .upsert(&record)
         .map_err(|error| PairingError::Database(error.to_string()))?;
@@ -1105,6 +1114,7 @@ fn trusted_device_summary(
         device_id: record.device.device_id.to_string(),
         space_id: record.device.space_id.to_string(),
         display_name: record.device.display_name.clone(),
+        name_origin: display_name_origin_wire(record.name_origin),
         connection_state: match record.device.connection_state {
             DeviceConnectionState::Online => "online",
             DeviceConnectionState::Connecting => "connecting",
@@ -1133,6 +1143,14 @@ fn normalize_device_display_name(value: &str) -> Result<String, PairingError> {
         return Err(PairingError::InvalidDisplayName);
     }
     Ok(normalized.to_owned())
+}
+
+fn display_name_origin_wire(value: DisplayNameOrigin) -> String {
+    match value {
+        DisplayNameOrigin::Generated => "generated",
+        DisplayNameOrigin::Custom => "custom",
+    }
+    .to_owned()
 }
 
 pub fn resolve_active_sync_space(
@@ -1200,6 +1218,7 @@ pub fn run_space_hmac_diagnostic_in_database<S: SecretBytesStore>(
     Ok(SpaceHmacDiagnosticSummary {
         space_id: space_id.to_string(),
         space_display_name: space.space.display_name,
+        space_name_origin: display_name_origin_wire(space.name_origin),
         confirmation_code,
     })
 }
@@ -1318,6 +1337,7 @@ pub fn create_pairing_invitation_for_space<S: SecretBytesStore>(
         invitation_id: invitation_id.to_string(),
         space_id: space.space.space_id.to_string(),
         space_display_name: space.space.display_name,
+        space_name_origin: display_name_origin_wire(space.name_origin),
         invitation,
         qr_svg,
         expires_at_ms,
@@ -1777,7 +1797,7 @@ fn space_key_ref(space_id: Uuid, key_version: u32) -> String {
 fn local_device_display_name() -> String {
     let raw = std::env::var("COMPUTERNAME")
         .or_else(|_| std::env::var("HOSTNAME"))
-        .unwrap_or_else(|_| "Windows 桌面".to_string());
+        .unwrap_or_else(|_| "EggClip Desktop".to_string());
     let normalized: String = raw
         .trim()
         .chars()
@@ -1785,7 +1805,7 @@ fn local_device_display_name() -> String {
         .take(32)
         .collect();
     if normalized.is_empty() {
-        "Windows 桌面".to_string()
+        "EggClip Desktop".to_string()
     } else {
         normalized
     }
@@ -2047,6 +2067,7 @@ mod tests {
                 connection_state: DeviceConnectionState::Offline,
                 last_seen_at: None,
             },
+            name_origin: DisplayNameOrigin::Generated,
             route: TrustedDeviceRoute::default(),
             paired_at: None,
             revoked_at: None,
@@ -2076,6 +2097,7 @@ mod tests {
                     state: SpaceState::Active,
                     created_at: 1_700_000_000_000,
                 },
+                name_origin: DisplayNameOrigin::Custom,
                 local_role: LocalSpaceRole::Member,
                 encrypted_space_key_ref: Some(key_ref.clone()),
                 updated_at: 1_700_000_000_000,
@@ -2299,6 +2321,7 @@ mod tests {
                     connection_state: DeviceConnectionState::Online,
                     last_seen_at: Some(1_700_000_001_000),
                 },
+                name_origin: DisplayNameOrigin::Custom,
                 route: TrustedDeviceRoute {
                     role: crate::sync::TrustedRouteRole::DialCoordinator,
                     last_successful_host: Some("192.168.1.8".to_owned()),
@@ -2938,6 +2961,7 @@ mod tests {
                     connection_state: crate::sync::DeviceConnectionState::Offline,
                     last_seen_at: None,
                 },
+                name_origin: DisplayNameOrigin::Generated,
                 route: crate::storage::repositories::TrustedDeviceRoute::default(),
                 paired_at: Some(1_700_000_000_000),
                 revoked_at: None,
@@ -3122,6 +3146,7 @@ mod tests {
                     connection_state: DeviceConnectionState::Online,
                     last_seen_at: Some(1_700_000_001_000),
                 },
+                name_origin: DisplayNameOrigin::Generated,
                 route: crate::storage::repositories::TrustedDeviceRoute::default(),
                 paired_at: Some(1_700_000_000_500),
                 revoked_at: None,

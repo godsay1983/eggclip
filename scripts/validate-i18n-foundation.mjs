@@ -86,6 +86,8 @@ const dynamicSourcePaths = [
   "harmony/entry/src/main/ets/store/HistoryStore.ets",
   "harmony/entry/src/main/ets/store/TrustedDeviceStore.ets",
   "harmony/entry/src/main/ets/store/SettingsStore.ets",
+  "harmony/entry/src/main/ets/store/PairingConnectionStore.ets",
+  "harmony/entry/src/main/ets/services/pairing/PairingInvitationService.ets",
   "harmony/entry/src/main/ets/services/transport/WebSocketTransportService.ets",
 ];
 for (const sourcePath of dynamicSourcePaths) {
@@ -95,14 +97,7 @@ for (const sourcePath of dynamicSourcePaths) {
   }
 }
 
-const pairingConnectionSource = readFileSync(
-  resolve(repoRoot, "harmony/entry/src/main/ets/store/PairingConnectionStore.ets"),
-  "utf8",
-).replace(/`同步空间 #\$\{shortId\(spaceId\)\}`/g, "")
-  .replace(/`桌面端 #\$\{shortId\(serverHello\.deviceId\)\}`/g, "");
-if (/[\u3400-\u9fff]/u.test(pairingConnectionSource)) {
-  throw new Error("PairingConnectionStore: only I18N-07 generated-name literals may remain localized");
-}
+assertSafeTranslationParameters();
 
 assertIncludes(
   "harmony/entry/src/main/ets/pages/HomePage.ets",
@@ -179,6 +174,30 @@ function assertIncludes(relativePath, requiredFragments) {
   for (const fragment of requiredFragments) {
     if (!source.includes(fragment)) {
       throw new Error(`${relativePath}: missing responsive layout fragment ${fragment}`);
+    }
+  }
+}
+
+function assertSafeTranslationParameters() {
+  const forbidden = /clipboard|content|invitation|secret|private.?key|space.?key|digest|frame|payload|plaintext|ciphertext/i;
+  const desktop = readFileSync(resolve(repoRoot, "desktop/src/lib/i18n/ui-messages.ts"), "utf8");
+  const desktopStart = desktop.indexOf("const allowedParameterNames");
+  const desktopEnd = desktop.indexOf("export function uiMessage", desktopStart);
+  const harmony = readFileSync(
+    resolve(repoRoot, "harmony/entry/src/main/ets/services/localization/UiMessageCodes.ets"),
+    "utf8",
+  );
+  const harmonyStart = harmony.indexOf("export enum UiMessageParameterName");
+  const harmonyEnd = harmony.indexOf("export interface UiMessageParameter", harmonyStart);
+  for (const [label, source, start, end] of [
+    ["Desktop", desktop, desktopStart, desktopEnd],
+    ["Harmony", harmony, harmonyStart, harmonyEnd],
+  ]) {
+    if (start < 0 || end <= start) {
+      throw new Error(`${label}: translation parameter allowlist is missing`);
+    }
+    if (forbidden.test(source.slice(start, end))) {
+      throw new Error(`${label}: sensitive data name found in translation parameter allowlist`);
     }
   }
 }

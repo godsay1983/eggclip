@@ -21,7 +21,9 @@
       <span>{text($effectiveLocale, "diagnostic.sixDigit")}</span>
       <strong>{diagnostic.confirmationCode}</strong>
     </div>
-    <p>{diagnostic.spaceDisplayName}</p>
+    <p>{diagnostic.spaceNameOrigin === "generated"
+      ? text($effectiveLocale, "space.generatedName", { id: diagnostic.spaceId.slice(-8) })
+      : diagnostic.spaceDisplayName}</p>
   {/if}
   <button
     class="secondary-action"

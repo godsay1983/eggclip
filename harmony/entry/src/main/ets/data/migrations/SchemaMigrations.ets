@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION: number = 1;
+export const CURRENT_SCHEMA_VERSION: number = 2;
 export const DATABASE_NAME: string = 'eggclip.db';
 
 export interface SchemaMigration {
@@ -84,11 +84,42 @@ export const SCHEMA_MIGRATIONS: SchemaMigration[] = [
       `CREATE INDEX IF NOT EXISTS idx_devices_space_trust
         ON devices(space_id, trust_state, connection_state)`
     ]
+  },
+  {
+    version: 2,
+    name: 'localized_generated_display_names',
+    statements: [
+      `ALTER TABLE spaces ADD COLUMN name_origin TEXT NOT NULL DEFAULT 'custom'
+        CHECK(name_origin IN ('generated', 'custom'))`,
+      `ALTER TABLE devices ADD COLUMN name_origin TEXT NOT NULL DEFAULT 'custom'
+        CHECK(name_origin IN ('generated', 'custom'))`,
+      `UPDATE spaces SET name_origin = 'generated'
+        WHERE display_name = '默认空间' OR display_name LIKE '同步空间 #%'
+        OR display_name LIKE '同步空间 %'`,
+      `UPDATE devices SET name_origin = 'generated'
+        WHERE display_name IN ('桌面端', 'Windows 桌面', 'HarmonyOS')
+        OR display_name LIKE '桌面端 #%'
+        OR display_name LIKE 'EggClip 设备 #%'
+        OR display_name LIKE 'HarmonyOS 设备 #%'
+        OR display_name LIKE 'Windows 设备 #%'
+        OR display_name LIKE 'EggClip Desktop #%'
+        OR display_name LIKE 'EggClip device #%'`
+    ]
   }
 ];
 
 export function pendingMigrations(currentVersion: number): SchemaMigration[] {
   return SCHEMA_MIGRATIONS.filter((migration: SchemaMigration) => migration.version > currentVersion);
+}
+
+export function isLegacyGeneratedSpaceName(value: string): boolean {
+  return value === '默认空间' || value === '本机历史' ||
+    /^同步空间 (#)?[A-Za-z0-9_-]+$/.test(value) || /^同步空间 [1-9][0-9]*$/.test(value);
+}
+
+export function isLegacyGeneratedDeviceName(value: string): boolean {
+  return value === '桌面端' || value === 'Windows 桌面' || value === 'HarmonyOS' ||
+    /^(桌面端|EggClip 设备|HarmonyOS 设备|Windows 设备|EggClip Desktop|EggClip device) #[A-Za-z0-9_-]+$/.test(value);
 }
 
 export function allSchemaSql(): string[] {

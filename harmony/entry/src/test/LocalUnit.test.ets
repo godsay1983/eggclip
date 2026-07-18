@@ -192,6 +192,8 @@ import {
   DATABASE_NAME,
   INITIAL_SCHEMA_TABLES,
   allSchemaSql,
+  isLegacyGeneratedDeviceName,
+  isLegacyGeneratedSpaceName,
   pendingMigrations,
   validateSchemaPlan
 } from '../main/ets/data/migrations/SchemaMigrations';
@@ -199,6 +201,7 @@ import { DATABASE_VERSION, STORE_CONFIG } from '../main/ets/data/db/DbConstants'
 import {
   ClipboardItemRecord,
   ClipboardRepository,
+  DisplayNameOrigin,
   DeviceRecord,
   DeviceRepository,
   INITIAL_ORIGIN_SEQ,
@@ -728,10 +731,11 @@ export default function localUnitTest() {
       const pending = pendingMigrations(0);
       const sql = allSchemaSql().join('\n').toLowerCase();
 
-      expect(CURRENT_SCHEMA_VERSION).assertEqual(1);
+      expect(CURRENT_SCHEMA_VERSION).assertEqual(2);
       expect(DATABASE_VERSION).assertEqual(CURRENT_SCHEMA_VERSION);
       expect(STORE_CONFIG.name).assertEqual(DATABASE_NAME);
-      expect(pending.length).assertEqual(1);
+      expect(pending.length).assertEqual(2);
+      expect(pendingMigrations(1).length).assertEqual(1);
       expect(pendingMigrations(CURRENT_SCHEMA_VERSION).length).assertEqual(0);
       expect(validateSchemaPlan()).assertEqual(true);
       expect(INITIAL_SCHEMA_TABLES.length).assertEqual(6);
@@ -739,6 +743,17 @@ export default function localUnitTest() {
       expect(sql.indexOf('encrypted_content') >= 0).assertEqual(true);
       expect(sql.indexOf('unique(origin_device_id, origin_seq)') >= 0).assertEqual(true);
       expect(sql.indexOf('idx_clipboard_items_retention') >= 0).assertEqual(true);
+      expect(sql.indexOf('add column name_origin') >= 0).assertEqual(true);
+      expect(sql.indexOf("name_origin = 'generated'") >= 0).assertEqual(true);
+    });
+
+    it('protectsCustomNamesWhenClassifyingLegacyGeneratedNames', 0, () => {
+      expect(isLegacyGeneratedSpaceName('同步空间 #018ff6ef')).assertEqual(true);
+      expect(isLegacyGeneratedSpaceName('默认空间')).assertEqual(true);
+      expect(isLegacyGeneratedSpaceName('我的默认空间')).assertEqual(false);
+      expect(isLegacyGeneratedDeviceName('桌面端 #018ff6ef')).assertEqual(true);
+      expect(isLegacyGeneratedDeviceName('EggClip 设备 #Abc_123')).assertEqual(true);
+      expect(isLegacyGeneratedDeviceName('我的桌面端 #018ff6ef')).assertEqual(false);
     });
 
     it('buildsRepositoryCommandsWithoutPersistingPlaintext', 0, () => {
@@ -759,11 +774,13 @@ export default function localUnitTest() {
           state: DomainSpaceState.ACTIVE,
           createdAt: 1700000000000
         },
+        nameOrigin: DisplayNameOrigin.GENERATED,
         encryptedSpaceKeyRef: 'huks://space-key',
         updatedAt: 1700000000000
       });
       expect(space.sql.indexOf('INSERT INTO spaces') >= 0).assertEqual(true);
-      expect(space.args[2]).assertEqual('huks://space-key');
+      expect(space.args[2]).assertEqual(DisplayNameOrigin.GENERATED);
+      expect(space.args[3]).assertEqual('huks://space-key');
 
       const device = devices.upsert({
         device: {
@@ -774,6 +791,7 @@ export default function localUnitTest() {
           trustState: DomainDeviceTrustState.TRUSTED,
           connectionState: DomainDeviceConnectionState.OFFLINE
         },
+        nameOrigin: DisplayNameOrigin.GENERATED,
         pairedAt: 1700000000000
       });
       expect(device.sql.indexOf('INSERT INTO devices') >= 0).assertEqual(true);
@@ -878,11 +896,12 @@ export default function localUnitTest() {
           state: DomainSpaceState.ACTIVE,
           createdAt: 1700000000000
         },
+        nameOrigin: DisplayNameOrigin.GENERATED,
         encryptedSpaceKeyRef: alias.alias,
         updatedAt: 1700000000000
       });
 
-      expect(command.args[2]).assertEqual(alias.alias);
+      expect(command.args[3]).assertEqual(alias.alias);
       let containsRawKey = false;
       for (const arg of command.args) {
         if (arg instanceof Uint8Array) {
@@ -1653,7 +1672,7 @@ export default function localUnitTest() {
       expect(result.payload?.spaceKeyVersion).assertEqual(1);
       expect(result.payload?.pairingSecret).assertEqual('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
       expect(result.summary?.spaceShortId).assertEqual('10f2767a');
-      expect(result.summary?.issuerDeviceName).assertEqual('桌面端 #11qYAYKx');
+      expect(result.summary?.issuerDeviceName).assertEqual('EggClip Desktop #11qYAYKx');
       expect(result.summary?.issuerShortFingerprint).assertEqual('11qYAYKx');
       expect(result.summary?.expiresInSeconds).assertEqual(300);
       expect(result.summary?.confirmationCode).assertEqual('130762');
@@ -3606,6 +3625,7 @@ class FakeInboundItemLiveStorageGateway implements InboundItemLiveStorageGateway
     };
     return {
       space,
+      nameOrigin: DisplayNameOrigin.CUSTOM,
       encryptedSpaceKeyRef: 'huks://eggclip/space-key/018ff6ef-c394-7d08-8b99-4b7d10f2767a/v1',
       updatedAt: 1781946000000
     };
@@ -3622,7 +3642,7 @@ class FakeInboundItemLiveStorageGateway implements InboundItemLiveStorageGateway
       connectionState: DomainDeviceConnectionState.ONLINE,
       lastSeenAt: 1781946000000
     };
-    return { device, pairedAt: 1781946000000 };
+    return { device, nameOrigin: DisplayNameOrigin.CUSTOM, pairedAt: 1781946000000 };
   }
 
   async insertDeduplicated(record: ClipboardItemRecord): Promise<ClipboardDedupDecision> {

@@ -8,7 +8,7 @@ import {
   SyncHeadRdbRepository,
   TrustedConnectionEndpointRecord
 } from '../data/repositories/RdbRepositories';
-import { SyncHeadRecord } from '../data/repositories/RepositoryCommands';
+import { DisplayNameOrigin, SyncHeadRecord } from '../data/repositories/RepositoryCommands';
 import { LocalIdentityRdbRepository } from '../data/repositories/LocalIdentityRdbRepository';
 import {
   DeviceConnectionState,
@@ -1096,11 +1096,12 @@ class PairingConnectionStore {
         space: {
           space: {
             spaceId,
-            displayName: `同步空间 #${shortId(spaceId)}`,
+            displayName: `space #${shortId(spaceId)}`,
             keyVersion,
             state: SpaceState.ACTIVE,
             createdAt: nowMs
           },
+          nameOrigin: DisplayNameOrigin.GENERATED,
           encryptedSpaceKeyRef: delivery.encryptedSpaceKeyRef,
           updatedAt: nowMs
         },
@@ -1108,12 +1109,13 @@ class PairingConnectionStore {
           device: {
             deviceId: serverHello.deviceId,
             spaceId,
-            displayName: `桌面端 #${shortId(serverHello.deviceId)}`,
+            displayName: `desktop #${shortId(serverHello.deviceId)}`,
             identityPublicKeyRef: serverHello.identityPublicKey,
             trustState: DeviceTrustState.TRUSTED,
             connectionState: DeviceConnectionState.ONLINE,
             lastSeenAt: nowMs
           },
+          nameOrigin: DisplayNameOrigin.GENERATED,
           pairedAt: nowMs
         }
       });
@@ -1159,6 +1161,7 @@ class PairingConnectionStore {
           state: SpaceState.ACTIVE,
           createdAt: current.space.createdAt
         },
+        nameOrigin: current.nameOrigin,
         encryptedSpaceKeyRef: delivery.encryptedSpaceKeyRef,
         updatedAt: nowMs
       });

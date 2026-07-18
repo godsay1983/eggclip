@@ -112,6 +112,7 @@ interface PocRecentEndpointDto {
 interface SyncSpaceSummaryDto {
   spaceId: string;
   displayName: string;
+  nameOrigin: "generated" | "custom";
   keyVersion: number;
   spaceKeyRef: string;
   createdAtMs: number;
@@ -134,6 +135,7 @@ interface PairingInvitationSummaryDto {
   invitationId: string;
   spaceId: string;
   spaceDisplayName: string;
+  spaceNameOrigin: "generated" | "custom";
   qrSvg: string;
   expiresAtMs: number;
   expiresInSeconds: number;
@@ -146,6 +148,7 @@ interface PairingInvitationSummaryDto {
 interface SpaceHmacDiagnosticSummaryDto {
   spaceId: string;
   spaceDisplayName: string;
+  spaceNameOrigin: "generated" | "custom";
   confirmationCode: string;
 }
 
@@ -153,6 +156,7 @@ interface TrustedDeviceSummaryDto {
   deviceId: string;
   spaceId: string;
   displayName: string;
+  nameOrigin: "generated" | "custom";
   connectionState: DeviceSummary["state"];
   shortFingerprint: string;
   pairedAtMs: number | null;
@@ -511,6 +515,7 @@ function toTrustedDeviceSummary(device: TrustedDeviceSummaryDto): DeviceSummary 
     id: device.deviceId,
     spaceId: device.spaceId,
     name: device.displayName,
+    nameOrigin: device.nameOrigin,
     state: device.connectionState,
     trustKind: "trusted",
     shortFingerprint: device.shortFingerprint,
@@ -524,6 +529,7 @@ function toSyncSpaceSummary(space: SyncSpaceSummaryDto): SyncSpaceSummary {
   return {
     id: space.spaceId,
     displayName: space.displayName,
+    nameOrigin: space.nameOrigin,
     keyVersion: space.keyVersion,
     shortId: space.spaceId.slice(-8),
     keyRefKind: space.spaceKeyRef.startsWith("credential://") ? "credential" : "unknown",
@@ -539,6 +545,7 @@ function toPairingInvitationSummary(
     invitationId: invitation.invitationId,
     spaceId: invitation.spaceId,
     spaceDisplayName: invitation.spaceDisplayName,
+    spaceNameOrigin: invitation.spaceNameOrigin,
     qrSvg: invitation.qrSvg,
     expiresAtMs: invitation.expiresAtMs,
     expiresInSeconds: invitation.expiresInSeconds,

@@ -35,6 +35,9 @@ use crate::{
     },
 };
 
+#[cfg(test)]
+use crate::storage::repositories::DisplayNameOrigin;
+
 const PAIRING_CONTEXT_PREFIX: &str = "pairing-invitation:v2:";
 const TRUSTED_DEVICE_CONTEXT_PREFIX: &str = "trusted-device:";
 const FIRST_CLIENT_BUSINESS_COUNTER: u64 = 0;
@@ -892,6 +895,7 @@ mod tests {
                 state: SpaceState::Active,
                 created_at: NOW_MS,
             },
+            name_origin: DisplayNameOrigin::Custom,
             local_role: crate::sync::LocalSpaceRole::Member,
             encrypted_space_key_ref: Some("credential://space/v7".to_string()),
             updated_at: NOW_MS,
@@ -906,6 +910,7 @@ mod tests {
                 connection_state: crate::sync::DeviceConnectionState::Offline,
                 last_seen_at: None,
             },
+            name_origin: DisplayNameOrigin::Custom,
             route: crate::storage::repositories::TrustedDeviceRoute {
                 role: TrustedRouteRole::DialCoordinator,
                 last_successful_host: Some("192.168.1.8".to_string()),

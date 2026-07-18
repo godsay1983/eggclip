@@ -9,6 +9,7 @@ export interface DeviceSummary {
   id: string;
   spaceId?: string;
   name: string;
+  nameOrigin?: "generated" | "custom";
   state: ConnectionState;
   trustKind: "trusted" | "poc" | "placeholder";
   shortFingerprint: string;
@@ -125,6 +126,7 @@ export interface PocRecentEndpoint {
 export interface SyncSpaceSummary {
   id: string;
   displayName: string;
+  nameOrigin: "generated" | "custom";
   keyVersion: number;
   shortId: string;
   keyRefKind: "credential" | "unknown";
@@ -136,6 +138,7 @@ export interface PairingInvitationSummary {
   invitationId: string;
   spaceId: string;
   spaceDisplayName: string;
+  spaceNameOrigin: "generated" | "custom";
   qrSvg: string;
   expiresAtMs: number;
   expiresInSeconds: number;
@@ -148,6 +151,7 @@ export interface PairingInvitationSummary {
 export interface SpaceHmacDiagnosticSummary {
   spaceId: string;
   spaceDisplayName: string;
+  spaceNameOrigin: "generated" | "custom";
   confirmationCode: string;
 }
 

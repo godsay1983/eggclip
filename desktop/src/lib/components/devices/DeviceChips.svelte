@@ -64,7 +64,9 @@
   function deviceName(device: DeviceSummary): string {
     if (device.trustKind === "poc") return text($effectiveLocale, "device.pocName");
     if (device.trustKind === "placeholder") return text($effectiveLocale, "device.placeholderName");
-    return device.name;
+    return device.nameOrigin === "generated"
+      ? text($effectiveLocale, "device.generatedName", { fingerprint: device.shortFingerprint })
+      : device.name;
   }
 
   function fingerprint(device: DeviceSummary): string {
@@ -161,7 +163,7 @@
                   disabled={busyDeviceId === device.id}
                   on:click={() => {
                     editingDeviceId = device.id;
-                    editingName = device.name;
+                    editingName = deviceName(device);
                   }}
                 >{text($effectiveLocale, "device.rename")}</button>
                 {#if canRemove(device)}
@@ -176,7 +178,7 @@
             </div>
             {#if pendingRemovalDeviceId === device.id}
               <div class="device-removal-confirmation" role="alert" aria-live="polite">
-                <strong>{text($effectiveLocale, "device.removeQuestion", { name: device.name })}</strong>
+                <strong>{text($effectiveLocale, "device.removeQuestion", { name: deviceName(device) })}</strong>
                 <p>{text($effectiveLocale, "device.removeHint")}</p>
                 <div>
                   <button

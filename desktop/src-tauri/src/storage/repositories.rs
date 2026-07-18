@@ -18,6 +18,7 @@ const LOCAL_HISTORY_IDENTITY_PLACEHOLDER: &str = "local-history://identity";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpaceRecord {
     pub space: Space,
+    pub name_origin: DisplayNameOrigin,
     pub local_role: LocalSpaceRole,
     pub encrypted_space_key_ref: Option<String>,
     pub updated_at: u64,
@@ -46,9 +47,16 @@ pub struct PairingInvitationRecord {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeviceRecord {
     pub device: Device,
+    pub name_origin: DisplayNameOrigin,
     pub route: TrustedDeviceRoute,
     pub paired_at: Option<u64>,
     pub revoked_at: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DisplayNameOrigin {
+    Generated,
+    Custom,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -223,15 +231,16 @@ impl<'a> SpaceRepository<'a> {
     pub fn upsert(&self, record: &SpaceRecord) -> rusqlite::Result<()> {
         self.connection.execute(
             "INSERT INTO spaces(
-              space_id, display_name, encrypted_space_key_ref, key_version, state, created_at, updated_at, local_role
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+              space_id, display_name, encrypted_space_key_ref, key_version, state, created_at, updated_at, local_role, name_origin
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
             ON CONFLICT(space_id) DO UPDATE SET
               display_name = excluded.display_name,
               encrypted_space_key_ref = excluded.encrypted_space_key_ref,
               key_version = excluded.key_version,
               state = excluded.state,
               updated_at = excluded.updated_at,
-              local_role = excluded.local_role",
+              local_role = excluded.local_role,
+              name_origin = excluded.name_origin",
             params![
                 record.space.space_id.to_string(),
                 record.space.display_name,
@@ -241,6 +250,7 @@ impl<'a> SpaceRepository<'a> {
                 u64_to_i64(record.space.created_at)?,
                 u64_to_i64(record.updated_at)?,
                 local_space_role_to_db(record.local_role),
+                display_name_origin_to_db(record.name_origin),
             ],
         )?;
         Ok(())
@@ -249,7 +259,7 @@ impl<'a> SpaceRepository<'a> {
     pub fn get(&self, space_id: Uuid) -> rusqlite::Result<Option<SpaceRecord>> {
         self.connection
             .query_row(
-                "SELECT space_id, display_name, encrypted_space_key_ref, key_version, state, created_at, updated_at, local_role
+                "SELECT space_id, display_name, encrypted_space_key_ref, key_version, state, created_at, updated_at, local_role, name_origin
                  FROM spaces WHERE space_id = ?1",
                 params![space_id.to_string()],
                 row_to_space_record,
@@ -259,7 +269,7 @@ impl<'a> SpaceRepository<'a> {
 
     pub fn list(&self) -> rusqlite::Result<Vec<SpaceRecord>> {
         let mut statement = self.connection.prepare(
-            "SELECT space_id, display_name, encrypted_space_key_ref, key_version, state, created_at, updated_at, local_role
+            "SELECT space_id, display_name, encrypted_space_key_ref, key_version, state, created_at, updated_at, local_role, name_origin
              FROM spaces ORDER BY created_at DESC, space_id DESC",
         )?;
         let records = statement.query_map([], row_to_space_record)?.collect();
@@ -390,7 +400,7 @@ impl<'a> DeviceRepository<'a> {
             .query_row(
                 "SELECT m.device_id, m.space_id, m.display_name, i.identity_public_key,
                   m.trust_state, m.connection_state, m.paired_at, m.last_seen_at, m.revoked_at,
-                  m.route_role, m.last_successful_host, m.last_successful_port
+                  m.route_role, m.last_successful_host, m.last_successful_port, m.name_origin
                  FROM space_members m
                  JOIN device_identities i ON i.device_id = m.device_id
                  WHERE m.space_id = ?1 AND m.device_id = ?2",
@@ -407,7 +417,7 @@ impl<'a> DeviceRepository<'a> {
         let mut statement = self.connection.prepare(
             "SELECT m.device_id, m.space_id, m.display_name, i.identity_public_key,
               m.trust_state, m.connection_state, m.paired_at, m.last_seen_at, m.revoked_at,
-              m.route_role, m.last_successful_host, m.last_successful_port
+              m.route_role, m.last_successful_host, m.last_successful_port, m.name_origin
              FROM space_members m
              JOIN device_identities i ON i.device_id = m.device_id
              WHERE m.device_id = ?1
@@ -428,7 +438,7 @@ impl<'a> DeviceRepository<'a> {
         let mut statement = self.connection.prepare(
             "SELECT m.device_id, m.space_id, m.display_name, i.identity_public_key,
               m.trust_state, m.connection_state, m.paired_at, m.last_seen_at, m.revoked_at,
-              m.route_role, m.last_successful_host, m.last_successful_port
+              m.route_role, m.last_successful_host, m.last_successful_port, m.name_origin
              FROM space_members m
              JOIN device_identities i ON i.device_id = m.device_id
              WHERE m.space_id = ?1
@@ -444,7 +454,7 @@ impl<'a> DeviceRepository<'a> {
         let mut statement = self.connection.prepare(
             "SELECT m.device_id, m.space_id, m.display_name, i.identity_public_key,
               m.trust_state, m.connection_state, m.paired_at, m.last_seen_at, m.revoked_at,
-              m.route_role, m.last_successful_host, m.last_successful_port
+              m.route_role, m.last_successful_host, m.last_successful_port, m.name_origin
              FROM space_members m
              JOIN device_identities i ON i.device_id = m.device_id
              JOIN spaces s ON s.space_id = m.space_id
@@ -494,8 +504,8 @@ fn upsert_device_record(connection: &Connection, record: &DeviceRecord) -> rusql
         "INSERT INTO space_members(
           space_id, device_id, display_name, trust_state, connection_state,
           route_role, last_successful_host, last_successful_port,
-          paired_at, last_seen_at, revoked_at
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+          paired_at, last_seen_at, revoked_at, name_origin
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
         ON CONFLICT(space_id, device_id) DO UPDATE SET
           display_name = excluded.display_name,
           trust_state = excluded.trust_state,
@@ -504,7 +514,8 @@ fn upsert_device_record(connection: &Connection, record: &DeviceRecord) -> rusql
           last_successful_host = excluded.last_successful_host,
           last_successful_port = excluded.last_successful_port,
           last_seen_at = excluded.last_seen_at,
-          revoked_at = excluded.revoked_at",
+          revoked_at = excluded.revoked_at,
+          name_origin = excluded.name_origin",
         params![
             record.device.space_id.to_string(),
             record.device.device_id.to_string(),
@@ -517,6 +528,7 @@ fn upsert_device_record(connection: &Connection, record: &DeviceRecord) -> rusql
             option_u64_to_i64(record.paired_at)?,
             option_u64_to_i64(record.device.last_seen_at)?,
             option_u64_to_i64(record.revoked_at)?,
+            display_name_origin_to_db(record.name_origin),
         ],
     )?;
     Ok(())
@@ -1116,6 +1128,7 @@ fn row_to_space_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<SpaceRecord>
             state: db_to_space_state(row.get::<_, String>(4)?, 4)?,
             created_at: i64_to_u64(row.get(5)?, 5)?,
         },
+        name_origin: db_to_display_name_origin(row.get::<_, String>(8)?, 8)?,
         encrypted_space_key_ref: row.get(2)?,
         updated_at: i64_to_u64(row.get(6)?, 6)?,
         local_role: db_to_local_space_role(row.get::<_, String>(7)?, 7)?,
@@ -1152,6 +1165,7 @@ fn row_to_device_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<DeviceRecor
             connection_state: db_to_connection_state(row.get::<_, String>(5)?, 5)?,
             last_seen_at: option_i64_to_u64(row.get(7)?, 7)?,
         },
+        name_origin: db_to_display_name_origin(row.get::<_, String>(12)?, 12)?,
         paired_at: option_i64_to_u64(row.get(6)?, 6)?,
         revoked_at: option_i64_to_u64(row.get(8)?, 8)?,
         route: TrustedDeviceRoute {
@@ -1221,6 +1235,21 @@ fn local_space_role_to_db(value: LocalSpaceRole) -> &'static str {
     match value {
         LocalSpaceRole::Owner => "owner",
         LocalSpaceRole::Member => "member",
+    }
+}
+
+fn display_name_origin_to_db(value: DisplayNameOrigin) -> &'static str {
+    match value {
+        DisplayNameOrigin::Generated => "generated",
+        DisplayNameOrigin::Custom => "custom",
+    }
+}
+
+fn db_to_display_name_origin(value: String, column: usize) -> rusqlite::Result<DisplayNameOrigin> {
+    match value.as_str() {
+        "generated" => Ok(DisplayNameOrigin::Generated),
+        "custom" => Ok(DisplayNameOrigin::Custom),
+        _ => Err(text_error(column, "invalid display name origin")),
     }
 }
 
@@ -1430,6 +1459,7 @@ mod tests {
                 state: SpaceState::Active,
                 created_at: 1_700_000_000_000,
             },
+            name_origin: DisplayNameOrigin::Generated,
             local_role: LocalSpaceRole::Owner,
             encrypted_space_key_ref: Some("credential://space-key".to_string()),
             updated_at: 1_700_000_000_000,
@@ -1448,6 +1478,7 @@ mod tests {
                     connection_state: DeviceConnectionState::Offline,
                     last_seen_at: None,
                 },
+                name_origin: DisplayNameOrigin::Generated,
                 route: TrustedDeviceRoute::default(),
                 paired_at: Some(1_700_000_000_000),
                 revoked_at: None,
@@ -1560,6 +1591,7 @@ mod tests {
                         state: SpaceState::Active,
                         created_at: 1_700_000_000_000,
                     },
+                    name_origin: DisplayNameOrigin::Custom,
                     local_role,
                     encrypted_space_key_ref: Some(format!("credential://space/{space_id}")),
                     updated_at: 1_700_000_000_000,
@@ -1579,6 +1611,7 @@ mod tests {
                     connection_state: DeviceConnectionState::Offline,
                     last_seen_at: None,
                 },
+                name_origin: DisplayNameOrigin::Custom,
                 route: TrustedDeviceRoute::default(),
                 paired_at: Some(1_700_000_000_010),
                 revoked_at: None,
@@ -1595,6 +1628,7 @@ mod tests {
                     connection_state: DeviceConnectionState::Offline,
                     last_seen_at: None,
                 },
+                name_origin: DisplayNameOrigin::Custom,
                 route: TrustedDeviceRoute {
                     role: TrustedRouteRole::DialCoordinator,
                     last_successful_host: Some("192.168.10.20".to_string()),
@@ -1639,6 +1673,7 @@ mod tests {
                 connection_state: DeviceConnectionState::Offline,
                 last_seen_at: None,
             },
+            name_origin: DisplayNameOrigin::Custom,
             route: TrustedDeviceRoute::default(),
             paired_at: None,
             revoked_at: None,
