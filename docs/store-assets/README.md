@@ -1,5 +1,7 @@
 # EggClip AppGallery 素材
 
+中英文应用名称、短介绍、详细介绍、截图文案和更新说明见 [`APP_STORE_COPY_ZH_EN.md`](./APP_STORE_COPY_ZH_EN.md)。提交前应按目标商店的当前字符限制粘贴并复核，不能把中文和英文内容混填到同一个语言条目。
+
 ## 市场图标
 
 - 上传文件：`app-icon-opaque.png`

@@ -13,6 +13,12 @@ cd D:\Develop\eggclip\harmony
 
 该命令依次执行 ArkTS 格式检查、DevEco Code Linter、单元测试、ArkTS 类型检查和 HAP 构建。
 
+## 语言设置
+
+在“设置 → 外观 → 语言”中可选择“跟随系统”“简体中文”或“English”。HarmonyOS 保存应用首选语言后会显示重新打开提示；关闭并重新打开 EggClip 后，应用名称、Ability、权限原因、导航、页面、动态状态和错误会统一使用所选语言。“跟随系统”遇到非简体中文系统语言时回退为 English。
+
+语言偏好由 HarmonyOS 应用首选语言管理，不写入 RDB，也不参与同步。程序生成的空间和设备名称会按本机语言显示，用户重命名的内容保持原文。手机和平板都需要在正式签名真机包上完成中文、英文和跟随系统冷启动回归。
+
 单独运行：
 
 ```powershell
@@ -23,6 +29,13 @@ cd D:\Develop\eggclip\harmony
 ```
 
 脚本默认使用 `C:\Program Files\Huawei\DevEco Studio`，也可以通过 `-DevEcoHome` 指定安装目录。
+
+仓库级国际化资源检查：
+
+```powershell
+cd D:\Develop\eggclip
+.\scripts\check-i18n.ps1
+```
 
 ## Release 内部检查包
 
