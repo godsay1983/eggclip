@@ -10,6 +10,7 @@ use tauri::{
     AppHandle, Emitter, Manager, Monitor, PhysicalPosition,
 };
 
+use crate::i18n::{effective_locale, SupportedLocale};
 use crate::panel_position::{self, Rect, Size};
 
 const TRAY_ID: &str = "eggclip-tray";
@@ -17,8 +18,12 @@ const RECENT_BLUR_DURATION: Duration = Duration::from_millis(350);
 const TRAY_STATUS_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 
 pub struct TrayStatusState {
+    open_item: MenuItem<tauri::Wry>,
     status_item: MenuItem<tauri::Wry>,
     toggle_sync_item: MenuItem<tauri::Wry>,
+    manage_devices_item: MenuItem<tauri::Wry>,
+    about_item: MenuItem<tauri::Wry>,
+    quit_item: MenuItem<tauri::Wry>,
 }
 
 #[derive(Default)]
@@ -74,14 +79,31 @@ impl PanelState {
 }
 
 pub fn create_tray(app: &AppHandle) -> tauri::Result<(TrayIcon, TrayStatusState)> {
-    let open_item = MenuItem::with_id(app, "open", "打开 EggClip", true, None::<&str>)?;
-    let status_item = MenuItem::with_id(app, "status", "0 台可信设备在线", false, None::<&str>)?;
-    let toggle_sync_item = MenuItem::with_id(app, "toggle-sync", "暂停同步", true, None::<&str>)?;
-    let manage_devices_item =
-        MenuItem::with_id(app, "manage-devices", "管理设备", true, None::<&str>)?;
-    let about_item = MenuItem::with_id(app, "about", "关于 EggClip", true, None::<&str>)?;
+    let settings = crate::settings::load_app_settings(app.clone()).unwrap_or_default();
+    let labels = tray_labels(
+        effective_locale(&settings.language_mode),
+        settings.sync_enabled,
+        0,
+    );
+    let open_item = MenuItem::with_id(app, "open", labels.open.clone(), true, None::<&str>)?;
+    let status_item = MenuItem::with_id(app, "status", labels.status.clone(), false, None::<&str>)?;
+    let toggle_sync_item = MenuItem::with_id(
+        app,
+        "toggle-sync",
+        labels.toggle_sync.clone(),
+        true,
+        None::<&str>,
+    )?;
+    let manage_devices_item = MenuItem::with_id(
+        app,
+        "manage-devices",
+        labels.manage_devices.clone(),
+        true,
+        None::<&str>,
+    )?;
+    let about_item = MenuItem::with_id(app, "about", labels.about.clone(), true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
-    let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", labels.quit.clone(), true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
         &[
@@ -101,7 +123,7 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<(TrayIcon, TrayStatusState)
 
     let tray = TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
-        .tooltip("蛋定 Clip · 等待配对")
+        .tooltip(labels.tooltip)
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
@@ -148,8 +170,12 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<(TrayIcon, TrayStatusState)
     Ok((
         tray,
         TrayStatusState {
+            open_item,
             status_item,
             toggle_sync_item,
+            manage_devices_item,
+            about_item,
+            quit_item,
         },
     ))
 }
@@ -166,35 +192,83 @@ pub fn start_status_task(app: AppHandle) {
 pub fn refresh_status(app: &AppHandle) {
     let settings = crate::settings::load_app_settings(app.clone()).unwrap_or_default();
     let online_count = crate::transport::authenticated_device_peers(app).len();
-    let labels = tray_status_labels(settings.sync_enabled, online_count);
+    let labels = tray_labels(
+        effective_locale(&settings.language_mode),
+        settings.sync_enabled,
+        online_count,
+    );
     let state = app.state::<TrayStatusState>();
+    let _ = state.open_item.set_text(labels.open);
     let _ = state.status_item.set_text(labels.status);
     let _ = state.toggle_sync_item.set_text(labels.toggle_sync);
+    let _ = state.manage_devices_item.set_text(labels.manage_devices);
+    let _ = state.about_item.set_text(labels.about);
+    let _ = state.quit_item.set_text(labels.quit);
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         let _ = tray.set_tooltip(Some(labels.tooltip));
     }
 }
 
-struct TrayStatusLabels {
+#[derive(Debug, PartialEq, Eq)]
+struct TrayLabels {
+    open: String,
     status: String,
-    toggle_sync: &'static str,
+    toggle_sync: String,
+    manage_devices: String,
+    about: String,
+    quit: String,
     tooltip: String,
 }
 
-fn tray_status_labels(sync_enabled: bool, online_count: usize) -> TrayStatusLabels {
-    let sync_label = if sync_enabled {
-        "同步已开启"
-    } else {
-        "同步已暂停"
-    };
-    TrayStatusLabels {
-        status: format!("{online_count} 台可信设备在线"),
-        toggle_sync: if sync_enabled {
-            "暂停同步"
-        } else {
-            "恢复同步"
-        },
-        tooltip: format!("蛋定 Clip · {sync_label} · {online_count} 台设备在线"),
+fn tray_labels(locale: SupportedLocale, sync_enabled: bool, online_count: usize) -> TrayLabels {
+    match locale {
+        SupportedLocale::ZhCn => {
+            let sync_label = if sync_enabled {
+                "同步已开启"
+            } else {
+                "同步已暂停"
+            };
+            TrayLabels {
+                open: "打开 EggClip".to_owned(),
+                status: format!("{online_count} 台可信设备在线"),
+                toggle_sync: if sync_enabled {
+                    "暂停同步"
+                } else {
+                    "恢复同步"
+                }
+                .to_owned(),
+                manage_devices: "管理设备".to_owned(),
+                about: "关于 EggClip".to_owned(),
+                quit: "退出".to_owned(),
+                tooltip: format!("蛋定 Clip · {sync_label} · {online_count} 台设备在线"),
+            }
+        }
+        SupportedLocale::EnUs => {
+            let device_word = if online_count == 1 {
+                "device"
+            } else {
+                "devices"
+            };
+            let sync_label = if sync_enabled {
+                "Sync on"
+            } else {
+                "Sync paused"
+            };
+            TrayLabels {
+                open: "Open EggClip".to_owned(),
+                status: format!("{online_count} trusted {device_word} online"),
+                toggle_sync: if sync_enabled {
+                    "Pause sync"
+                } else {
+                    "Resume sync"
+                }
+                .to_owned(),
+                manage_devices: "Manage devices".to_owned(),
+                about: "About EggClip".to_owned(),
+                quit: "Quit".to_owned(),
+                tooltip: format!("EggClip · {sync_label} · {online_count} {device_word} online"),
+            }
+        }
     }
 }
 
@@ -311,14 +385,30 @@ mod tests {
     }
 
     #[test]
-    fn tray_status_labels_cover_online_count_and_pause_action() {
-        let active = tray_status_labels(true, 2);
+    fn tray_labels_cover_chinese_online_count_and_pause_action() {
+        let active = tray_labels(SupportedLocale::ZhCn, true, 2);
         assert_eq!(active.status, "2 台可信设备在线");
         assert_eq!(active.toggle_sync, "暂停同步");
         assert!(active.tooltip.contains("同步已开启"));
 
-        let paused = tray_status_labels(false, 0);
+        let paused = tray_labels(SupportedLocale::ZhCn, false, 0);
         assert_eq!(paused.toggle_sync, "恢复同步");
         assert!(paused.tooltip.contains("同步已暂停"));
+    }
+
+    #[test]
+    fn tray_labels_cover_english_menu_and_singular_plural_status() {
+        let singular = tray_labels(SupportedLocale::EnUs, true, 1);
+        assert_eq!(singular.open, "Open EggClip");
+        assert_eq!(singular.status, "1 trusted device online");
+        assert_eq!(singular.toggle_sync, "Pause sync");
+        assert_eq!(singular.manage_devices, "Manage devices");
+        assert_eq!(singular.about, "About EggClip");
+        assert_eq!(singular.quit, "Quit");
+
+        let plural = tray_labels(SupportedLocale::EnUs, false, 2);
+        assert_eq!(plural.status, "2 trusted devices online");
+        assert_eq!(plural.toggle_sync, "Resume sync");
+        assert!(plural.tooltip.contains("2 devices online"));
     }
 }

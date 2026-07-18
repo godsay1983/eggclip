@@ -1,3 +1,4 @@
+mod commands;
 mod panel_position;
 mod tray;
 
@@ -6,6 +7,7 @@ pub mod clipboard;
 pub mod crypto;
 pub mod discovery;
 pub mod history;
+pub mod i18n;
 pub mod identity;
 pub mod pairing;
 pub mod protocol;
@@ -77,40 +79,40 @@ pub fn run() {
             _ => {}
         })
         .invoke_handler(tauri::generate_handler![
-            clipboard::read_clipboard_text,
-            clipboard::write_clipboard_text,
-            history::capture_clipboard_history_text,
-            history::clear_clipboard_history,
-            history::delete_clipboard_history_item,
-            history::get_clipboard_history_used,
-            history::list_clipboard_history_preview,
-            pairing::copy_pairing_invitation,
+            commands::read_clipboard_text,
+            commands::write_clipboard_text,
+            commands::capture_clipboard_history_text,
+            commands::clear_clipboard_history,
+            commands::delete_clipboard_history_item,
+            commands::get_clipboard_history_used,
+            commands::list_clipboard_history_preview,
+            commands::copy_pairing_invitation,
             pairing::client::cancel_pairing_join_attempt,
-            pairing::create_local_sync_space,
-            pairing::delete_local_sync_space,
-            pairing::create_pairing_invitation,
-            pairing::ensure_default_sync_space,
-            pairing::leave_member_sync_space,
-            pairing::list_local_sync_spaces,
-            pairing::list_trusted_devices,
-            pairing::load_active_sync_space_id,
+            commands::create_local_sync_space,
+            commands::delete_local_sync_space,
+            commands::create_pairing_invitation,
+            commands::ensure_default_sync_space,
+            commands::leave_member_sync_space,
+            commands::list_local_sync_spaces,
+            commands::list_trusted_devices,
+            commands::load_active_sync_space_id,
             pairing::client::parse_pairing_join_invitation,
-            pairing::run_space_hmac_diagnostic,
-            pairing::rename_trusted_device,
-            pairing::select_active_sync_space,
-            identity::load_local_device_identity,
-            settings::load_app_settings,
-            settings::save_app_settings,
-            transport::connect_poc_peer,
+            commands::run_space_hmac_diagnostic,
+            commands::rename_trusted_device,
+            commands::select_active_sync_space,
+            commands::load_local_device_identity,
+            commands::load_app_settings,
+            commands::save_app_settings,
+            commands::connect_poc_peer,
             transport::outbound::connect_trusted_peer,
-            transport::disconnect_all_poc_peers,
-            transport::get_poc_transport_status,
-            transport::load_poc_recent_endpoint,
-            transport::remove_trusted_device,
-            transport::send_poc_clipboard_text,
-            transport::send_authenticated_clipboard_text,
-            transport::start_poc_transport,
-            transport::stop_poc_transport,
+            commands::disconnect_all_poc_peers,
+            commands::get_poc_transport_status,
+            commands::load_poc_recent_endpoint,
+            commands::remove_trusted_device,
+            commands::send_poc_clipboard_text,
+            commands::send_authenticated_clipboard_text,
+            commands::start_poc_transport,
+            commands::stop_poc_transport,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

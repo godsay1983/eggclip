@@ -16,16 +16,16 @@ use crate::{
 
 const DATABASE_FILE_NAME: &str = "eggclip.db";
 
-#[tauri::command]
 pub fn load_app_settings(app: AppHandle) -> Result<AppSettings, String> {
     let path = database_path(&app)?;
     load_app_settings_from_path(&path)
 }
 
-#[tauri::command]
 pub fn save_app_settings(app: AppHandle, settings: AppSettings) -> Result<AppSettings, String> {
     let path = database_path(&app)?;
-    save_app_settings_to_path(&path, settings, now_ms()?)
+    let saved = save_app_settings_to_path(&path, settings, now_ms()?)?;
+    crate::tray::refresh_status(&app);
+    Ok(saved)
 }
 
 pub(crate) fn database_path(app: &AppHandle) -> Result<PathBuf, String> {

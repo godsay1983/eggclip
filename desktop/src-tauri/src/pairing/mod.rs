@@ -356,7 +356,6 @@ impl fmt::Display for PairingError {
 
 impl std::error::Error for PairingError {}
 
-#[tauri::command]
 pub fn create_local_sync_space(
     app: tauri::AppHandle,
     display_name: String,
@@ -371,13 +370,11 @@ pub fn create_local_sync_space(
         .map_err(|error| format!("无法创建同步空间：{error}"))
 }
 
-#[tauri::command]
 pub fn list_local_sync_spaces(app: tauri::AppHandle) -> Result<Vec<SyncSpaceSummary>, String> {
     let path = database_path(&app)?;
     list_sync_spaces_at_path(&path).map_err(|error| format!("无法读取同步空间：{error}"))
 }
 
-#[tauri::command]
 pub fn delete_local_sync_space(
     app: tauri::AppHandle,
     space_id: String,
@@ -405,7 +402,6 @@ pub fn delete_local_sync_space(
     )
 }
 
-#[tauri::command]
 pub fn leave_member_sync_space(
     app: tauri::AppHandle,
     space_id: String,
@@ -430,7 +426,6 @@ pub fn leave_member_sync_space(
         .map_err(|error| format!("无法离开同步空间：{error}"))
 }
 
-#[tauri::command]
 pub fn ensure_default_sync_space(app: tauri::AppHandle) -> Result<SyncSpaceSummary, String> {
     let path = database_path(&app)?;
     #[cfg(windows)]
@@ -442,7 +437,6 @@ pub fn ensure_default_sync_space(app: tauri::AppHandle) -> Result<SyncSpaceSumma
         .map_err(|error| format!("无法初始化默认同步空间：{error}"))
 }
 
-#[tauri::command]
 pub fn load_active_sync_space_id(app: tauri::AppHandle) -> Result<Option<String>, String> {
     let path = database_path(&app)?;
     let connection = open_database(path).map_err(|error| format!("无法打开本地数据库：{error}"))?;
@@ -451,7 +445,6 @@ pub fn load_active_sync_space_id(app: tauri::AppHandle) -> Result<Option<String>
         .map_err(|error| format!("无法读取活动同步空间：{error}"))
 }
 
-#[tauri::command]
 pub fn select_active_sync_space(
     app: tauri::AppHandle,
     space_id: String,
@@ -462,7 +455,6 @@ pub fn select_active_sync_space(
         .map_err(|error| format!("无法选择活动同步空间：{error}"))
 }
 
-#[tauri::command]
 pub fn run_space_hmac_diagnostic(
     app: tauri::AppHandle,
 ) -> Result<SpaceHmacDiagnosticSummary, String> {
@@ -476,7 +468,6 @@ pub fn run_space_hmac_diagnostic(
         .map_err(|error| format!("无法运行空间密钥 HMAC 诊断：{error}"))
 }
 
-#[tauri::command]
 pub fn create_pairing_invitation(
     app: tauri::AppHandle,
     runtime: tauri::State<'_, PairingInvitationClipboardRuntime>,
@@ -521,7 +512,6 @@ pub fn create_pairing_invitation(
     Ok(summary)
 }
 
-#[tauri::command]
 pub fn copy_pairing_invitation(
     app: tauri::AppHandle,
     runtime: tauri::State<'_, PairingInvitationClipboardRuntime>,
@@ -914,7 +904,6 @@ pub fn list_sync_spaces(connection: &Connection) -> Result<Vec<SyncSpaceSummary>
         .collect())
 }
 
-#[tauri::command]
 pub fn list_trusted_devices(app: tauri::AppHandle) -> Result<Vec<TrustedDeviceSummary>, String> {
     let path = database_path(&app)?;
     let connection = open_database(path).map_err(|error| format!("无法打开本地数据库：{error}"))?;
@@ -948,7 +937,6 @@ pub fn reset_trusted_device_connection_states(app: &tauri::AppHandle) -> Result<
     Ok(())
 }
 
-#[tauri::command]
 pub fn rename_trusted_device(
     app: tauri::AppHandle,
     device_id: String,

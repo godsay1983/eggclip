@@ -33,20 +33,17 @@ pub struct HistoryItemSummary {
     pub can_copy: bool,
 }
 
-#[tauri::command]
 pub fn clear_clipboard_history(app: AppHandle) -> Result<usize, String> {
     let path = database_path(&app)?;
     clear_clipboard_history_at_path(&path, now_ms()?)
 }
 
-#[tauri::command]
 pub fn get_clipboard_history_used(app: AppHandle) -> Result<usize, String> {
     let path = database_path(&app)?;
     apply_global_history_retention_at_path(&path, now_ms()?)?;
     get_clipboard_history_used_at_path(&path)
 }
 
-#[tauri::command]
 pub fn list_clipboard_history_preview(app: AppHandle) -> Result<Vec<HistoryItemSummary>, String> {
     let path = database_path(&app)?;
     let connection =
@@ -79,13 +76,11 @@ pub fn list_clipboard_history_preview(app: AppHandle) -> Result<Vec<HistoryItemS
         .collect())
 }
 
-#[tauri::command]
 pub fn delete_clipboard_history_item(app: AppHandle, item_id: String) -> Result<bool, String> {
     let path = database_path(&app)?;
     delete_clipboard_history_item_at_path(&path, &item_id, now_ms()?)
 }
 
-#[tauri::command]
 pub fn capture_clipboard_history_text(
     app: AppHandle,
     text: String,

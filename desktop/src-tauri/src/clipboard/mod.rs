@@ -201,7 +201,6 @@ impl ClipboardReadResult {
     }
 }
 
-#[tauri::command]
 pub fn read_clipboard_text() -> Result<ClipboardReadResult, String> {
     let mut clipboard =
         arboard::Clipboard::new().map_err(|error| format!("无法访问系统剪贴板：{error}"))?;
@@ -213,7 +212,6 @@ pub fn read_clipboard_text() -> Result<ClipboardReadResult, String> {
     ))
 }
 
-#[tauri::command]
 pub fn write_clipboard_text(text: String) -> Result<(), String> {
     let item = ClipboardText::parse(text).map_err(|error| error.to_string())?;
     let mut clipboard =

@@ -112,7 +112,7 @@ export interface PocTransportSummary {
   networkAddresses: PocNetworkAddressSummary[];
   discoveredServices: MdnsServiceCandidateSummary[];
   connectedPeers: number;
-  lastError: string | null;
+  lastError: "acceptFailed" | "handshakeFailed" | null;
 }
 
 export interface PocRecentEndpoint {

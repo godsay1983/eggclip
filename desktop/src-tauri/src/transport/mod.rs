@@ -289,7 +289,14 @@ pub struct PocTransportStatus {
     discovered_services: Vec<crate::discovery::MdnsServiceCandidate>,
     connected_peers: usize,
     diagnostics: PocTransportDiagnostics,
-    last_error: Option<String>,
+    last_error: Option<PocTransportErrorCode>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum PocTransportErrorCode {
+    AcceptFailed,
+    HandshakeFailed,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -440,7 +447,6 @@ pub struct TrustedDeviceRemovalSummary {
     delivered_peers: usize,
 }
 
-#[tauri::command]
 pub fn remove_trusted_device(
     app: AppHandle,
     device_id: String,
@@ -485,7 +491,6 @@ pub fn remove_trusted_device(
     })
 }
 
-#[tauri::command]
 pub async fn start_poc_transport(
     app: AppHandle,
     runtime: State<'_, PocTransportRuntime>,
@@ -562,7 +567,6 @@ pub async fn start_poc_transport(
     Ok(status)
 }
 
-#[tauri::command]
 pub fn stop_poc_transport(
     app: AppHandle,
     runtime: State<'_, PocTransportRuntime>,
@@ -595,7 +599,6 @@ pub fn stop_poc_transport(
     Ok(status)
 }
 
-#[tauri::command]
 pub fn get_poc_transport_status(
     app: AppHandle,
     runtime: State<'_, PocTransportRuntime>,
@@ -637,7 +640,6 @@ pub(crate) fn pairing_invitation_endpoints(
         .collect()
 }
 
-#[tauri::command]
 pub fn send_poc_clipboard_text(
     runtime: State<'_, PocTransportRuntime>,
     text: String,
@@ -646,7 +648,6 @@ pub fn send_poc_clipboard_text(
     broadcast_poc_clipboard_item_with_runtime(&runtime, &item)
 }
 
-#[tauri::command]
 pub async fn connect_poc_peer(
     app: AppHandle,
     runtime: State<'_, PocTransportRuntime>,
@@ -679,7 +680,6 @@ pub async fn connect_poc_peer(
     Ok(recent_endpoint)
 }
 
-#[tauri::command]
 pub fn disconnect_all_poc_peers(
     app: AppHandle,
     runtime: State<'_, PocTransportRuntime>,
@@ -687,7 +687,6 @@ pub fn disconnect_all_poc_peers(
     disconnect_all_poc_peers_with_runtime(&app, &runtime, "userDisconnected")
 }
 
-#[tauri::command]
 pub fn load_poc_recent_endpoint(app: AppHandle) -> Result<Option<PocRecentEndpoint>, String> {
     let path = database_path(&app)?;
     let connection = open_database(path).map_err(|error| format!("无法打开本地数据库：{error}"))?;
@@ -897,7 +896,6 @@ fn persist_and_broadcast_authenticated_local_clipboard(
     Ok((status, sent_peers))
 }
 
-#[tauri::command]
 pub fn send_authenticated_clipboard_text(app: AppHandle, text: String) -> Result<usize, String> {
     let item = ClipboardText::parse(text).map_err(|error| error.to_string())?;
     let (status, sent_peers) = persist_and_broadcast_authenticated_local_clipboard(&app, &item)
@@ -1179,7 +1177,7 @@ async fn run_poc_server(
             accept_result = listener.accept() => {
                 let (stream, peer_addr) = match accept_result {
                     Ok(result) => result,
-                    Err(error) => {
+                    Err(_) => {
                         let _ = app.emit("transport://poc-status", PocTransportStatus {
                             state: PocTransportState::Failed,
                             bind_address: "0.0.0.0".to_owned(),
@@ -1189,7 +1187,7 @@ async fn run_poc_server(
                             discovered_services: crate::discovery::discovered_services(&app),
                             connected_peers: 0,
                             diagnostics: PocTransportDiagnostics::default(),
-                            last_error: Some(format!("WebSocket POC 接收连接失败：{error}")),
+                            last_error: Some(PocTransportErrorCode::AcceptFailed),
                         });
                         break;
                     }
@@ -1209,7 +1207,7 @@ async fn run_poc_server(
 async fn handle_poc_peer(app: AppHandle, peer: String, stream: tokio::net::TcpStream) {
     let websocket = match tokio_tungstenite::accept_async(stream).await {
         Ok(websocket) => websocket,
-        Err(error) => {
+        Err(_) => {
             let _ = app.emit(
                 "transport://poc-status",
                 PocTransportStatus {
@@ -1221,7 +1219,7 @@ async fn handle_poc_peer(app: AppHandle, peer: String, stream: tokio::net::TcpSt
                     discovered_services: crate::discovery::discovered_services(&app),
                     connected_peers: 0,
                     diagnostics: PocTransportDiagnostics::default(),
-                    last_error: Some(format!("WebSocket POC 握手失败：{error}")),
+                    last_error: Some(PocTransportErrorCode::HandshakeFailed),
                 },
             );
             return;

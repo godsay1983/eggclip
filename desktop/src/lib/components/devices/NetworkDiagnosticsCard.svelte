@@ -33,6 +33,12 @@
     }
     return text($effectiveLocale, "network.stopped");
   }
+
+  function lastErrorLabel(error: PocTransportSummary["lastError"]): string {
+    if (error === "acceptFailed") return text($effectiveLocale, "network.acceptFailed");
+    if (error === "handshakeFailed") return text($effectiveLocale, "network.handshakeFailed");
+    return text($effectiveLocale, "network.lastErrorGeneric");
+  }
 </script>
 
 <section class="poc-connect-card" aria-labelledby="network-diagnostics-title">
@@ -95,6 +101,6 @@
   </div>
 
   {#if transport.lastError}
-    <p class="poc-diagnostics">{text($effectiveLocale, "network.lastErrorGeneric")}</p>
+    <p class="poc-diagnostics">{lastErrorLabel(transport.lastError)}</p>
   {/if}
 </section>

@@ -53,7 +53,7 @@ interface PocTransportStatus {
   discoveredServices: MdnsServiceCandidateDto[];
   connectedPeers: number;
   diagnostics: PocDiagnostics;
-  lastError: string | null;
+  lastError: "acceptFailed" | "handshakeFailed" | null;
 }
 
 interface MdnsServiceCandidateDto {

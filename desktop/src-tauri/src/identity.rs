@@ -70,7 +70,6 @@ pub trait IdentitySecretStore {
     ) -> Result<(), IdentityError>;
 }
 
-#[tauri::command]
 pub fn load_local_device_identity(
     app: tauri::AppHandle,
 ) -> Result<LocalDeviceIdentitySummary, String> {
