@@ -90,16 +90,16 @@
 
 ## 6. L3：HarmonyOS
 
-### [ ] I18N-05 完成 HarmonyOS 系统资源和语言设置
+### [x] I18N-05 完成 HarmonyOS 系统资源和语言设置
 
-- [ ] AppScope 的应用名称和 entry 的 Ability、权限原因资源提供英文 base 与简体中文。
-- [ ] 首页、设备页、配对页、设置页和底部导航静态文案迁移到资源。
-- [ ] PasteButton 周边说明和所有无障碍描述迁移到资源。
-- [ ] 设置页外观区域增加跟随系统、简体中文、English 选择。
-- [ ] 使用 `getAppPreferredLanguage` 和 `setAppPreferredLanguage` 读取、保存平台偏好。
-- [ ] 切换语言后显示本地化的重新打开提示，不强制退出应用。
-- [ ] 跟随系统模式处理配置变化和冷启动资源选择。
-- [ ] HarmonyOS 资源 key、语言偏好和手机/平板基础布局测试通过。
+- [x] AppScope 的应用名称和 entry 的 Ability、权限原因资源提供英文 base 与简体中文。
+- [x] 首页、设备页、配对页、设置页和底部导航静态文案迁移到资源。
+- [x] PasteButton 周边说明和所有无障碍描述迁移到资源。
+- [x] 设置页外观区域增加跟随系统、简体中文、English 选择。
+- [x] 使用 `getAppPreferredLanguage` 和 `setAppPreferredLanguage` 读取、保存平台偏好。
+- [x] 切换语言后显示本地化的重新打开提示，不强制退出应用。
+- [x] 跟随系统模式处理配置变化和冷启动资源选择。
+- [x] HarmonyOS 资源 key、语言偏好和手机/平板基础布局测试通过。
 
 完成标准：HarmonyOS 冷启动后使用选择的语言，应用名称、权限原因、导航和静态页面没有混合语言。
 

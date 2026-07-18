@@ -32,7 +32,7 @@ export struct PairingPage {
   @State private snapshot: PairingStoreSnapshot = createInitialPairingSnapshot();
   @State private connectionSnapshot: PairingConnectionSnapshot = pairingConnectionStore.snapshot();
   @State private invitationInputText: string = '';
-  @State private pasteImportStatus: string = '可以扫码导入，或点击系统 PasteButton 从剪贴板读取邀请。';
+  @State private pasteImportStatus: string = '';
   @State private pairingCompleted: boolean = false;
   private pendingProgrammaticInvitationInput: string | null = null;
   private pairingHandshakeInFlight: boolean = false;
@@ -57,6 +57,9 @@ export struct PairingPage {
     const hostContext = this.getUIContext().getHostContext();
     if (hostContext !== undefined) {
       this.messageFormatter = new UiMessageFormatter(hostContext as common.Context);
+      if (this.pasteImportStatus.length === 0) {
+        this.pasteImportStatus = this.resourceText('pairing_paste_help');
+      }
     }
     pairingConnectionStore.subscribe(this.connectionListener);
   }
@@ -69,7 +72,7 @@ export struct PairingPage {
     Column({ space: 12 }) {
       Row() {
         Column({ space: 4 }) {
-          Text('导入邀请')
+          Text($r('app.string.pairing_import_title'))
             .fontSize(EggClipTypography.bodySize)
             .fontWeight(FontWeight.Bold)
             .fontColor(EggClipColors.textPrimary)
@@ -102,7 +105,7 @@ export struct PairingPage {
 
         Column({ space: 6 }) {
           Row({ space: 8 }) {
-          Button('扫码导入桌面端二维码')
+          Button($r('app.string.pairing_scan_qr'))
             .layoutWeight(1)
             .height(42)
             .fontColor(EggClipColors.textPrimary)
@@ -124,10 +127,10 @@ export struct PairingPage {
               .borderRadius(21)
               .onClick((_event: ClickEvent, result: PasteButtonOnClickResult) => {
                 if (result !== PasteButtonOnClickResult.SUCCESS) {
-                  this.pasteImportStatus = 'PasteButton 临时授权失败，未读取系统剪贴板';
+                  this.pasteImportStatus = this.resourceText('paste_authorization_failed');
                   return;
                 }
-                this.pasteImportStatus = 'PasteButton 已授权，正在读取邀请文本';
+                this.pasteImportStatus = this.resourceText('paste_reading');
                 this.clipboardBridge.readPlainTextAfterPasteButton()
                   .then((readResult) => {
                     if (!readResult.ok) {
@@ -155,7 +158,7 @@ export struct PairingPage {
         .alignItems(HorizontalAlign.Start)
 
         Row({ space: 8 }) {
-          Button('校验邀请')
+          Button($r('app.string.pairing_validate'))
             .layoutWeight(1)
             .height(42)
             .fontColor(EggClipColors.onPrimary)
@@ -166,7 +169,7 @@ export struct PairingPage {
               this.snapshot = this.pairingStore.parseCurrent();
             })
 
-          Button('清空')
+          Button($r('app.string.common_clear'))
             .width(84)
             .height(42)
             .fontColor(EggClipColors.textSecondary)
@@ -179,7 +182,7 @@ export struct PairingPage {
         }
         .width('100%')
       } else {
-        Button('重新导入邀请')
+        Button($r('app.string.pairing_reimport'))
           .width('100%')
           .height(40)
           .fontColor(EggClipColors.textSecondary)
@@ -216,16 +219,18 @@ export struct PairingPage {
   @Builder
   private InvitationSummaryCard(summary: PairingInvitationSummary) {
     Column({ space: 10 }) {
-      this.SummaryRow('同步空间', `#${summary.spaceShortId} · key v${summary.spaceKeyVersion}`)
-      this.SummaryRow('发行设备', `${summary.issuerDeviceName} · #${summary.issuerShortFingerprint}`)
-      this.SummaryRow('剩余时间', `${summary.expiresInSeconds} 秒`)
+      this.SummaryRow($r('app.string.pairing_sync_space'),
+        `#${summary.spaceShortId} · key v${summary.spaceKeyVersion}`)
+      this.SummaryRow($r('app.string.pairing_issuer_device'),
+        `${summary.issuerDeviceName} · #${summary.issuerShortFingerprint}`)
+      this.SummaryRow($r('app.string.pairing_time_remaining'), `${summary.expiresInSeconds} 秒`)
 
       if (summary.endpoints.length > 0) {
         this.ConnectionCandidateSelector(summary)
       }
 
       Column({ space: 4 }) {
-        Text('人工确认码')
+        Text($r('app.string.pairing_confirmation_code'))
           .fontSize(11)
           .fontColor(EggClipColors.textSecondary)
 
@@ -253,7 +258,7 @@ export struct PairingPage {
         })
 
       if (this.connectionSnapshot.state === PairingConnectionState.AUTHENTICATED) {
-        Text('当前已经建立认证连接，无需重复配对。如需使用这份新邀请，请先停止当前连接。')
+        Text($r('app.string.pairing_authenticated_notice'))
           .width('100%')
           .fontSize(11)
           .fontColor(EggClipColors.textSecondary)
@@ -261,7 +266,7 @@ export struct PairingPage {
       }
 
       if (this.snapshot.state === PairingStoreState.PENDING) {
-        Text('邀请已从输入框安全清理，继续连接即可完成配对。')
+        Text($r('app.string.pairing_invitation_cleared_notice'))
           .width('100%')
           .fontSize(11)
           .fontColor(EggClipColors.textSecondary)
@@ -277,7 +282,7 @@ export struct PairingPage {
   private ConnectionCandidateSelector(summary: PairingInvitationSummary) {
     Column({ space: 8 }) {
       Row() {
-        Text('选择桌面端地址')
+        Text($r('app.string.pairing_select_address'))
           .fontSize(11)
           .fontWeight(FontWeight.Medium)
           .fontColor(EggClipColors.textPrimary)
@@ -312,7 +317,7 @@ export struct PairingPage {
       .scrollBar(BarState.Off)
       .width('100%')
 
-      Text('电脑使用 VPN 或多个网络时，请确认选择的是当前局域网地址。')
+      Text($r('app.string.pairing_vpn_address_notice'))
         .width('100%')
         .fontSize(10)
         .fontColor(EggClipColors.textSecondary)
@@ -327,7 +332,7 @@ export struct PairingPage {
     Column({ space: 10 }) {
       Row() {
         Column({ space: 4 }) {
-          Text('连接桌面端')
+          Text($r('app.string.pairing_connect_desktop'))
             .fontSize(12)
             .fontWeight(FontWeight.Medium)
             .fontColor(EggClipColors.textPrimary)
@@ -352,7 +357,7 @@ export struct PairingPage {
       Row({ space: 8 }) {
         TextInput({
           text: this.connectionSnapshot.manualHost,
-          placeholder: '桌面端 IP'
+          placeholder: $r('app.string.pairing_desktop_ip')
         })
           .enabled(this.connectionSnapshot.state !== PairingConnectionState.AUTHENTICATED)
           .layoutWeight(1)
@@ -365,7 +370,7 @@ export struct PairingPage {
 
         TextInput({
           text: this.connectionSnapshot.manualPort,
-          placeholder: '端口'
+          placeholder: $r('app.string.pairing_port')
         })
           .enabled(this.connectionSnapshot.state !== PairingConnectionState.AUTHENTICATED)
           .width(92)
@@ -390,7 +395,7 @@ export struct PairingPage {
             this.startPairingConnection();
           })
 
-        Button('停止')
+        Button($r('app.string.common_stop'))
           .width(76)
           .height(42)
           .fontColor(EggClipColors.textSecondary)
@@ -402,7 +407,7 @@ export struct PairingPage {
       }
       .width('100%')
 
-      Button('连接已配对设备')
+      Button($r('app.string.pairing_connect_trusted'))
         .width('100%')
         .height(42)
         .enabled(!this.isPairingConnectionBusy() &&
@@ -426,7 +431,7 @@ export struct PairingPage {
   }
 
   @Builder
-  private SummaryRow(label: string, value: string) {
+  private SummaryRow(label: ResourceStr, value: ResourceStr) {
     Row({ space: 10 }) {
       Text(label)
         .width(78)
@@ -443,7 +448,7 @@ export struct PairingPage {
 
   @Builder
   private SecurityBoundary() {
-    Text('邀请仅使用一次，5 分钟后失效，也不会保存到剪贴板历史。')
+    Text($r('app.string.pairing_invitation_safety'))
       .fontSize(11)
       .fontColor(EggClipColors.textSecondary)
       .lineHeight(18)
@@ -693,5 +698,17 @@ export struct PairingPage {
 
   private formatMessage(message: UiMessageDescriptor): string {
     return this.messageFormatter === null ? message.code : this.messageFormatter.format(message);
+  }
+
+  private resourceText(name: string, ...args: Array<string | number>): string {
+    const hostContext = this.getUIContext().getHostContext();
+    if (hostContext === undefined) {
+      return name;
+    }
+    try {
+      return hostContext.resourceManager.getStringByNameSync(name, ...args);
+    } catch (_) {
+      return name;
+    }
   }
 }

@@ -14,6 +14,7 @@ import { ThemeMode } from '../models/DomainModels';
 import { SettingsStore } from '../store/SettingsStore';
 import { EggClipColors } from '../theme/Colors';
 import { EggClipSpacing } from '../theme/Spacing';
+import { APP_LOCALE_REVISION_STORAGE_KEY } from '../utils/AppLifecycle';
 
 @Entry
 @Component
@@ -21,6 +22,7 @@ struct Index {
   private readonly tabsController: HdsTabsController = new HdsTabsController();
   private settingsStore: SettingsStore | null = null;
   @State private selectedIndex: number = 0;
+  @StorageLink(APP_LOCALE_REVISION_STORAGE_KEY) private localeRevision: number = 0;
 
   aboutToAppear(): void {
     if (this.settingsStore !== null) {
@@ -46,17 +48,17 @@ struct Index {
       TabContent() {
         HomePage()
       }
-      .tabBar(this.TabBarItem('首页', 0))
+      .tabBar(this.TabBarItem($r('app.string.nav_home'), 0))
 
       TabContent() {
         DevicesPage()
       }
-      .tabBar(this.TabBarItem('设备', 1))
+      .tabBar(this.TabBarItem($r('app.string.nav_devices'), 1))
 
       TabContent() {
         SettingsPage()
       }
-      .tabBar(this.TabBarItem('设置', 2))
+      .tabBar(this.TabBarItem($r('app.string.nav_settings'), 2))
     }
     .barOverlap(true)
     .barPosition(BarPosition.End)
@@ -86,10 +88,11 @@ struct Index {
     })
     .width('100%')
     .height('100%')
+    .id(`eggclip-localized-${this.localeRevision}`)
   }
 
   @Builder
-  private TabBarItem(label: string, index: number) {
+  private TabBarItem(label: ResourceStr, index: number) {
     Column({ space: 2 }) {
       this.TabIcon(index, this.selectedIndex === index)
 

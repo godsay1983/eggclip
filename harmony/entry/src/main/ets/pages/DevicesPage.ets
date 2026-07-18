@@ -144,13 +144,13 @@ export struct DevicesPage {
   private GettingStartedSection() {
     Column({ space: 14 }) {
       Column({ space: 5 }) {
-        Text('使用前准备')
+        Text($r('app.string.devices_getting_started'))
           .fontSize(20)
           .fontWeight(FontWeight.Bold)
           .fontColor(EggClipColors.textPrimary)
           .width('100%')
 
-        Text('EggClip 需要 Windows 桌面端配合使用，首次连接约需 2 分钟。')
+        Text($r('app.string.devices_getting_started_intro'))
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
           .lineHeight(20)
@@ -164,7 +164,7 @@ export struct DevicesPage {
         gutter: { x: 8, y: 8 }
       }) {
         GridCol({ span: { sm: 6, md: 3, lg: 3 } }) {
-          Button('开始配对')
+          Button($r('app.string.devices_start_pairing'))
             .width('100%')
             .height(40)
             .fontSize(12)
@@ -177,7 +177,7 @@ export struct DevicesPage {
         }
 
         GridCol({ span: { sm: 6, md: 3, lg: 3 } }) {
-          Button('功能演示')
+          Button($r('app.string.devices_feature_demo'))
             .width('100%')
             .height(40)
             .fontSize(12)
@@ -190,7 +190,7 @@ export struct DevicesPage {
         }
 
         GridCol({ span: { sm: 6, md: 3, lg: 3 } }) {
-          Button('隐私说明')
+          Button($r('app.string.devices_privacy'))
             .width('100%')
             .height(40)
             .fontSize(12)
@@ -203,7 +203,7 @@ export struct DevicesPage {
         }
 
         GridCol({ span: { sm: 6, md: 3, lg: 3 } }) {
-          Button('连接诊断')
+          Button($r('app.string.devices_connection_diagnostics'))
             .width('100%')
             .height(40)
             .fontSize(12)
@@ -219,10 +219,10 @@ export struct DevicesPage {
       .width('100%')
 
       Column({ space: 10 }) {
-        this.GettingStartedStep('1', '启动 Windows 客户端', '在电脑上打开 EggClip，保持桌面端运行。')
-        this.GettingStartedStep('2', '连接同一局域网', '电脑和 HarmonyOS 设备连接同一 Wi-Fi 或可互通的局域网。')
-        this.GettingStartedStep('3', '生成一次性邀请', '在桌面端“设备”页生成邀请二维码或邀请文本。')
-        this.GettingStartedStep('4', '扫码或粘贴配对', '点“开始配对”，导入邀请并核对两端显示的确认码。')
+        this.GettingStartedStep('1', $r('app.string.devices_step_launch_title'), $r('app.string.devices_step_launch_desc'))
+        this.GettingStartedStep('2', $r('app.string.devices_step_network_title'), $r('app.string.devices_step_network_desc'))
+        this.GettingStartedStep('3', $r('app.string.devices_step_invite_title'), $r('app.string.devices_step_invite_desc'))
+        this.GettingStartedStep('4', $r('app.string.devices_step_pair_title'), $r('app.string.devices_step_pair_desc'))
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
@@ -232,7 +232,7 @@ export struct DevicesPage {
       } else if (this.gettingStartedDetail === 'privacy') {
         this.PrivacyGuideCard()
       } else if (this.gettingStartedDetail === 'diagnostics') {
-        Text('连接诊断已在下方“连接问题”中展开。自动发现失败时可检查防火墙，或手动输入桌面端地址。')
+        Text($r('app.string.devices_diagnostics_expanded'))
           .width('100%')
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
@@ -242,7 +242,7 @@ export struct DevicesPage {
           .borderRadius(14)
       }
 
-      Text('邀请 5 分钟后失效且只能使用一次；只有完成确认码核对和安全认证的设备才能同步。')
+      Text($r('app.string.devices_invitation_security'))
         .width('100%')
         .fontSize(11)
         .fontColor(EggClipColors.textSecondary)
@@ -256,7 +256,7 @@ export struct DevicesPage {
   }
 
   @Builder
-  private GettingStartedStep(number: string, title: string, description: string) {
+  private GettingStartedStep(number: string, title: ResourceStr, description: ResourceStr) {
     Row({ space: 12 }) {
       Text(number)
         .width(26)
@@ -289,15 +289,15 @@ export struct DevicesPage {
   @Builder
   private FeatureGuideCard() {
     Column({ space: 8 }) {
-      Text('核心功能')
+      Text($r('app.string.devices_core_features'))
         .fontSize(EggClipTypography.captionSize)
         .fontWeight(FontWeight.Bold)
         .fontColor(EggClipColors.textPrimary)
         .width('100%')
 
-      this.HelpPoint('Windows → HarmonyOS', '电脑复制文本后，已认证连接会把内容实时显示到 HarmonyOS 首页。')
-      this.HelpPoint('HarmonyOS → Windows', '在首页通过系统 PasteButton 授权读取一次文本，发送后可直接在电脑粘贴。')
-      this.HelpPoint('自动重连', '桌面端运行且应用回到前台时，会使用已保存的可信设备信息自动连接。')
+      this.HelpPoint($r('app.string.devices_feature_receive_title'), $r('app.string.devices_feature_receive_desc'))
+      this.HelpPoint($r('app.string.devices_feature_send_title'), $r('app.string.devices_feature_send_desc'))
+      this.HelpPoint($r('app.string.devices_feature_reconnect_title'), $r('app.string.devices_feature_reconnect_desc'))
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -309,15 +309,15 @@ export struct DevicesPage {
   @Builder
   private PrivacyGuideCard() {
     Column({ space: 8 }) {
-      Text('隐私与安全')
+      Text($r('app.string.devices_privacy_title'))
         .fontSize(EggClipTypography.captionSize)
         .fontWeight(FontWeight.Bold)
         .fontColor(EggClipColors.textPrimary)
         .width('100%')
 
-      this.HelpPoint('纯局域网', '不需要账号，不使用中心服务器或公网中继，文本只发给已配对设备。')
-      this.HelpPoint('本机保存', '历史记录保存在本机，可在底部“设置”页关闭历史或清空记录。')
-      this.HelpPoint('系统保护', '设备私钥和同步空间密钥由系统安全存储保护，普通日志不记录剪贴板正文。')
+      this.HelpPoint($r('app.string.devices_privacy_lan_title'), $r('app.string.devices_privacy_lan_desc'))
+      this.HelpPoint($r('app.string.devices_privacy_local_title'), $r('app.string.devices_privacy_local_desc'))
+      this.HelpPoint($r('app.string.devices_privacy_system_title'), $r('app.string.devices_privacy_system_desc'))
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -327,17 +327,25 @@ export struct DevicesPage {
   }
 
   @Builder
-  private HelpPoint(title: string, description: string) {
+  private HelpPoint(title: ResourceStr, description: ResourceStr) {
     Row({ space: 8 }) {
       Text('•')
         .fontSize(16)
         .fontColor(EggClipColors.accentForeground)
 
-      Text(`${title}：${description}`)
-        .layoutWeight(1)
-        .fontSize(EggClipTypography.captionSize)
-        .fontColor(EggClipColors.textSecondary)
-        .lineHeight(18)
+      Column({ space: 2 }) {
+        Text(title)
+          .fontSize(EggClipTypography.captionSize)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(EggClipColors.textPrimary)
+
+        Text(description)
+          .fontSize(EggClipTypography.captionSize)
+          .fontColor(EggClipColors.textSecondary)
+          .lineHeight(18)
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
     }
     .width('100%')
     .alignItems(VerticalAlign.Top)
@@ -348,19 +356,19 @@ export struct DevicesPage {
     Column({ space: 12 }) {
       Row() {
         Column({ space: 3 }) {
-          Text('添加设备')
+          Text($r('app.string.devices_add_device'))
             .fontSize(EggClipTypography.bodySize)
             .fontWeight(FontWeight.Bold)
             .fontColor(EggClipColors.textPrimary)
 
-          Text('扫描或粘贴桌面端邀请。')
+          Text($r('app.string.devices_add_device_desc'))
             .fontSize(EggClipTypography.captionSize)
             .fontColor(EggClipColors.textSecondary)
         }
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
 
-        Button(this.pairingExpanded ? '收起' : '开始配对')
+        Button(this.pairingExpanded ? $r('app.string.common_collapse') : $r('app.string.devices_start_pairing'))
           .height(40)
           .fontSize(12)
           .fontColor(this.pairingExpanded ? EggClipColors.textSecondary : EggClipColors.onPrimary)
@@ -387,13 +395,13 @@ export struct DevicesPage {
   @Builder
   private Header() {
     Column({ space: 6 }) {
-      Text('设备')
+      Text($r('app.string.devices_title'))
         .fontSize(EggClipTypography.titleSize)
         .fontWeight(FontWeight.Bold)
         .fontColor(EggClipColors.textPrimary)
         .width('100%')
 
-      Text('已配对设备会在应用前台自动连接。')
+      Text($r('app.string.devices_auto_connect_desc'))
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
         .width('100%')
@@ -410,7 +418,7 @@ export struct DevicesPage {
           StatusDot({ state: this.connectionState })
 
           Column({ space: 3 }) {
-            Text('连接问题')
+            Text($r('app.string.devices_connection_issues'))
               .fontSize(EggClipTypography.bodySize)
               .fontWeight(FontWeight.Bold)
               .fontColor(EggClipColors.textPrimary)
@@ -425,7 +433,7 @@ export struct DevicesPage {
         }
         .layoutWeight(1)
 
-        Button(this.diagnosticsExpanded ? '收起' : '展开')
+        Button(this.diagnosticsExpanded ? $r('app.string.common_collapse') : $r('app.string.common_expand'))
           .height(40)
           .fontSize(12)
           .fontColor(EggClipColors.textSecondary)
@@ -438,7 +446,7 @@ export struct DevicesPage {
       .width('100%')
       .alignItems(VerticalAlign.Top)
 
-      Text('自动连接失败时，可在这里重新发现或手动输入地址。')
+      Text($r('app.string.devices_connection_issues_desc'))
         .width('100%')
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
@@ -505,7 +513,7 @@ export struct DevicesPage {
   private RuntimeDeviceCard() {
     Column({ space: 12 }) {
       Row() {
-        Text('运行时设备')
+        Text($r('app.string.devices_runtime'))
           .fontSize(EggClipTypography.bodySize)
           .fontWeight(FontWeight.Bold)
           .fontColor(EggClipColors.textPrimary)
@@ -540,11 +548,12 @@ export struct DevicesPage {
       .width('100%')
       .alignItems(VerticalAlign.Top)
 
-      this.DeviceInfoRow('短指纹', this.transportState === PocLifecycleState.RUNNING ? '未配对' : '等待配对')
-      this.DeviceInfoRow('最后在线', this.runtimeLastSeenText())
-      this.DeviceInfoRow('端点', this.runtimeEndpointText())
+      this.DeviceInfoRow($r('app.string.devices_short_fingerprint'),
+        this.transportState === PocLifecycleState.RUNNING ? '未配对' : '等待配对')
+      this.DeviceInfoRow($r('app.string.devices_last_online'), this.runtimeLastSeenText())
+      this.DeviceInfoRow($r('app.string.devices_endpoint'), this.runtimeEndpointText())
 
-      Text('临时连接只表示网络通道可用，不代表设备身份可信。完成配对和认证后，设备才会进入可信设备列表。')
+      Text($r('app.string.devices_runtime_notice'))
         .width('100%')
         .fontSize(11)
         .fontColor(EggClipColors.textSecondary)
@@ -558,7 +567,7 @@ export struct DevicesPage {
   }
 
   @Builder
-  private DeviceInfoRow(label: string, value: string) {
+  private DeviceInfoRow(label: ResourceStr, value: ResourceStr) {
     Row({ space: 10 }) {
       Text(label)
         .width(72)
@@ -578,7 +587,7 @@ export struct DevicesPage {
   private DiscoveryCard() {
     Column({ space: 10 }) {
       Row() {
-        Text('自动发现')
+        Text($r('app.string.devices_discovery'))
           .fontSize(EggClipTypography.bodySize)
           .fontWeight(FontWeight.Bold)
           .fontColor(EggClipColors.textPrimary)
@@ -608,7 +617,7 @@ export struct DevicesPage {
         })
 
       if (this.discoveryCandidates.length === 0) {
-        Text('暂未发现桌面端。模拟器网络受 VPN/TUN、桥接和防火墙影响时，可以使用下方手动连接。')
+        Text($r('app.string.devices_discovery_empty'))
           .width('100%')
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
@@ -627,7 +636,7 @@ export struct DevicesPage {
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1)
 
-            Button('连接')
+            Button($r('app.string.common_connect'))
               .height(40)
               .fontColor(EggClipColors.accentForeground)
               .backgroundColor(EggClipColors.cardBackground)
@@ -659,7 +668,7 @@ export struct DevicesPage {
   private ManualTransportCard() {
     Column({ space: 12 }) {
       Row() {
-        Text('手动连接')
+        Text($r('app.string.devices_manual'))
           .fontSize(EggClipTypography.bodySize)
           .fontWeight(FontWeight.Bold)
           .fontColor(EggClipColors.textPrimary)
@@ -671,14 +680,14 @@ export struct DevicesPage {
       }
       .width('100%')
 
-      Text('当自动发现不可用时，输入桌面端显示的 IP 和端口。连接成功后，首页 PasteButton 会通过该连接发送文本。')
+      Text($r('app.string.devices_manual_desc'))
         .width('100%')
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
         .lineHeight(20)
 
       Row({ space: 8 }) {
-        TextInput({ text: this.manualHost, placeholder: '桌面端 IP' })
+        TextInput({ text: this.manualHost, placeholder: $r('app.string.pairing_desktop_ip') })
           .layoutWeight(1)
           .height(42)
           .backgroundColor(EggClipColors.controlBackground)
@@ -687,7 +696,7 @@ export struct DevicesPage {
             this.manualHost = value;
           })
 
-        TextInput({ text: this.manualPort, placeholder: '端口' })
+        TextInput({ text: this.manualPort, placeholder: $r('app.string.pairing_port') })
           .width(96)
           .height(42)
           .backgroundColor(EggClipColors.controlBackground)
@@ -703,7 +712,7 @@ export struct DevicesPage {
         this.RecentEndpointCard()
       }
 
-      Button('连接桌面端')
+      Button($r('app.string.devices_connect_desktop'))
         .width('100%')
         .height(44)
         .fontColor(EggClipColors.onPrimary)
@@ -713,7 +722,7 @@ export struct DevicesPage {
           pocConnectionStore.connectManualEndpoint(this.manualHost, this.manualPort);
         })
 
-      Button('断开连接')
+      Button($r('app.string.devices_disconnect_desktop'))
         .width('100%')
         .height(40)
         .fontColor(EggClipColors.textSecondary)
@@ -746,7 +755,7 @@ export struct DevicesPage {
     Column({ space: 8 }) {
       Row({ space: 8 }) {
         Column({ space: 3 }) {
-          Text('最近成功地址')
+          Text($r('app.string.devices_recent_endpoint'))
             .fontSize(EggClipTypography.captionSize)
             .fontWeight(FontWeight.Medium)
             .fontColor(EggClipColors.textPrimary)
@@ -759,7 +768,7 @@ export struct DevicesPage {
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
 
-        Button('回填')
+        Button($r('app.string.devices_fill_endpoint'))
           .height(40)
           .fontSize(11)
           .fontColor(EggClipColors.textSecondary)
@@ -773,7 +782,7 @@ export struct DevicesPage {
       .width('100%')
       .alignItems(VerticalAlign.Top)
 
-      Button('连接上次地址')
+      Button($r('app.string.devices_connect_recent'))
         .width('100%')
         .height(40)
         .fontColor(EggClipColors.accentForeground)
@@ -793,7 +802,7 @@ export struct DevicesPage {
   @Builder
   private TroubleshootingCard() {
     Column({ space: 12 }) {
-      Text('连接排障')
+      Text($r('app.string.devices_troubleshooting'))
         .fontSize(EggClipTypography.bodySize)
         .fontWeight(FontWeight.Bold)
         .fontColor(EggClipColors.textPrimary)
@@ -805,12 +814,15 @@ export struct DevicesPage {
         .fontColor(EggClipColors.textSecondary)
         .lineHeight(20)
 
-      this.TroubleshootingRow('自动发现', this.discoveryCandidates.length > 0
+      this.TroubleshootingRow($r('app.string.devices_troubleshoot_discovery_title'), this.discoveryCandidates.length > 0
         ? `已发现 ${this.discoveryCandidates.length} 个候选，可直接点“连接”。`
-        : '没有候选时，mDNS 可能被 VPN、模拟器网络、路由器或防火墙阻断。')
-      this.TroubleshootingRow('手动 IP', '在桌面端设置的局域网诊断中查看普通网卡 IPv4 和端口，填到上方手动连接。')
-      this.TroubleshootingRow('VPN/TUN', '模拟器可能需要开启 VPN 的 TUN 才能访问宿主机局域网；真机通常优先使用同一 Wi‑Fi。')
-      this.TroubleshootingRow('安全边界', '候选地址只代表发现到服务，不代表设备已可信；正式同步仍需要配对和认证。')
+        : $r('app.string.devices_troubleshoot_discovery_empty'))
+      this.TroubleshootingRow($r('app.string.devices_troubleshoot_manual_title'),
+        $r('app.string.devices_troubleshoot_manual_desc'))
+      this.TroubleshootingRow($r('app.string.devices_troubleshoot_vpn_title'),
+        $r('app.string.devices_troubleshoot_vpn_desc'))
+      this.TroubleshootingRow($r('app.string.devices_troubleshoot_security_title'),
+        $r('app.string.devices_troubleshoot_security_desc'))
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -820,7 +832,7 @@ export struct DevicesPage {
   }
 
   @Builder
-  private TroubleshootingRow(title: string, description: string) {
+  private TroubleshootingRow(title: ResourceStr, description: ResourceStr) {
     Row({ space: 10 }) {
       Text('·')
         .fontSize(20)
@@ -847,7 +859,7 @@ export struct DevicesPage {
   private TrustedDevicesCard() {
     if (this.trustedDevices.length > 0) {
       Column({ space: 12 }) {
-        Text('可信设备')
+        Text($r('app.string.devices_trusted'))
           .fontSize(20)
           .fontWeight(FontWeight.Bold)
           .fontColor(EggClipColors.textPrimary)
@@ -879,7 +891,7 @@ export struct DevicesPage {
 
             if (this.editingDeviceId === device.deviceId) {
               Row({ space: 8 }) {
-                TextInput({ text: this.deviceNameDraft, placeholder: '设备名称' })
+                TextInput({ text: this.deviceNameDraft, placeholder: $r('app.string.devices_name_placeholder') })
                   .layoutWeight(1)
                   .height(40)
                   .fontSize(EggClipTypography.captionSize)
@@ -889,7 +901,7 @@ export struct DevicesPage {
                     this.deviceNameDraft = value;
                   })
 
-                Button('保存')
+                Button($r('app.string.common_save'))
                   .height(40)
                   .fontSize(12)
                   .fontColor(this.busyDeviceId.length === 0 ?
@@ -902,7 +914,7 @@ export struct DevicesPage {
                     this.saveDeviceName(device.deviceId);
                   })
 
-                Button('取消')
+                Button($r('app.string.common_cancel'))
                   .height(40)
                   .fontSize(12)
                   .fontColor(EggClipColors.textSecondary)
@@ -916,7 +928,7 @@ export struct DevicesPage {
               .width('100%')
             } else {
               Row({ space: 8 }) {
-                Button('重命名')
+                Button($r('app.string.common_rename'))
                   .height(40)
                   .fontSize(12)
                   .fontColor(EggClipColors.textPrimary)
@@ -929,7 +941,8 @@ export struct DevicesPage {
                     this.deviceActionStatus = '';
                   })
 
-                Button(this.busyDeviceId === device.deviceId ? '正在移除' : '移除设备')
+                Button(this.busyDeviceId === device.deviceId ?
+                  $r('app.string.devices_removing') : $r('app.string.devices_remove'))
                   .height(40)
                   .fontSize(12)
                   .fontColor(EggClipColors.statusError)
@@ -970,12 +983,12 @@ export struct DevicesPage {
           .fontColor(EggClipColors.accentForeground)
 
         Column({ space: 6 }) {
-          Text('可信设备')
+          Text($r('app.string.devices_trusted'))
             .fontSize(20)
             .fontWeight(FontWeight.Bold)
             .fontColor(EggClipColors.textPrimary)
 
-          Text('还没有可信设备。点击下方“添加设备”完成配对。')
+          Text($r('app.string.devices_empty_trusted'))
             .fontSize(EggClipTypography.captionSize)
             .fontColor(EggClipColors.textSecondary)
             .textAlign(TextAlign.Center)
@@ -1025,14 +1038,14 @@ export struct DevicesPage {
   private confirmRemoveDevice(device: TrustedDeviceSummary): void {
     this.getUIContext().showAlertDialog({
       title: `移除“${device.displayName}”？`,
-      message: '这会立即停止自动重连，撤销本机可信记录，并清除本机旧同步空间密钥与历史。桌面端还需移除本设备以轮换空间密钥；再次使用时需要重新配对。',
+      message: $r('app.string.devices_remove_message'),
       primaryButton: {
-        value: '取消',
+        value: $r('app.string.common_cancel'),
         action: () => {
         }
       },
       secondaryButton: {
-        value: '确认移除',
+        value: $r('app.string.devices_remove_confirm'),
         fontColor: EggClipColors.statusError,
         action: () => {
           this.removeDevice(device.deviceId);
@@ -1087,15 +1100,15 @@ export struct DevicesPage {
   @Builder
   private DevicePolicyCard() {
     Column({ space: 12 }) {
-      Text('设备规则')
+      Text($r('app.string.devices_rules'))
         .fontSize(EggClipTypography.bodySize)
         .fontWeight(FontWeight.Bold)
         .fontColor(EggClipColors.textPrimary)
         .width('100%')
 
-      this.PolicyRow('最多 5 台', 'v1 建议每个同步空间保持小规模，降低冲突和误连成本。')
-      this.PolicyRow('先配对再同步', 'mDNS 只负责发现地址，不能代表设备可信。')
-      this.PolicyRow('移除需轮换', '设备移除后会进入 revoked 状态，并触发空间密钥轮换流程。')
+      this.PolicyRow($r('app.string.devices_rule_limit_title'), $r('app.string.devices_rule_limit_desc'))
+      this.PolicyRow($r('app.string.devices_rule_pair_title'), $r('app.string.devices_rule_pair_desc'))
+      this.PolicyRow($r('app.string.devices_rule_rotate_title'), $r('app.string.devices_rule_rotate_desc'))
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -1105,7 +1118,7 @@ export struct DevicesPage {
   }
 
   @Builder
-  private PolicyRow(title: string, description: string) {
+  private PolicyRow(title: ResourceStr, description: ResourceStr) {
     Row({ space: 10 }) {
       Text('•')
         .fontSize(20)

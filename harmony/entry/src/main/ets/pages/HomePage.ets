@@ -108,7 +108,7 @@ export struct HomePage {
         this.formatMessage(snapshot.outboundDeliveryDescription));
     }
   };
-  @State private pasteStatus: string = '点击“粘贴”后读取并发送一次';
+  @State private pasteStatus: string = '';
   @State private copyStatus: string = '桌面端文本可手动复制到本机';
   @State private outboundState: OutboundSendState = OutboundSendState.IDLE;
   @State private outboundTitle: string = '等待本机文本';
@@ -144,6 +144,9 @@ export struct HomePage {
         this.messageFormatter = new UiMessageFormatter(context);
         this.historyStore = new HistoryStore(context);
         this.trustedDeviceStore = new TrustedDeviceStore(context);
+        if (this.pasteStatus.length === 0) {
+          this.pasteStatus = this.resourceText('home_paste_help');
+        }
       }
     }
     pocConnectionStore.subscribe(this.connectionSnapshotListener);
@@ -191,12 +194,12 @@ export struct HomePage {
   private ConnectionExperienceCard() {
     Column({ space: 10 }) {
       if (this.currentConnectionExperience().showFirstUse) {
-        Text('还没有配对设备')
+        Text($r('app.string.home_unpaired_title'))
           .fontSize(EggClipTypography.bodySize)
           .fontWeight(FontWeight.Bold)
           .fontColor(EggClipColors.textPrimary)
           .width('100%')
-        Text('请到设备页扫描二维码或粘贴桌面端邀请。')
+        Text($r('app.string.home_unpaired_description'))
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
           .lineHeight(20)
@@ -208,7 +211,7 @@ export struct HomePage {
               .fontSize(EggClipTypography.bodySize)
               .fontWeight(FontWeight.Medium)
               .fontColor(EggClipColors.textPrimary)
-            Text(this.appInForeground ? this.connectionDescription : '应用位于后台，可信连接已暂停；回到前台后会自动恢复。')
+            Text(this.appInForeground ? this.connectionDescription : $r('app.string.home_background_paused'))
               .fontSize(EggClipTypography.captionSize)
               .fontColor(EggClipColors.textSecondary)
               .lineHeight(19)
@@ -217,7 +220,7 @@ export struct HomePage {
           .layoutWeight(1)
 
           if (this.currentConnectionExperience().showRetry) {
-            Button(this.retryingTrustedConnection ? '重试中' : '立即重试')
+            Button(this.retryingTrustedConnection ? $r('app.string.common_retrying') : $r('app.string.common_retry_now'))
               .height(40)
               .enabled(this.currentConnectionExperience().retryEnabled)
               .fontSize(12)
@@ -251,13 +254,13 @@ export struct HomePage {
         .objectFit(ImageFit.Contain)
 
       Column({ space: 4 }) {
-        Text('蛋定 Clip')
+        Text($r('app.string.home_brand'))
           .fontSize(EggClipTypography.titleSize)
           .fontWeight(FontWeight.Bold)
           .fontColor(EggClipColors.textPrimary)
           .width('100%')
 
-        Text('剪贴板')
+        Text($r('app.string.home_clipboard_title'))
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
       }
@@ -272,13 +275,13 @@ export struct HomePage {
   private LatestClipboardCard() {
     Column({ space: 14 }) {
       Row() {
-        Text('剪贴板')
+        Text($r('app.string.home_clipboard_title'))
           .fontSize(EggClipTypography.bodySize)
           .fontWeight(FontWeight.Bold)
           .fontColor(EggClipColors.textPrimary)
           .layoutWeight(1)
 
-        Text(this.latestReceivedPreview.length === 0 ? '暂无内容' : this.latestReceivedSource)
+        Text(this.latestReceivedPreview.length === 0 ? $r('app.string.home_empty_content') : this.latestReceivedSource)
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
       }
@@ -297,7 +300,7 @@ export struct HomePage {
             .layoutWeight(1)
 
           if (this.latestReceivedText.length > 180) {
-            Button(this.latestReceivedExpanded ? '收起' : '展开')
+            Button(this.latestReceivedExpanded ? $r('app.string.common_collapse') : $r('app.string.common_expand'))
               .height(40)
               .fontSize(11)
               .fontColor(EggClipColors.textSecondary)
@@ -324,10 +327,10 @@ export struct HomePage {
           .borderRadius(23)
           .onClick((_event: ClickEvent, result: PasteButtonOnClickResult) => {
             if (result !== PasteButtonOnClickResult.SUCCESS) {
-              this.pasteStatus = 'PasteButton 临时授权失败，未读取系统剪贴板';
+              this.pasteStatus = this.resourceText('paste_authorization_failed');
               return;
             }
-            this.pasteStatus = 'PasteButton 已授权，正在读取纯文本';
+            this.pasteStatus = this.resourceText('paste_reading');
             this.clipboardBridge.readPlainTextAfterPasteButton()
               .then((readResult) => {
                 this.pasteStatus = this.formatMessage(readResult.message);
@@ -353,7 +356,7 @@ export struct HomePage {
       }
 
       if (this.latestReceivedText.length > 0) {
-        Button('复制')
+        Button($r('app.string.home_copy'))
           .width('100%')
           .height(46)
           .fontColor(EggClipColors.onPrimary)
@@ -425,13 +428,13 @@ export struct HomePage {
 
       Column({ space: 6 }) {
         Row({ space: 8 }) {
-          Text('最近记录')
+          Text($r('app.string.home_recent_history'))
             .fontSize(EggClipTypography.bodySize)
             .fontWeight(FontWeight.Bold)
             .fontColor(EggClipColors.textPrimary)
             .layoutWeight(1)
 
-          Button(this.clearingHistory ? '清理中' : '清空')
+          Button(this.clearingHistory ? $r('app.string.home_clearing') : $r('app.string.common_clear'))
             .height(40)
             .enabled(this.historyUsed > 0 && !this.clearingHistory && this.deletingHistoryItemId.length === 0)
             .fontSize(11)
@@ -475,7 +478,7 @@ export struct HomePage {
   @Builder
   private EmptyHistoryState() {
     Column({ space: 6 }) {
-      Text(this.historyLimit === 0 ? '历史保存已关闭' : '还没有本机历史')
+      Text(this.historyLimit === 0 ? $r('app.string.home_history_disabled') : $r('app.string.home_history_empty'))
         .fontSize(EggClipTypography.captionSize)
         .fontWeight(FontWeight.Medium)
         .fontColor(EggClipColors.textPrimary)
@@ -508,7 +511,7 @@ export struct HomePage {
             .fontColor(EggClipColors.textPrimary)
             .layoutWeight(1)
 
-          Text(this.copiedHistoryItemId === item.id ? '已复制' : item.receivedAt)
+          Text(this.copiedHistoryItemId === item.id ? $r('app.string.home_copied') : item.receivedAt)
             .fontSize(11)
             .fontColor(EggClipColors.textSecondary)
         }
@@ -529,7 +532,7 @@ export struct HomePage {
             .fontSize(18)
             .fontColor(EggClipColors.textSecondary)
             .backgroundColor(Color.Transparent)
-            .accessibilityText('更多操作')
+            .accessibilityText($r('app.string.home_more_actions'))
             .onClick(() => {
               this.historyActionsItemId = this.historyActionsItemId === item.id ? '' : item.id;
             })
@@ -539,7 +542,9 @@ export struct HomePage {
       .width('100%')
       .padding({ left: 8, right: 4, top: 8, bottom: 8 })
       .borderRadius(12)
-      .accessibilityText(item.canCopy ? `复制 ${item.title}` : `${item.title}，内容暂不可用`)
+      .accessibilityText(item.canCopy ?
+        this.resourceText('home_item_copy_accessibility', item.title) :
+        this.resourceText('home_item_unavailable_accessibility', item.title))
       .onClick(() => {
         if (item.canCopy) this.copyHistoryItem(item.id);
       })
@@ -552,7 +557,8 @@ export struct HomePage {
             .layoutWeight(1)
 
           if (item.text.length > 180) {
-            Button(this.expandedHistoryItemId === item.id ? '收起详情' : '查看详情')
+            Button(this.expandedHistoryItemId === item.id ?
+              $r('app.string.home_collapse_details') : $r('app.string.home_view_details'))
               .height(40)
               .fontSize(11)
               .fontColor(EggClipColors.textSecondary)
@@ -562,7 +568,7 @@ export struct HomePage {
               })
           }
 
-          Button('删除')
+          Button($r('app.string.common_delete'))
           .height(40)
           .enabled(this.deletingHistoryItemId.length === 0 && !this.clearingHistory)
           .fontSize(11)
@@ -583,11 +589,11 @@ export struct HomePage {
 
   private confirmDeleteHistoryItem(itemId: string): void {
     this.getUIContext().showAlertDialog({
-      title: '删除这条记录？',
-      message: '只会删除 EggClip 的本机历史，不会修改系统剪贴板。',
-      primaryButton: { value: '取消', action: () => {} },
+      title: $r('app.string.home_delete_dialog_title'),
+      message: $r('app.string.home_delete_dialog_message'),
+      primaryButton: { value: $r('app.string.common_cancel'), action: () => {} },
       secondaryButton: {
-        value: '删除',
+        value: $r('app.string.common_delete'),
         fontColor: EggClipColors.statusError,
         action: () => { this.deleteHistoryItem(itemId); }
       }
@@ -596,11 +602,11 @@ export struct HomePage {
 
   private confirmClearHistory(): void {
     this.getUIContext().showAlertDialog({
-      title: '清空本机历史？',
-      message: '全部 EggClip 历史会被删除，系统剪贴板不受影响。',
-      primaryButton: { value: '取消', action: () => {} },
+      title: $r('app.string.home_clear_dialog_title'),
+      message: $r('app.string.home_clear_dialog_message'),
+      primaryButton: { value: $r('app.string.common_cancel'), action: () => {} },
       secondaryButton: {
-        value: '清空',
+        value: $r('app.string.common_clear'),
         fontColor: EggClipColors.statusError,
         action: () => { this.clearHistory(); }
       }
@@ -924,6 +930,18 @@ export struct HomePage {
 
   private formatMessage(message: UiMessageDescriptor): string {
     return this.messageFormatter === null ? message.code : this.messageFormatter.format(message);
+  }
+
+  private resourceText(name: string, ...args: Array<string | number>): string {
+    const hostContext = this.getUIContext().getHostContext();
+    if (hostContext === undefined) {
+      return name;
+    }
+    try {
+      return hostContext.resourceManager.getStringByNameSync(name, ...args);
+    } catch (_) {
+      return name;
+    }
   }
 
   private formatTime(milliseconds: number): string {

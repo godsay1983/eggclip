@@ -6,7 +6,10 @@ import {
   PocConnectionSnapshot,
   pocConnectionStore
 } from '../store/PocConnectionStore';
-import { APP_FOREGROUND_STORAGE_KEY } from '../utils/AppLifecycle';
+import {
+  APP_FOREGROUND_STORAGE_KEY,
+  APP_LOCALE_REVISION_STORAGE_KEY
+} from '../utils/AppLifecycle';
 
 const DOMAIN = 0x0000;
 
@@ -17,6 +20,7 @@ export default class EntryAbility extends UIAbility {
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     AppStorage.setOrCreate<boolean>(APP_FOREGROUND_STORAGE_KEY, false);
+    AppStorage.setOrCreate<number>(APP_LOCALE_REVISION_STORAGE_KEY, 0);
     // Trusted reconnect belongs to the ability lifecycle, not to the Devices
     // tab. Initialize it before the first page is shown and only connect while
     // the application is in the foreground.
@@ -54,6 +58,12 @@ export default class EntryAbility extends UIAbility {
   onWindowStageDestroy(): void {
     // Main window is destroyed, release UI related resources
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageDestroy');
+  }
+
+  onConfigurationUpdate(): void {
+    const currentRevision = AppStorage.get<number>(APP_LOCALE_REVISION_STORAGE_KEY) ?? 0;
+    AppStorage.setOrCreate<number>(APP_LOCALE_REVISION_STORAGE_KEY, currentRevision + 1);
+    hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability configuration updated');
   }
 
   onForeground(): void {

@@ -618,6 +618,15 @@ export default function localUnitTest() {
       expect(gateway.savedLanguage).assertEqual('en-US');
       expect(service.loadMode()).assertEqual(LanguageMode.EN_US);
       expect(service.currentLocale()).assertEqual(SupportedLocale.EN_US);
+
+      service.saveMode(LanguageMode.SYSTEM);
+      gateway.systemPreferredLanguage = 'zh-Hans-CN';
+      expect(gateway.savedLanguage).assertEqual('default');
+      expect(service.loadMode()).assertEqual(LanguageMode.SYSTEM);
+      expect(service.currentLocale()).assertEqual(SupportedLocale.ZH_CN);
+
+      gateway.systemPreferredLanguage = 'en-GB';
+      expect(service.currentLocale()).assertEqual(SupportedLocale.EN_US);
     });
 
     it('keepsHarmonyClipboardWritesBehindAnExplicitUserAction', 0, () => {

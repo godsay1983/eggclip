@@ -19,11 +19,16 @@ import { EggClipSpacing } from '../theme/Spacing';
 import { EggClipTypography } from '../theme/Typography';
 import { UiMessageDescriptor } from '../services/localization/UiMessageCodes';
 import { UiMessageFormatter } from '../services/localization/UiMessageFormatter';
+import {
+  LanguageMode,
+  LanguagePreferenceService
+} from '../services/localization/LanguagePreferenceService';
 
 @Component
 export struct SettingsPage {
   private settingsStore: SettingsStore | null = null;
   private messageFormatter: UiMessageFormatter | null = null;
+  private languagePreferenceService: LanguagePreferenceService | null = null;
   @State private storeState: SettingsStoreState = SettingsStoreState.IDLE;
   @State private statusText: string = '设置尚未加载';
   @State private syncEnabled: boolean = true;
@@ -33,6 +38,8 @@ export struct SettingsPage {
   @State private historyLimit: number = 50;
   @State private retentionDays: number = 7;
   @State private themeMode: ThemeMode = ThemeMode.SYSTEM;
+  @State private languageMode: LanguageMode = LanguageMode.SYSTEM;
+  @State private languageReopenHintVisible: boolean = false;
   @State private historyActionStatus: string = '清空历史只影响本机历史，不会修改系统剪贴板';
   @State private spaceKeyDiagnosticRunning: boolean = false;
   @State private spaceKeyDiagnosticStatus: string = '配对成功后可运行 HUKS 空间密钥与摘要自检';
@@ -52,6 +59,8 @@ export struct SettingsPage {
       const context = hostContext as common.UIAbilityContext;
       this.messageFormatter = new UiMessageFormatter(context);
       this.settingsStore = new SettingsStore(context);
+      this.languagePreferenceService = new LanguagePreferenceService();
+      this.languageMode = this.languagePreferenceService.loadMode();
     }
     this.loadSettings();
   }
@@ -101,7 +110,7 @@ export struct SettingsPage {
   @Builder
   private Header() {
     Column({ space: 6 }) {
-      Text('设置')
+      Text($r('app.string.settings_title'))
         .fontSize(EggClipTypography.titleSize)
         .fontWeight(FontWeight.Bold)
         .fontColor(EggClipColors.textPrimary)
@@ -121,7 +130,7 @@ export struct SettingsPage {
   @Builder
   private SyncPolicyCard() {
     Column({ space: 12 }) {
-      Text('同步策略')
+      Text($r('app.string.settings_sync_policy'))
         .fontSize(EggClipTypography.bodySize)
         .fontWeight(FontWeight.Bold)
         .fontColor(EggClipColors.textPrimary)
@@ -140,7 +149,7 @@ export struct SettingsPage {
   @Builder
   private HistoryPolicyCard() {
     Column({ space: 12 }) {
-      Text('历史策略')
+      Text($r('app.string.settings_history_policy'))
         .fontSize(EggClipTypography.bodySize)
         .fontWeight(FontWeight.Bold)
         .fontColor(EggClipColors.textPrimary)
@@ -173,7 +182,8 @@ export struct SettingsPage {
       }
       .width('100%')
 
-      Button(this.storeState === SettingsStoreState.SAVING ? '处理中' : '清空本机历史')
+      Button(this.storeState === SettingsStoreState.SAVING ?
+        $r('app.string.common_processing') : $r('app.string.settings_clear_history'))
         .width('100%')
         .height(40)
         .enabled(this.storeState !== SettingsStoreState.SAVING)
@@ -200,18 +210,39 @@ export struct SettingsPage {
   @Builder
   private AppearanceCard() {
     Column({ space: 12 }) {
-      Text('外观')
+      Text($r('app.string.settings_appearance'))
         .fontSize(EggClipTypography.bodySize)
         .fontWeight(FontWeight.Bold)
         .fontColor(EggClipColors.textPrimary)
         .width('100%')
 
       Row({ space: 8 }) {
-        this.ThemeModeButton(ThemeMode.SYSTEM, '跟随')
-        this.ThemeModeButton(ThemeMode.LIGHT, '浅色')
-        this.ThemeModeButton(ThemeMode.DARK, '深色')
+        this.ThemeModeButton(ThemeMode.SYSTEM, $r('app.string.settings_theme_system'))
+        this.ThemeModeButton(ThemeMode.LIGHT, $r('app.string.settings_theme_light'))
+        this.ThemeModeButton(ThemeMode.DARK, $r('app.string.settings_theme_dark'))
       }
       .width('100%')
+
+      Text($r('app.string.settings_language'))
+        .fontSize(EggClipTypography.captionSize)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(EggClipColors.textPrimary)
+        .width('100%')
+
+      Row({ space: 8 }) {
+        this.LanguageModeButton(LanguageMode.SYSTEM, $r('app.string.language_system'))
+        this.LanguageModeButton(LanguageMode.ZH_CN, $r('app.string.language_zh_cn'))
+        this.LanguageModeButton(LanguageMode.EN_US, $r('app.string.language_en_us'))
+      }
+      .width('100%')
+
+      if (this.languageReopenHintVisible) {
+        Text($r('app.string.settings_language_reopen_hint'))
+          .fontSize(11)
+          .fontColor(EggClipColors.textSecondary)
+          .lineHeight(18)
+          .width('100%')
+      }
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -223,25 +254,30 @@ export struct SettingsPage {
   @Builder
   private PrivacyCard() {
     Column({ space: 10 }) {
-      Text('隐私与安全')
+      Text($r('app.string.settings_privacy_title'))
         .fontSize(EggClipTypography.bodySize)
         .fontWeight(FontWeight.Bold)
         .fontColor(EggClipColors.textPrimary)
         .width('100%')
 
-      Text('不使用账号、中心服务器、公网中继、广告或统计服务。')
+      Text($r('app.string.settings_privacy_intro'))
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
         .lineHeight(20)
         .width('100%')
 
-      this.PrivacyPoint('剪贴板', '只有点击系统“粘贴”后才读取一次；收到的文本由你手动复制。')
-      this.PrivacyPoint('本机保存', '加密历史、设置、设备标识、可信状态和最近连接地址保存在本机。')
-      this.PrivacyPoint('局域网', '文本只发送给你已配对的设备，传输过程使用应用层加密。')
-      this.PrivacyPoint('密钥', '设备私钥和同步空间密钥由系统安全存储保护，数据库只保存引用。')
-      this.PrivacyPoint('用户控制', '可以关闭或清空历史、移除可信设备，或重新初始化配对安全状态。')
+      this.PrivacyPoint($r('app.string.settings_privacy_clipboard_title'),
+        $r('app.string.settings_privacy_clipboard_desc'))
+      this.PrivacyPoint($r('app.string.settings_privacy_local_title'),
+        $r('app.string.settings_privacy_local_desc'))
+      this.PrivacyPoint($r('app.string.settings_privacy_lan_title'),
+        $r('app.string.settings_privacy_lan_desc'))
+      this.PrivacyPoint($r('app.string.settings_privacy_keys_title'),
+        $r('app.string.settings_privacy_keys_desc'))
+      this.PrivacyPoint($r('app.string.settings_privacy_control_title'),
+        $r('app.string.settings_privacy_control_desc'))
 
-      Text('完整隐私政策可在 AppGallery 应用详情页查看。')
+      Text($r('app.string.settings_privacy_full'))
         .fontSize(11)
         .fontColor(EggClipColors.textSecondary)
         .lineHeight(18)
@@ -255,7 +291,7 @@ export struct SettingsPage {
   }
 
   @Builder
-  private PrivacyPoint(label: string, value: string) {
+  private PrivacyPoint(label: ResourceStr, value: ResourceStr) {
     Row({ space: 10 }) {
       Text(label)
         .width(72)
@@ -276,7 +312,7 @@ export struct SettingsPage {
   @Builder
   private SecurityRecoveryCard() {
     Column({ space: 10 }) {
-      Text('安全与恢复')
+      Text($r('app.string.settings_security_recovery'))
         .fontSize(EggClipTypography.bodySize)
         .fontWeight(FontWeight.Bold)
         .fontColor(EggClipColors.textPrimary)
@@ -284,7 +320,8 @@ export struct SettingsPage {
 
       this.SpaceKeyDiagnosticResult()
 
-      Button(this.spaceKeyDiagnosticRunning ? '自检中' : '自检空间密钥与摘要')
+      Button(this.spaceKeyDiagnosticRunning ?
+        $r('app.string.settings_self_testing') : $r('app.string.settings_self_test'))
         .width('100%')
         .height(40)
         .enabled(!this.spaceKeyDiagnosticRunning)
@@ -295,7 +332,8 @@ export struct SettingsPage {
           this.runSpaceKeySelfTest();
         })
 
-      Button(this.spaceKeyRecoveryRunning ? '正在重新初始化' : '重新初始化配对安全状态')
+      Button(this.spaceKeyRecoveryRunning ?
+        $r('app.string.settings_reinitializing') : $r('app.string.settings_reinitialize'))
         .width('100%')
         .height(40)
         .enabled(!this.spaceKeyDiagnosticRunning && !this.spaceKeyRecoveryRunning)
@@ -306,7 +344,7 @@ export struct SettingsPage {
           this.confirmSpaceKeyRecovery();
         })
 
-      Text('仅在密钥异常时使用。重新初始化会清除本机配对、同步空间和历史，之后需要重新配对。')
+      Text($r('app.string.settings_reinitialize_notice'))
         .width('100%')
         .fontSize(11)
         .fontColor(EggClipColors.textSecondary)
@@ -323,7 +361,7 @@ export struct SettingsPage {
   private SpaceKeyDiagnosticResult() {
     Column({ space: 6 }) {
       Row() {
-        Text('空间密钥自检')
+        Text($r('app.string.settings_space_key_test'))
           .fontSize(EggClipTypography.captionSize)
           .fontWeight(FontWeight.Medium)
           .fontColor(EggClipColors.textPrimary)
@@ -363,17 +401,17 @@ export struct SettingsPage {
   private SyncEnabledRow() {
     Row({ space: 10 }) {
       Column({ space: 2 }) {
-        Text('自动同步')
+        Text($r('app.string.settings_auto_sync'))
           .fontSize(EggClipTypography.bodySize)
           .fontColor(EggClipColors.textPrimary)
-        Text('控制前台连接和同步')
+        Text($r('app.string.settings_auto_sync_desc'))
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
-      Button(this.syncEnabled ? '已开启' : '已关闭')
+      Button(this.syncEnabled ? $r('app.string.common_enabled') : $r('app.string.common_disabled'))
         .height(40)
         .enabled(this.storeState !== SettingsStoreState.SAVING)
         .fontColor(this.syncEnabled ? EggClipColors.textSecondary : EggClipColors.onPrimary)
@@ -391,17 +429,17 @@ export struct SettingsPage {
   private AutoReceiveEnabledRow() {
     Row({ space: 10 }) {
       Column({ space: 2 }) {
-        Text('自动接收')
+        Text($r('app.string.settings_auto_receive'))
           .fontSize(EggClipTypography.bodySize)
           .fontColor(EggClipColors.textPrimary)
-        Text('接收桌面端实时文本')
+        Text($r('app.string.settings_auto_receive_desc'))
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
-      Button(this.autoReceiveEnabled ? '已开启' : '已关闭')
+      Button(this.autoReceiveEnabled ? $r('app.string.common_enabled') : $r('app.string.common_disabled'))
         .height(40)
         .enabled(this.storeState !== SettingsStoreState.SAVING)
         .fontColor(this.autoReceiveEnabled ? EggClipColors.textSecondary : EggClipColors.onPrimary)
@@ -419,17 +457,17 @@ export struct SettingsPage {
   private HistoryEnabledRow() {
     Row({ space: 10 }) {
       Column({ space: 2 }) {
-        Text('保存历史')
+        Text($r('app.string.settings_save_history'))
           .fontSize(EggClipTypography.bodySize)
           .fontColor(EggClipColors.textPrimary)
-        Text('在本机保留最近记录')
+        Text($r('app.string.settings_save_history_desc'))
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
-      Button(this.historyEnabled ? '已开启' : '已关闭')
+      Button(this.historyEnabled ? $r('app.string.common_enabled') : $r('app.string.common_disabled'))
         .height(40)
         .enabled(this.storeState !== SettingsStoreState.SAVING)
         .fontColor(this.historyEnabled ? EggClipColors.textSecondary : EggClipColors.onPrimary)
@@ -444,7 +482,7 @@ export struct SettingsPage {
   }
 
   @Builder
-  private ThemeModeButton(mode: ThemeMode, label: string) {
+  private ThemeModeButton(mode: ThemeMode, label: ResourceStr) {
     Button(label)
       .layoutWeight(1)
       .height(40)
@@ -456,6 +494,20 @@ export struct SettingsPage {
         this.themeMode = mode;
         this.applyThemeMode(mode);
         this.saveCurrentSettings();
+      })
+  }
+
+  @Builder
+  private LanguageModeButton(mode: LanguageMode, label: ResourceStr) {
+    Button(label)
+      .layoutWeight(1)
+      .height(40)
+      .fontSize(12)
+      .fontColor(this.languageMode === mode ? EggClipColors.onPrimary : EggClipColors.textSecondary)
+      .backgroundColor(this.languageMode === mode ? EggClipColors.primary : EggClipColors.controlBackground)
+      .borderRadius(18)
+      .onClick(() => {
+        this.saveLanguageMode(mode);
       })
   }
 
@@ -476,7 +528,7 @@ export struct SettingsPage {
 
   @Builder
   private RetentionButton(days: number) {
-    Button(days === 0 ? '不限' : days.toString())
+    Button(days === 0 ? $r('app.string.common_unlimited') : days.toString())
       .layoutWeight(1)
       .height(40)
       .enabled(this.storeState !== SettingsStoreState.SAVING)
@@ -487,6 +539,20 @@ export struct SettingsPage {
         this.retentionDays = days;
         this.saveCurrentSettings();
       })
+  }
+
+  private saveLanguageMode(mode: LanguageMode): void {
+    if (this.languagePreferenceService === null || this.languageMode === mode) {
+      return;
+    }
+    try {
+      this.languagePreferenceService.saveMode(mode);
+      this.languageMode = mode;
+      this.languageReopenHintVisible = true;
+    } catch (_) {
+      this.statusText = this.resourceText('settings_language_save_failed');
+      this.storeState = SettingsStoreState.ERROR;
+    }
   }
 
   private loadSettings(): void {
@@ -591,15 +657,15 @@ export struct SettingsPage {
 
   private confirmSpaceKeyRecovery(): void {
     this.getUIContext().showAlertDialog({
-      title: '重新初始化配对安全状态？',
-      message: '这会断开当前连接，删除本机同步空间密钥、可信设备和剪贴板历史。应用设置与本机长期身份会保留；完成后需要重新扫码或粘贴邀请配对。',
+      title: $r('app.string.settings_reinitialize_dialog_title'),
+      message: $r('app.string.settings_reinitialize_dialog_message'),
       primaryButton: {
-        value: '取消',
+        value: $r('app.string.common_cancel'),
         action: () => {
         }
       },
       secondaryButton: {
-        value: '确认重新初始化',
+        value: $r('app.string.settings_reinitialize_confirm'),
         fontColor: EggClipColors.statusError,
         action: () => {
           this.reinitializePairingSecurityState();
@@ -761,5 +827,17 @@ export struct SettingsPage {
 
   private formatMessage(message: UiMessageDescriptor): string {
     return this.messageFormatter === null ? message.code : this.messageFormatter.format(message);
+  }
+
+  private resourceText(name: string, ...args: Array<string | number>): string {
+    const hostContext = this.getUIContext().getHostContext();
+    if (hostContext === undefined) {
+      return name;
+    }
+    try {
+      return hostContext.resourceManager.getStringByNameSync(name, ...args);
+    } catch (_) {
+      return name;
+    }
   }
 }
