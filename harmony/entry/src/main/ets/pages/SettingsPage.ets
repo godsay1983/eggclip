@@ -80,6 +80,8 @@ export struct SettingsPage {
     Scroll() {
       Column({ space: EggClipSpacing.sectionGap }) {
         this.Header()
+        this.AppearanceCard()
+        this.LanguageCard()
         GridRow({
           columns: { sm: 12, md: 12, lg: 12 },
           gutter: { x: EggClipSpacing.sectionGap, y: EggClipSpacing.sectionGap }
@@ -94,7 +96,6 @@ export struct SettingsPage {
 
           GridCol({ span: { sm: 12, md: 6, lg: 6 } }) {
             Column({ space: EggClipSpacing.sectionGap }) {
-              this.AppearanceCard()
               this.PrivacyCard()
               this.SecurityRecoveryCard()
             }
@@ -235,10 +236,20 @@ export struct SettingsPage {
         this.ThemeModeButton(ThemeMode.DARK, this.resourceText('settings_theme_dark'))
       }
       .width('100%')
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(EggClipSpacing.cardPadding)
+    .backgroundColor(EggClipColors.cardBackground)
+    .borderRadius(EggClipSpacing.radiusMedium)
+  }
 
+  @Builder
+  private LanguageCard() {
+    Column({ space: 12 }) {
       Text(this.resourceText('settings_language'))
-        .fontSize(EggClipTypography.captionSize)
-        .fontWeight(FontWeight.Medium)
+        .fontSize(EggClipTypography.bodySize)
+        .fontWeight(FontWeight.Bold)
         .fontColor(EggClipColors.textPrimary)
         .width('100%')
 

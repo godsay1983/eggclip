@@ -117,6 +117,8 @@ assertIncludes(
     "sm: 12",
     "md: 6",
     "maxWidth: 960",
+    "private AppearanceCard()",
+    "private LanguageCard()",
     "restartApp(want)",
     "confirmLanguageRestart()",
     "createPersistentLanguagePreferenceService(context)",
