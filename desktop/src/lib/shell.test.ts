@@ -62,6 +62,7 @@ describe("desktop shell", () => {
     expect(settings.autoWriteEnabled).toBe(true);
     expect(settings.historyLimit).toBe(50);
     expect(settings.retentionDays).toBe(7);
+    expect(settings.languageMode).toBe("system");
     expect(validateAppSettings(settings)).toBeNull();
     expect(
       validateAppSettings({

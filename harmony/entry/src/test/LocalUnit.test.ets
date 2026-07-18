@@ -218,6 +218,17 @@ import {
   SpaceState as DomainSpaceState
 } from '../main/ets/models/DomainModels';
 import {
+  AppLanguageGateway,
+  DEFAULT_LANGUAGE_MODE,
+  DEFAULT_LOCALE,
+  LanguageMode,
+  LanguagePreferenceService,
+  SupportedLocale,
+  languageModeFromPreferredLanguage,
+  preferredLanguageFromMode,
+  resolveEffectiveLocale
+} from '../main/ets/services/localization/LanguagePreferenceService';
+import {
   AeadAlgorithm,
   AuthProofPayload,
   AuthRole,
@@ -258,6 +269,25 @@ interface PairingSecretProofVectorFixture {
   verifier: string;
   claim: string;
   proof: string;
+}
+
+class TestAppLanguageGateway implements AppLanguageGateway {
+  appPreferredLanguage: string = 'default';
+  systemPreferredLanguage: string = 'en-US';
+  savedLanguage: string = '';
+
+  getAppPreferredLanguage(): string {
+    return this.appPreferredLanguage;
+  }
+
+  getFirstSystemPreferredLanguage(): string {
+    return this.systemPreferredLanguage;
+  }
+
+  setAppPreferredLanguage(language: string): void {
+    this.savedLanguage = language;
+    this.appPreferredLanguage = language;
+  }
 }
 
 export default function localUnitTest() {
@@ -510,6 +540,35 @@ export default function localUnitTest() {
       expect(snapshot.settings.historyLimit).assertEqual(50);
       expect(cloned.syncEnabled).assertEqual(false);
       expect(cloned.historyLimit).assertEqual(20);
+    });
+
+    it('keepsHarmonyLanguageModesOnTheSystemPreferenceBoundary', 0, () => {
+      expect(DEFAULT_LANGUAGE_MODE).assertEqual(LanguageMode.SYSTEM);
+      expect(DEFAULT_LOCALE).assertEqual(SupportedLocale.EN_US);
+      expect(languageModeFromPreferredLanguage('default')).assertEqual(LanguageMode.SYSTEM);
+      expect(languageModeFromPreferredLanguage('zh_CN')).assertEqual(LanguageMode.ZH_CN);
+      expect(languageModeFromPreferredLanguage('en-US')).assertEqual(LanguageMode.EN_US);
+      expect(languageModeFromPreferredLanguage('fr-FR')).assertEqual(LanguageMode.SYSTEM);
+      expect(preferredLanguageFromMode(LanguageMode.SYSTEM)).assertEqual('default');
+      expect(preferredLanguageFromMode(LanguageMode.ZH_CN)).assertEqual('zh-CN');
+      expect(resolveEffectiveLocale(LanguageMode.SYSTEM, ['zh-Hans-CN']))
+        .assertEqual(SupportedLocale.ZH_CN);
+      expect(resolveEffectiveLocale(LanguageMode.SYSTEM, ['fr-FR']))
+        .assertEqual(SupportedLocale.EN_US);
+    });
+
+    it('readsAndWritesHarmonyAppLanguageWithoutRdbSettings', 0, () => {
+      const gateway = new TestAppLanguageGateway();
+      const service = new LanguagePreferenceService(gateway);
+
+      gateway.systemPreferredLanguage = 'zh-CN';
+      expect(service.loadMode()).assertEqual(LanguageMode.SYSTEM);
+      expect(service.currentLocale()).assertEqual(SupportedLocale.ZH_CN);
+
+      service.saveMode(LanguageMode.EN_US);
+      expect(gateway.savedLanguage).assertEqual('en-US');
+      expect(service.loadMode()).assertEqual(LanguageMode.EN_US);
+      expect(service.currentLocale()).assertEqual(SupportedLocale.EN_US);
     });
 
     it('keepsHarmonyClipboardWritesBehindAnExplicitUserAction', 0, () => {

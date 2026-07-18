@@ -171,6 +171,22 @@ pub enum ThemeMode {
     Dark,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LanguageMode {
+    #[serde(rename = "system")]
+    System,
+    #[serde(rename = "zh-CN")]
+    ZhCn,
+    #[serde(rename = "en-US")]
+    EnUs,
+}
+
+impl Default for LanguageMode {
+    fn default() -> Self {
+        Self::System
+    }
+}
+
 impl Default for ThemeMode {
     fn default() -> Self {
         Self::System
@@ -188,6 +204,8 @@ pub struct AppSettings {
     pub retention_days: u16,
     #[serde(default)]
     pub theme_mode: ThemeMode,
+    #[serde(default)]
+    pub language_mode: LanguageMode,
 }
 
 impl Default for AppSettings {
@@ -200,6 +218,7 @@ impl Default for AppSettings {
             history_limit: DEFAULT_HISTORY_LIMIT,
             retention_days: DEFAULT_RETENTION_DAYS,
             theme_mode: ThemeMode::System,
+            language_mode: LanguageMode::System,
         }
     }
 }
@@ -721,6 +740,26 @@ mod tests {
             invalid.validate(),
             Err(SyncModelError::InvalidHistoryLimit(10))
         );
+    }
+
+    #[test]
+    fn app_settings_language_mode_defaults_for_legacy_json() {
+        let legacy = r#"{
+            "syncEnabled": true,
+            "autoReceiveEnabled": true,
+            "autoWriteEnabled": true,
+            "historyEnabled": true,
+            "historyLimit": 50,
+            "retentionDays": 7,
+            "themeMode": "system"
+        }"#;
+        let settings: AppSettings =
+            serde_json::from_str(legacy).expect("legacy settings should load");
+
+        assert_eq!(settings.language_mode, LanguageMode::System);
+        assert!(serde_json::to_string(&settings)
+            .expect("settings should serialize")
+            .contains(r#""languageMode":"system""#));
     }
 
     #[test]

@@ -6,6 +6,7 @@ import {
   validateAppSettings,
 } from "$lib/api/settings";
 import type { AppSettings, SettingsSnapshot } from "$lib/types/settings";
+import { setLanguageMode } from "$lib/i18n";
 
 const snapshot = writable<SettingsSnapshot>({
   state: "idle",
@@ -32,6 +33,7 @@ async function saveSettingsSnapshot(settings: AppSettings) {
   }));
   try {
     const saved = await saveAppSettings(settings);
+    setLanguageMode(saved.languageMode);
     snapshot.set({
       state: "ready",
       settings: saved,
@@ -57,6 +59,7 @@ export const settingsSnapshot = {
     }));
     try {
       const settings = await loadAppSettings();
+      setLanguageMode(settings.languageMode);
       snapshot.set({
         state: "ready",
         settings,

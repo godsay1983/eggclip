@@ -2,27 +2,27 @@
   "string": [
     {
       "name": "module_desc",
-      "value": "EggClip local clipboard sync"
+      "value": "EggClip 局域网剪贴板同步"
     },
     {
       "name": "EntryAbility_desc",
-      "value": "EggClip main application"
+      "value": "EggClip 主程序"
     },
     {
       "name": "EntryAbility_label",
-      "value": "EggClip"
+      "value": "蛋定 Clip"
     },
     {
       "name": "permission_internet_reason",
-      "value": "Used to connect to paired EggClip devices on the local network"
+      "value": "用于在局域网内连接已配对的 EggClip 设备"
     },
     {
       "name": "permission_network_info_reason",
-      "value": "Used to check network status and discover EggClip services on the local network"
+      "value": "用于判断当前网络状态并发现局域网内的 EggClip 服务"
     },
     {
       "name": "language_system",
-      "value": "System"
+      "value": "跟随系统"
     },
     {
       "name": "language_zh_cn",
@@ -34,7 +34,7 @@
     },
     {
       "name": "language_preview",
-      "value": "English interface is ready"
+      "value": "简体中文界面已就绪"
     }
   ]
 }

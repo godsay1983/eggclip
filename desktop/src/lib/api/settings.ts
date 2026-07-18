@@ -10,6 +10,7 @@ export function defaultAppSettings(): AppSettings {
     historyLimit: 50,
     retentionDays: 7,
     themeMode: "system",
+    languageMode: "system",
   };
 }
 
@@ -30,6 +31,9 @@ export function validateAppSettings(settings: AppSettings): string | null {
   }
   if (!["system", "light", "dark"].includes(settings.themeMode)) {
     return "主题只能选择跟随系统、浅色或深色。";
+  }
+  if (!["system", "zh-CN", "en-US"].includes(settings.languageMode)) {
+    return "语言只能选择跟随系统、简体中文或 English。";
   }
   return null;
 }
