@@ -72,7 +72,7 @@ export struct PairingPage {
     Column({ space: 12 }) {
       Row() {
         Column({ space: 4 }) {
-          Text($r('app.string.pairing_import_title'))
+          Text(this.resourceText('pairing_import_title'))
             .fontSize(EggClipTypography.bodySize)
             .fontWeight(FontWeight.Bold)
             .fontColor(EggClipColors.textPrimary)
@@ -93,7 +93,7 @@ export struct PairingPage {
       if (this.snapshot.summary === null) {
         TextInput({
           text: this.invitationInputText,
-          placeholder: $r('app.string.pairing_input_placeholder')
+          placeholder: this.resourceText('pairing_input_placeholder')
         })
           .width('100%')
           .backgroundColor(EggClipColors.controlBackground)
@@ -105,7 +105,7 @@ export struct PairingPage {
 
         Column({ space: 6 }) {
           Row({ space: 8 }) {
-          Button($r('app.string.pairing_scan_qr'))
+          Button(this.resourceText('pairing_scan_qr'))
             .layoutWeight(1)
             .height(42)
             .fontColor(EggClipColors.textPrimary)
@@ -158,7 +158,7 @@ export struct PairingPage {
         .alignItems(HorizontalAlign.Start)
 
         Row({ space: 8 }) {
-          Button($r('app.string.pairing_validate'))
+          Button(this.resourceText('pairing_validate'))
             .layoutWeight(1)
             .height(42)
             .fontColor(EggClipColors.onPrimary)
@@ -169,7 +169,7 @@ export struct PairingPage {
               this.snapshot = this.pairingStore.parseCurrent();
             })
 
-          Button($r('app.string.common_clear'))
+          Button(this.resourceText('common_clear'))
             .width(84)
             .height(42)
             .fontColor(EggClipColors.textSecondary)
@@ -182,7 +182,7 @@ export struct PairingPage {
         }
         .width('100%')
       } else {
-        Button($r('app.string.pairing_reimport'))
+        Button(this.resourceText('pairing_reimport'))
           .width('100%')
           .height(40)
           .fontColor(EggClipColors.textSecondary)
@@ -219,11 +219,11 @@ export struct PairingPage {
   @Builder
   private InvitationSummaryCard(summary: PairingInvitationSummary) {
     Column({ space: 10 }) {
-      this.SummaryRow($r('app.string.pairing_sync_space'),
+      this.SummaryRow(this.resourceText('pairing_sync_space'),
         `#${summary.spaceShortId} · key v${summary.spaceKeyVersion}`)
-      this.SummaryRow($r('app.string.pairing_issuer_device'),
+      this.SummaryRow(this.resourceText('pairing_issuer_device'),
         `${summary.issuerDeviceName} · #${summary.issuerShortFingerprint}`)
-      this.SummaryRow($r('app.string.pairing_time_remaining'),
+      this.SummaryRow(this.resourceText('pairing_time_remaining'),
         this.pluralText('pairing_seconds_plural', summary.expiresInSeconds))
 
       if (summary.endpoints.length > 0) {
@@ -231,7 +231,7 @@ export struct PairingPage {
       }
 
       Column({ space: 4 }) {
-        Text($r('app.string.pairing_confirmation_code'))
+        Text(this.resourceText('pairing_confirmation_code'))
           .fontSize(11)
           .fontColor(EggClipColors.textSecondary)
 
@@ -259,7 +259,7 @@ export struct PairingPage {
         })
 
       if (this.connectionSnapshot.state === PairingConnectionState.AUTHENTICATED) {
-        Text($r('app.string.pairing_authenticated_notice'))
+        Text(this.resourceText('pairing_authenticated_notice'))
           .width('100%')
           .fontSize(11)
           .fontColor(EggClipColors.textSecondary)
@@ -267,7 +267,7 @@ export struct PairingPage {
       }
 
       if (this.snapshot.state === PairingStoreState.PENDING) {
-        Text($r('app.string.pairing_invitation_cleared_notice'))
+        Text(this.resourceText('pairing_invitation_cleared_notice'))
           .width('100%')
           .fontSize(11)
           .fontColor(EggClipColors.textSecondary)
@@ -283,7 +283,7 @@ export struct PairingPage {
   private ConnectionCandidateSelector(summary: PairingInvitationSummary) {
     Column({ space: 8 }) {
       Row() {
-        Text($r('app.string.pairing_select_address'))
+        Text(this.resourceText('pairing_select_address'))
           .fontSize(11)
           .fontWeight(FontWeight.Medium)
           .fontColor(EggClipColors.textPrimary)
@@ -318,7 +318,7 @@ export struct PairingPage {
       .scrollBar(BarState.Off)
       .width('100%')
 
-      Text($r('app.string.pairing_vpn_address_notice'))
+      Text(this.resourceText('pairing_vpn_address_notice'))
         .width('100%')
         .fontSize(10)
         .fontColor(EggClipColors.textSecondary)
@@ -333,7 +333,7 @@ export struct PairingPage {
     Column({ space: 10 }) {
       Row() {
         Column({ space: 4 }) {
-          Text($r('app.string.pairing_connect_desktop'))
+          Text(this.resourceText('pairing_connect_desktop'))
             .fontSize(12)
             .fontWeight(FontWeight.Medium)
             .fontColor(EggClipColors.textPrimary)
@@ -358,7 +358,7 @@ export struct PairingPage {
       Row({ space: 8 }) {
         TextInput({
           text: this.connectionSnapshot.manualHost,
-          placeholder: $r('app.string.pairing_desktop_ip')
+          placeholder: this.resourceText('pairing_desktop_ip')
         })
           .enabled(this.connectionSnapshot.state !== PairingConnectionState.AUTHENTICATED)
           .layoutWeight(1)
@@ -371,7 +371,7 @@ export struct PairingPage {
 
         TextInput({
           text: this.connectionSnapshot.manualPort,
-          placeholder: $r('app.string.pairing_port')
+          placeholder: this.resourceText('pairing_port')
         })
           .enabled(this.connectionSnapshot.state !== PairingConnectionState.AUTHENTICATED)
           .width(92)
@@ -396,7 +396,7 @@ export struct PairingPage {
             this.startPairingConnection();
           })
 
-        Button($r('app.string.common_stop'))
+        Button(this.resourceText('common_stop'))
           .width(76)
           .height(42)
           .fontColor(EggClipColors.textSecondary)
@@ -408,7 +408,7 @@ export struct PairingPage {
       }
       .width('100%')
 
-      Button($r('app.string.pairing_connect_trusted'))
+      Button(this.resourceText('pairing_connect_trusted'))
         .width('100%')
         .height(42)
         .enabled(!this.isPairingConnectionBusy() &&
@@ -449,7 +449,7 @@ export struct PairingPage {
 
   @Builder
   private SecurityBoundary() {
-    Text($r('app.string.pairing_invitation_safety'))
+    Text(this.resourceText('pairing_invitation_safety'))
       .fontSize(11)
       .fontColor(EggClipColors.textSecondary)
       .lineHeight(18)

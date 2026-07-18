@@ -223,6 +223,7 @@ import {
 } from '../main/ets/models/DomainModels';
 import {
   AppLanguageGateway,
+  LanguageModeStore,
   DEFAULT_LANGUAGE_MODE,
   DEFAULT_LOCALE,
   LanguageMode,
@@ -305,6 +306,18 @@ class TestAppLanguageGateway implements AppLanguageGateway {
   setAppPreferredLanguage(language: string): void {
     this.savedLanguage = language;
     this.appPreferredLanguage = language;
+  }
+}
+
+class TestLanguageModeStore implements LanguageModeStore {
+  savedMode: LanguageMode | null = null;
+
+  loadMode(): LanguageMode | null {
+    return this.savedMode;
+  }
+
+  async saveMode(mode: LanguageMode): Promise<void> {
+    this.savedMode = mode;
   }
 }
 
@@ -624,31 +637,36 @@ export default function localUnitTest() {
       expect(DEFAULT_LOCALE).assertEqual(SupportedLocale.EN_US);
       expect(languageModeFromPreferredLanguage('default')).assertEqual(LanguageMode.SYSTEM);
       expect(languageModeFromPreferredLanguage('zh_CN')).assertEqual(LanguageMode.ZH_CN);
+      expect(languageModeFromPreferredLanguage('zh-Hans-CN')).assertEqual(LanguageMode.ZH_CN);
       expect(languageModeFromPreferredLanguage('en-US')).assertEqual(LanguageMode.EN_US);
+      expect(languageModeFromPreferredLanguage('en-GB')).assertEqual(LanguageMode.EN_US);
       expect(languageModeFromPreferredLanguage('fr-FR')).assertEqual(LanguageMode.SYSTEM);
       expect(preferredLanguageFromMode(LanguageMode.SYSTEM)).assertEqual('default');
-      expect(preferredLanguageFromMode(LanguageMode.ZH_CN)).assertEqual('zh-CN');
+      expect(preferredLanguageFromMode(LanguageMode.ZH_CN)).assertEqual('zh-Hans-CN');
+      expect(preferredLanguageFromMode(LanguageMode.EN_US)).assertEqual('en-US');
       expect(resolveEffectiveLocale(LanguageMode.SYSTEM, ['zh-Hans-CN']))
         .assertEqual(SupportedLocale.ZH_CN);
       expect(resolveEffectiveLocale(LanguageMode.SYSTEM, ['fr-FR']))
         .assertEqual(SupportedLocale.EN_US);
     });
 
-    it('readsAndWritesHarmonyAppLanguageWithoutRdbSettings', 0, () => {
+    it('readsAndWritesHarmonyAppLanguageWithoutRdbSettings', 0, async () => {
       const gateway = new TestAppLanguageGateway();
-      const service = new LanguagePreferenceService(gateway);
+      const modeStore = new TestLanguageModeStore();
+      const service = new LanguagePreferenceService(gateway, modeStore);
 
       gateway.systemPreferredLanguage = 'zh-CN';
       expect(service.loadMode()).assertEqual(LanguageMode.SYSTEM);
       expect(service.currentLocale()).assertEqual(SupportedLocale.ZH_CN);
 
-      service.saveMode(LanguageMode.EN_US);
+      await service.saveMode(LanguageMode.EN_US);
       expect(gateway.savedLanguage).assertEqual('en-US');
       expect(service.loadMode()).assertEqual(LanguageMode.EN_US);
       expect(service.currentLocale()).assertEqual(SupportedLocale.EN_US);
 
-      service.saveMode(LanguageMode.SYSTEM);
+      await service.saveMode(LanguageMode.SYSTEM);
       gateway.systemPreferredLanguage = 'zh-Hans-CN';
+      gateway.appPreferredLanguage = gateway.systemPreferredLanguage;
       expect(gateway.savedLanguage).assertEqual('default');
       expect(service.loadMode()).assertEqual(LanguageMode.SYSTEM);
       expect(service.currentLocale()).assertEqual(SupportedLocale.ZH_CN);

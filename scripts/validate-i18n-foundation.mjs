@@ -60,6 +60,9 @@ assertPluralPlaceholderParity(basePlurals, chinesePlurals);
 const pluralKeySet = new Set(basePlurals.keys());
 for (const pagePath of harmonyPagePaths) {
   const source = readFileSync(resolve(repoRoot, pagePath), "utf8");
+  if (source.includes("$r('app.string.")) {
+    throw new Error(`${pagePath}: localized page text must be resolved at runtime to avoid stale ArkUI resources`);
+  }
   for (const match of source.matchAll(/\$r\('app\.string\.([A-Za-z0-9_]+)'\)/g)) {
     if (!entryKeySet.has(match[1])) {
       throw new Error(`${pagePath}: missing resource key ${match[1]}`);
@@ -109,8 +112,38 @@ assertIncludes(
 );
 assertIncludes(
   "harmony/entry/src/main/ets/pages/SettingsPage.ets",
-  ["GridRow", "sm: 12", "md: 6", "maxWidth: 960"],
+  [
+    "GridRow",
+    "sm: 12",
+    "md: 6",
+    "maxWidth: 960",
+    "restartApp(want)",
+    "confirmLanguageRestart()",
+    "createPersistentLanguagePreferenceService(context)",
+    "await this.languagePreferenceService.saveMode(mode)",
+    "languagePreferenceService.loadMode() !== mode",
+    "this.languagePreferenceService === null || this.languageRestarting",
+    "bundleName: 'com.eggclip.app'",
+    "abilityName: 'EntryAbility'",
+  ],
 );
+assertIncludes(
+  "harmony/entry/src/main/ets/services/localization/LanguagePreferenceService.ets",
+  [
+    "preferences.getPreferencesSync",
+    "preferences.getPreferences",
+    "LANGUAGE_MODE_KEY",
+    "await store.flush()",
+  ],
+);
+
+const harmonySettingsSource = readFileSync(
+  resolve(repoRoot, "harmony/entry/src/main/ets/pages/SettingsPage.ets"),
+  "utf8",
+);
+if (harmonySettingsSource.includes("this.languagePreferenceService === null || this.languageMode === mode")) {
+  throw new Error("Harmony language buttons must allow reapplying the selected mode");
+}
 
 process.stdout.write("i18n foundation resources ok\n");
 

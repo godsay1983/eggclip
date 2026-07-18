@@ -1,4 +1,9 @@
+import { common } from '@kit.AbilityKit';
+import { preferences } from '@kit.ArkData';
 import { i18n } from '@kit.LocalizationKit';
+
+const LANGUAGE_PREFERENCES_NAME: string = 'eggclip_language_preferences';
+const LANGUAGE_MODE_KEY: string = 'language_mode';
 
 export enum LanguageMode {
   SYSTEM = 'system',
@@ -20,6 +25,38 @@ export interface AppLanguageGateway {
   setAppPreferredLanguage(language: string): void;
 }
 
+export interface LanguageModeStore {
+  loadMode(): LanguageMode | null;
+  saveMode(mode: LanguageMode): Promise<void>;
+}
+
+class LanguagePreferencesOptions implements preferences.Options {
+  name: string = LANGUAGE_PREFERENCES_NAME;
+}
+
+class PreferencesLanguageModeStore implements LanguageModeStore {
+  private readonly context: common.Context;
+
+  constructor(context: common.Context) {
+    this.context = context;
+  }
+
+  loadMode(): LanguageMode | null {
+    try {
+      const store = preferences.getPreferencesSync(this.context, new LanguagePreferencesOptions());
+      return storedLanguageMode(store.getSync(LANGUAGE_MODE_KEY, ''));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async saveMode(mode: LanguageMode): Promise<void> {
+    const store = await preferences.getPreferences(this.context, LANGUAGE_PREFERENCES_NAME);
+    await store.put(LANGUAGE_MODE_KEY, mode);
+    await store.flush();
+  }
+}
+
 class SystemAppLanguageGateway implements AppLanguageGateway {
   getAppPreferredLanguage(): string {
     return i18n.System.getAppPreferredLanguage();
@@ -36,17 +73,26 @@ class SystemAppLanguageGateway implements AppLanguageGateway {
 
 export class LanguagePreferenceService {
   private readonly gateway: AppLanguageGateway;
+  private readonly modeStore: LanguageModeStore | null;
 
-  constructor(gateway?: AppLanguageGateway) {
+  constructor(gateway?: AppLanguageGateway, modeStore?: LanguageModeStore) {
     this.gateway = gateway ?? new SystemAppLanguageGateway();
+    this.modeStore = modeStore ?? null;
   }
 
   loadMode(): LanguageMode {
+    const storedMode = this.modeStore?.loadMode() ?? null;
+    if (storedMode !== null) {
+      return storedMode;
+    }
     return languageModeFromPreferredLanguage(this.gateway.getAppPreferredLanguage());
   }
 
-  saveMode(mode: LanguageMode): void {
+  async saveMode(mode: LanguageMode): Promise<void> {
     this.gateway.setAppPreferredLanguage(preferredLanguageFromMode(mode));
+    if (this.modeStore !== null) {
+      await this.modeStore.saveMode(mode);
+    }
   }
 
   currentLocale(): SupportedLocale {
@@ -54,19 +100,31 @@ export class LanguagePreferenceService {
   }
 }
 
+export function createPersistentLanguagePreferenceService(
+  context: common.Context
+): LanguagePreferenceService {
+  return new LanguagePreferenceService(
+    undefined,
+    new PreferencesLanguageModeStore(context)
+  );
+}
+
 export function languageModeFromPreferredLanguage(value: string): LanguageMode {
   const normalized = normalizeLanguageTag(value);
-  if (normalized === 'zh-cn') {
+  if (normalized.startsWith('zh')) {
     return LanguageMode.ZH_CN;
   }
-  if (normalized === 'en-us') {
+  if (normalized.startsWith('en')) {
     return LanguageMode.EN_US;
   }
   return LanguageMode.SYSTEM;
 }
 
 export function preferredLanguageFromMode(mode: LanguageMode): string {
-  return mode === LanguageMode.SYSTEM ? 'default' : mode;
+  if (mode === LanguageMode.SYSTEM) {
+    return 'default';
+  }
+  return mode === LanguageMode.ZH_CN ? 'zh-Hans-CN' : 'en-US';
 }
 
 export function resolveEffectiveLocale(
@@ -93,4 +151,17 @@ export function resolveEffectiveLocale(
 
 function normalizeLanguageTag(value: string): string {
   return value.trim().replace('_', '-').toLowerCase();
+}
+
+function storedLanguageMode(value: preferences.ValueType): LanguageMode | null {
+  if (value === LanguageMode.SYSTEM) {
+    return LanguageMode.SYSTEM;
+  }
+  if (value === LanguageMode.ZH_CN) {
+    return LanguageMode.ZH_CN;
+  }
+  if (value === LanguageMode.EN_US) {
+    return LanguageMode.EN_US;
+  }
+  return null;
 }

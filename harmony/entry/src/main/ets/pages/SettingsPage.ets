@@ -1,4 +1,6 @@
-import { common, ConfigurationConstant } from '@kit.AbilityKit';
+import { common, ConfigurationConstant, Want } from '@kit.AbilityKit';
+import { promptAction } from '@kit.ArkUI';
+import { BusinessError } from '@kit.BasicServicesKit';
 import { AppSettings, ThemeMode, defaultAppSettings } from '../models/DomainModels';
 import {
   SettingsStore,
@@ -21,7 +23,8 @@ import { UiMessageDescriptor } from '../services/localization/UiMessageCodes';
 import { UiMessageFormatter } from '../services/localization/UiMessageFormatter';
 import {
   LanguageMode,
-  LanguagePreferenceService
+  LanguagePreferenceService,
+  createPersistentLanguagePreferenceService
 } from '../services/localization/LanguagePreferenceService';
 import { LocalizedFormatter } from '../services/localization/LocalizedFormatter';
 
@@ -41,6 +44,7 @@ export struct SettingsPage {
   @State private retentionDays: number = 7;
   @State private themeMode: ThemeMode = ThemeMode.SYSTEM;
   @State private languageMode: LanguageMode = LanguageMode.SYSTEM;
+  @State private languageRestarting: boolean = false;
   @State private languageReopenHintVisible: boolean = false;
   @State private historyActionStatus: string = '';
   @State private spaceKeyDiagnosticRunning: boolean = false;
@@ -61,7 +65,7 @@ export struct SettingsPage {
       const context = hostContext as common.UIAbilityContext;
       this.messageFormatter = new UiMessageFormatter(context);
       this.settingsStore = new SettingsStore(context);
-      this.languagePreferenceService = new LanguagePreferenceService();
+      this.languagePreferenceService = createPersistentLanguagePreferenceService(context);
       this.languageMode = this.languagePreferenceService.loadMode();
       this.statusText = this.resourceText('settings_not_loaded');
       this.historyActionStatus = this.resourceText('settings_history_clear_notice');
@@ -117,7 +121,7 @@ export struct SettingsPage {
   @Builder
   private Header() {
     Column({ space: 6 }) {
-      Text($r('app.string.settings_title'))
+      Text(this.resourceText('settings_title'))
         .fontSize(EggClipTypography.titleSize)
         .fontWeight(FontWeight.Bold)
         .fontColor(EggClipColors.textPrimary)
@@ -137,7 +141,7 @@ export struct SettingsPage {
   @Builder
   private SyncPolicyCard() {
     Column({ space: 12 }) {
-      Text($r('app.string.settings_sync_policy'))
+      Text(this.resourceText('settings_sync_policy'))
         .fontSize(EggClipTypography.bodySize)
         .fontWeight(FontWeight.Bold)
         .fontColor(EggClipColors.textPrimary)
@@ -156,7 +160,7 @@ export struct SettingsPage {
   @Builder
   private HistoryPolicyCard() {
     Column({ space: 12 }) {
-      Text($r('app.string.settings_history_policy'))
+      Text(this.resourceText('settings_history_policy'))
         .fontSize(EggClipTypography.bodySize)
         .fontWeight(FontWeight.Bold)
         .fontColor(EggClipColors.textPrimary)
@@ -192,7 +196,7 @@ export struct SettingsPage {
       .width('100%')
 
       Button(this.storeState === SettingsStoreState.SAVING ?
-        $r('app.string.common_processing') : $r('app.string.settings_clear_history'))
+        this.resourceText('common_processing') : this.resourceText('settings_clear_history'))
         .width('100%')
         .height(40)
         .enabled(this.storeState !== SettingsStoreState.SAVING)
@@ -219,34 +223,36 @@ export struct SettingsPage {
   @Builder
   private AppearanceCard() {
     Column({ space: 12 }) {
-      Text($r('app.string.settings_appearance'))
+      Text(this.resourceText('settings_appearance'))
         .fontSize(EggClipTypography.bodySize)
         .fontWeight(FontWeight.Bold)
         .fontColor(EggClipColors.textPrimary)
         .width('100%')
 
       Row({ space: 8 }) {
-        this.ThemeModeButton(ThemeMode.SYSTEM, $r('app.string.settings_theme_system'))
-        this.ThemeModeButton(ThemeMode.LIGHT, $r('app.string.settings_theme_light'))
-        this.ThemeModeButton(ThemeMode.DARK, $r('app.string.settings_theme_dark'))
+        this.ThemeModeButton(ThemeMode.SYSTEM, this.resourceText('settings_theme_system'))
+        this.ThemeModeButton(ThemeMode.LIGHT, this.resourceText('settings_theme_light'))
+        this.ThemeModeButton(ThemeMode.DARK, this.resourceText('settings_theme_dark'))
       }
       .width('100%')
 
-      Text($r('app.string.settings_language'))
+      Text(this.resourceText('settings_language'))
         .fontSize(EggClipTypography.captionSize)
         .fontWeight(FontWeight.Medium)
         .fontColor(EggClipColors.textPrimary)
         .width('100%')
 
       Row({ space: 8 }) {
-        this.LanguageModeButton(LanguageMode.SYSTEM, $r('app.string.language_system'))
-        this.LanguageModeButton(LanguageMode.ZH_CN, $r('app.string.language_zh_cn'))
-        this.LanguageModeButton(LanguageMode.EN_US, $r('app.string.language_en_us'))
+        this.LanguageModeButton(LanguageMode.SYSTEM, this.resourceText('language_system'))
+        this.LanguageModeButton(LanguageMode.ZH_CN, this.resourceText('language_zh_cn'))
+        this.LanguageModeButton(LanguageMode.EN_US, this.resourceText('language_en_us'))
       }
       .width('100%')
 
       if (this.languageReopenHintVisible) {
-        Text($r('app.string.settings_language_reopen_hint'))
+        Text(this.languageRestarting ?
+          this.resourceText('settings_language_restarting') :
+          this.resourceText('settings_language_reopen_hint'))
           .fontSize(11)
           .fontColor(EggClipColors.textSecondary)
           .lineHeight(18)
@@ -263,30 +269,30 @@ export struct SettingsPage {
   @Builder
   private PrivacyCard() {
     Column({ space: 10 }) {
-      Text($r('app.string.settings_privacy_title'))
+      Text(this.resourceText('settings_privacy_title'))
         .fontSize(EggClipTypography.bodySize)
         .fontWeight(FontWeight.Bold)
         .fontColor(EggClipColors.textPrimary)
         .width('100%')
 
-      Text($r('app.string.settings_privacy_intro'))
+      Text(this.resourceText('settings_privacy_intro'))
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
         .lineHeight(20)
         .width('100%')
 
-      this.PrivacyPoint($r('app.string.settings_privacy_clipboard_title'),
-        $r('app.string.settings_privacy_clipboard_desc'))
-      this.PrivacyPoint($r('app.string.settings_privacy_local_title'),
-        $r('app.string.settings_privacy_local_desc'))
-      this.PrivacyPoint($r('app.string.settings_privacy_lan_title'),
-        $r('app.string.settings_privacy_lan_desc'))
-      this.PrivacyPoint($r('app.string.settings_privacy_keys_title'),
-        $r('app.string.settings_privacy_keys_desc'))
-      this.PrivacyPoint($r('app.string.settings_privacy_control_title'),
-        $r('app.string.settings_privacy_control_desc'))
+      this.PrivacyPoint(this.resourceText('settings_privacy_clipboard_title'),
+        this.resourceText('settings_privacy_clipboard_desc'))
+      this.PrivacyPoint(this.resourceText('settings_privacy_local_title'),
+        this.resourceText('settings_privacy_local_desc'))
+      this.PrivacyPoint(this.resourceText('settings_privacy_lan_title'),
+        this.resourceText('settings_privacy_lan_desc'))
+      this.PrivacyPoint(this.resourceText('settings_privacy_keys_title'),
+        this.resourceText('settings_privacy_keys_desc'))
+      this.PrivacyPoint(this.resourceText('settings_privacy_control_title'),
+        this.resourceText('settings_privacy_control_desc'))
 
-      Text($r('app.string.settings_privacy_full'))
+      Text(this.resourceText('settings_privacy_full'))
         .fontSize(11)
         .fontColor(EggClipColors.textSecondary)
         .lineHeight(18)
@@ -321,7 +327,7 @@ export struct SettingsPage {
   @Builder
   private SecurityRecoveryCard() {
     Column({ space: 10 }) {
-      Text($r('app.string.settings_security_recovery'))
+      Text(this.resourceText('settings_security_recovery'))
         .fontSize(EggClipTypography.bodySize)
         .fontWeight(FontWeight.Bold)
         .fontColor(EggClipColors.textPrimary)
@@ -330,7 +336,7 @@ export struct SettingsPage {
       this.SpaceKeyDiagnosticResult()
 
       Button(this.spaceKeyDiagnosticRunning ?
-        $r('app.string.settings_self_testing') : $r('app.string.settings_self_test'))
+        this.resourceText('settings_self_testing') : this.resourceText('settings_self_test'))
         .width('100%')
         .height(40)
         .enabled(!this.spaceKeyDiagnosticRunning)
@@ -342,7 +348,7 @@ export struct SettingsPage {
         })
 
       Button(this.spaceKeyRecoveryRunning ?
-        $r('app.string.settings_reinitializing') : $r('app.string.settings_reinitialize'))
+        this.resourceText('settings_reinitializing') : this.resourceText('settings_reinitialize'))
         .width('100%')
         .height(40)
         .enabled(!this.spaceKeyDiagnosticRunning && !this.spaceKeyRecoveryRunning)
@@ -353,7 +359,7 @@ export struct SettingsPage {
           this.confirmSpaceKeyRecovery();
         })
 
-      Text($r('app.string.settings_reinitialize_notice'))
+      Text(this.resourceText('settings_reinitialize_notice'))
         .width('100%')
         .fontSize(11)
         .fontColor(EggClipColors.textSecondary)
@@ -370,7 +376,7 @@ export struct SettingsPage {
   private SpaceKeyDiagnosticResult() {
     Column({ space: 6 }) {
       Row() {
-        Text($r('app.string.settings_space_key_test'))
+        Text(this.resourceText('settings_space_key_test'))
           .fontSize(EggClipTypography.captionSize)
           .fontWeight(FontWeight.Medium)
           .fontColor(EggClipColors.textPrimary)
@@ -410,17 +416,17 @@ export struct SettingsPage {
   private SyncEnabledRow() {
     Row({ space: 10 }) {
       Column({ space: 2 }) {
-        Text($r('app.string.settings_auto_sync'))
+        Text(this.resourceText('settings_auto_sync'))
           .fontSize(EggClipTypography.bodySize)
           .fontColor(EggClipColors.textPrimary)
-        Text($r('app.string.settings_auto_sync_desc'))
+        Text(this.resourceText('settings_auto_sync_desc'))
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
-      Button(this.syncEnabled ? $r('app.string.common_enabled') : $r('app.string.common_disabled'))
+      Button(this.syncEnabled ? this.resourceText('common_enabled') : this.resourceText('common_disabled'))
         .height(40)
         .enabled(this.storeState !== SettingsStoreState.SAVING)
         .fontColor(this.syncEnabled ? EggClipColors.textSecondary : EggClipColors.onPrimary)
@@ -438,17 +444,17 @@ export struct SettingsPage {
   private AutoReceiveEnabledRow() {
     Row({ space: 10 }) {
       Column({ space: 2 }) {
-        Text($r('app.string.settings_auto_receive'))
+        Text(this.resourceText('settings_auto_receive'))
           .fontSize(EggClipTypography.bodySize)
           .fontColor(EggClipColors.textPrimary)
-        Text($r('app.string.settings_auto_receive_desc'))
+        Text(this.resourceText('settings_auto_receive_desc'))
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
-      Button(this.autoReceiveEnabled ? $r('app.string.common_enabled') : $r('app.string.common_disabled'))
+      Button(this.autoReceiveEnabled ? this.resourceText('common_enabled') : this.resourceText('common_disabled'))
         .height(40)
         .enabled(this.storeState !== SettingsStoreState.SAVING)
         .fontColor(this.autoReceiveEnabled ? EggClipColors.textSecondary : EggClipColors.onPrimary)
@@ -466,17 +472,17 @@ export struct SettingsPage {
   private HistoryEnabledRow() {
     Row({ space: 10 }) {
       Column({ space: 2 }) {
-        Text($r('app.string.settings_save_history'))
+        Text(this.resourceText('settings_save_history'))
           .fontSize(EggClipTypography.bodySize)
           .fontColor(EggClipColors.textPrimary)
-        Text($r('app.string.settings_save_history_desc'))
+        Text(this.resourceText('settings_save_history_desc'))
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
-      Button(this.historyEnabled ? $r('app.string.common_enabled') : $r('app.string.common_disabled'))
+      Button(this.historyEnabled ? this.resourceText('common_enabled') : this.resourceText('common_disabled'))
         .height(40)
         .enabled(this.storeState !== SettingsStoreState.SAVING)
         .fontColor(this.historyEnabled ? EggClipColors.textSecondary : EggClipColors.onPrimary)
@@ -511,6 +517,7 @@ export struct SettingsPage {
     Button(label)
       .layoutWeight(1)
       .height(40)
+      .enabled(!this.languageRestarting)
       .fontSize(12)
       .fontColor(this.languageMode === mode ? EggClipColors.onPrimary : EggClipColors.textSecondary)
       .backgroundColor(this.languageMode === mode ? EggClipColors.primary : EggClipColors.controlBackground)
@@ -537,7 +544,7 @@ export struct SettingsPage {
 
   @Builder
   private RetentionButton(days: number) {
-    Button(days === 0 ? $r('app.string.common_unlimited') : days.toString())
+    Button(days === 0 ? this.resourceText('common_unlimited') : days.toString())
       .layoutWeight(1)
       .height(40)
       .enabled(this.storeState !== SettingsStoreState.SAVING)
@@ -550,17 +557,81 @@ export struct SettingsPage {
       })
   }
 
-  private saveLanguageMode(mode: LanguageMode): void {
-    if (this.languagePreferenceService === null || this.languageMode === mode) {
+  private async saveLanguageMode(mode: LanguageMode): Promise<void> {
+    if (this.languagePreferenceService === null || this.languageRestarting) {
       return;
     }
     try {
-      this.languagePreferenceService.saveMode(mode);
+      await this.languagePreferenceService.saveMode(mode);
+      if (this.languagePreferenceService.loadMode() !== mode) {
+        throw new Error('language preference verification failed');
+      }
       this.languageMode = mode;
-      this.languageReopenHintVisible = true;
+      this.languageReopenHintVisible = false;
     } catch (_) {
       this.statusText = this.resourceText('settings_language_save_failed');
       this.storeState = SettingsStoreState.ERROR;
+      return;
+    }
+
+    const restartNow = await this.confirmLanguageRestart();
+    if (!restartNow) {
+      this.languageReopenHintVisible = true;
+      return;
+    }
+    this.languageRestarting = true;
+    this.languageReopenHintVisible = true;
+    this.restartForLanguageChange();
+  }
+
+  private async confirmLanguageRestart(): Promise<boolean> {
+    try {
+      const selectedIndex = await new Promise<number>((resolve, reject) => {
+        promptAction.showDialog({
+          title: this.resourceText('settings_language_restart_title'),
+          message: this.resourceText('settings_language_restart_message'),
+          buttons: [
+            {
+              text: this.resourceText('settings_language_restart_now'),
+              color: $r('app.color.eggclip_text_primary')
+            },
+            {
+              text: this.resourceText('settings_language_restart_later'),
+              color: $r('app.color.eggclip_text_secondary')
+            }
+          ]
+        }, (error: BusinessError, result: promptAction.ShowDialogSuccessResponse): void => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve(result.index);
+        });
+      });
+      return selectedIndex === 0;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  private restartForLanguageChange(): void {
+    const hostContext = this.getUIContext().getHostContext();
+    if (hostContext === undefined) {
+      this.languageRestarting = false;
+      return;
+    }
+    const abilityContext = hostContext as common.UIAbilityContext;
+    const want: Want = {
+      bundleName: 'com.eggclip.app',
+      abilityName: 'EntryAbility'
+    };
+    try {
+      abilityContext.restartApp(want)
+        .catch(() => {
+          this.languageRestarting = false;
+        });
+    } catch (_) {
+      this.languageRestarting = false;
     }
   }
 
@@ -666,15 +737,15 @@ export struct SettingsPage {
 
   private confirmSpaceKeyRecovery(): void {
     this.getUIContext().showAlertDialog({
-      title: $r('app.string.settings_reinitialize_dialog_title'),
-      message: $r('app.string.settings_reinitialize_dialog_message'),
+      title: this.resourceText('settings_reinitialize_dialog_title'),
+      message: this.resourceText('settings_reinitialize_dialog_message'),
       primaryButton: {
-        value: $r('app.string.common_cancel'),
+        value: this.resourceText('common_cancel'),
         action: () => {
         }
       },
       secondaryButton: {
-        value: $r('app.string.settings_reinitialize_confirm'),
+        value: this.resourceText('settings_reinitialize_confirm'),
         fontColor: EggClipColors.statusError,
         action: () => {
           this.reinitializePairingSecurityState();

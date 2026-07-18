@@ -147,13 +147,13 @@ export struct DevicesPage {
   private GettingStartedSection() {
     Column({ space: 14 }) {
       Column({ space: 5 }) {
-        Text($r('app.string.devices_getting_started'))
+        Text(this.resourceText('devices_getting_started'))
           .fontSize(20)
           .fontWeight(FontWeight.Bold)
           .fontColor(EggClipColors.textPrimary)
           .width('100%')
 
-        Text($r('app.string.devices_getting_started_intro'))
+        Text(this.resourceText('devices_getting_started_intro'))
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
           .lineHeight(20)
@@ -167,7 +167,7 @@ export struct DevicesPage {
         gutter: { x: 8, y: 8 }
       }) {
         GridCol({ span: { sm: 6, md: 3, lg: 3 } }) {
-          Button($r('app.string.devices_start_pairing'))
+          Button(this.resourceText('devices_start_pairing'))
             .width('100%')
             .height(40)
             .fontSize(12)
@@ -180,7 +180,7 @@ export struct DevicesPage {
         }
 
         GridCol({ span: { sm: 6, md: 3, lg: 3 } }) {
-          Button($r('app.string.devices_feature_demo'))
+          Button(this.resourceText('devices_feature_demo'))
             .width('100%')
             .height(40)
             .fontSize(12)
@@ -193,7 +193,7 @@ export struct DevicesPage {
         }
 
         GridCol({ span: { sm: 6, md: 3, lg: 3 } }) {
-          Button($r('app.string.devices_privacy'))
+          Button(this.resourceText('devices_privacy'))
             .width('100%')
             .height(40)
             .fontSize(12)
@@ -206,7 +206,7 @@ export struct DevicesPage {
         }
 
         GridCol({ span: { sm: 6, md: 3, lg: 3 } }) {
-          Button($r('app.string.devices_connection_diagnostics'))
+          Button(this.resourceText('devices_connection_diagnostics'))
             .width('100%')
             .height(40)
             .fontSize(12)
@@ -222,10 +222,10 @@ export struct DevicesPage {
       .width('100%')
 
       Column({ space: 10 }) {
-        this.GettingStartedStep('1', $r('app.string.devices_step_launch_title'), $r('app.string.devices_step_launch_desc'))
-        this.GettingStartedStep('2', $r('app.string.devices_step_network_title'), $r('app.string.devices_step_network_desc'))
-        this.GettingStartedStep('3', $r('app.string.devices_step_invite_title'), $r('app.string.devices_step_invite_desc'))
-        this.GettingStartedStep('4', $r('app.string.devices_step_pair_title'), $r('app.string.devices_step_pair_desc'))
+        this.GettingStartedStep('1', this.resourceText('devices_step_launch_title'), this.resourceText('devices_step_launch_desc'))
+        this.GettingStartedStep('2', this.resourceText('devices_step_network_title'), this.resourceText('devices_step_network_desc'))
+        this.GettingStartedStep('3', this.resourceText('devices_step_invite_title'), this.resourceText('devices_step_invite_desc'))
+        this.GettingStartedStep('4', this.resourceText('devices_step_pair_title'), this.resourceText('devices_step_pair_desc'))
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
@@ -235,7 +235,7 @@ export struct DevicesPage {
       } else if (this.gettingStartedDetail === 'privacy') {
         this.PrivacyGuideCard()
       } else if (this.gettingStartedDetail === 'diagnostics') {
-        Text($r('app.string.devices_diagnostics_expanded'))
+        Text(this.resourceText('devices_diagnostics_expanded'))
           .width('100%')
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
@@ -245,7 +245,7 @@ export struct DevicesPage {
           .borderRadius(14)
       }
 
-      Text($r('app.string.devices_invitation_security'))
+      Text(this.resourceText('devices_invitation_security'))
         .width('100%')
         .fontSize(11)
         .fontColor(EggClipColors.textSecondary)
@@ -292,15 +292,15 @@ export struct DevicesPage {
   @Builder
   private FeatureGuideCard() {
     Column({ space: 8 }) {
-      Text($r('app.string.devices_core_features'))
+      Text(this.resourceText('devices_core_features'))
         .fontSize(EggClipTypography.captionSize)
         .fontWeight(FontWeight.Bold)
         .fontColor(EggClipColors.textPrimary)
         .width('100%')
 
-      this.HelpPoint($r('app.string.devices_feature_receive_title'), $r('app.string.devices_feature_receive_desc'))
-      this.HelpPoint($r('app.string.devices_feature_send_title'), $r('app.string.devices_feature_send_desc'))
-      this.HelpPoint($r('app.string.devices_feature_reconnect_title'), $r('app.string.devices_feature_reconnect_desc'))
+      this.HelpPoint(this.resourceText('devices_feature_receive_title'), this.resourceText('devices_feature_receive_desc'))
+      this.HelpPoint(this.resourceText('devices_feature_send_title'), this.resourceText('devices_feature_send_desc'))
+      this.HelpPoint(this.resourceText('devices_feature_reconnect_title'), this.resourceText('devices_feature_reconnect_desc'))
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -312,15 +312,15 @@ export struct DevicesPage {
   @Builder
   private PrivacyGuideCard() {
     Column({ space: 8 }) {
-      Text($r('app.string.devices_privacy_title'))
+      Text(this.resourceText('devices_privacy_title'))
         .fontSize(EggClipTypography.captionSize)
         .fontWeight(FontWeight.Bold)
         .fontColor(EggClipColors.textPrimary)
         .width('100%')
 
-      this.HelpPoint($r('app.string.devices_privacy_lan_title'), $r('app.string.devices_privacy_lan_desc'))
-      this.HelpPoint($r('app.string.devices_privacy_local_title'), $r('app.string.devices_privacy_local_desc'))
-      this.HelpPoint($r('app.string.devices_privacy_system_title'), $r('app.string.devices_privacy_system_desc'))
+      this.HelpPoint(this.resourceText('devices_privacy_lan_title'), this.resourceText('devices_privacy_lan_desc'))
+      this.HelpPoint(this.resourceText('devices_privacy_local_title'), this.resourceText('devices_privacy_local_desc'))
+      this.HelpPoint(this.resourceText('devices_privacy_system_title'), this.resourceText('devices_privacy_system_desc'))
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -359,19 +359,19 @@ export struct DevicesPage {
     Column({ space: 12 }) {
       Row() {
         Column({ space: 3 }) {
-          Text($r('app.string.devices_add_device'))
+          Text(this.resourceText('devices_add_device'))
             .fontSize(EggClipTypography.bodySize)
             .fontWeight(FontWeight.Bold)
             .fontColor(EggClipColors.textPrimary)
 
-          Text($r('app.string.devices_add_device_desc'))
+          Text(this.resourceText('devices_add_device_desc'))
             .fontSize(EggClipTypography.captionSize)
             .fontColor(EggClipColors.textSecondary)
         }
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
 
-        Button(this.pairingExpanded ? $r('app.string.common_collapse') : $r('app.string.devices_start_pairing'))
+        Button(this.pairingExpanded ? this.resourceText('common_collapse') : this.resourceText('devices_start_pairing'))
           .height(40)
           .fontSize(12)
           .fontColor(this.pairingExpanded ? EggClipColors.textSecondary : EggClipColors.onPrimary)
@@ -398,13 +398,13 @@ export struct DevicesPage {
   @Builder
   private Header() {
     Column({ space: 6 }) {
-      Text($r('app.string.devices_title'))
+      Text(this.resourceText('devices_title'))
         .fontSize(EggClipTypography.titleSize)
         .fontWeight(FontWeight.Bold)
         .fontColor(EggClipColors.textPrimary)
         .width('100%')
 
-      Text($r('app.string.devices_auto_connect_desc'))
+      Text(this.resourceText('devices_auto_connect_desc'))
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
         .width('100%')
@@ -421,7 +421,7 @@ export struct DevicesPage {
           StatusDot({ state: this.connectionState })
 
           Column({ space: 3 }) {
-            Text($r('app.string.devices_connection_issues'))
+            Text(this.resourceText('devices_connection_issues'))
               .fontSize(EggClipTypography.bodySize)
               .fontWeight(FontWeight.Bold)
               .fontColor(EggClipColors.textPrimary)
@@ -436,7 +436,7 @@ export struct DevicesPage {
         }
         .layoutWeight(1)
 
-        Button(this.diagnosticsExpanded ? $r('app.string.common_collapse') : $r('app.string.common_expand'))
+        Button(this.diagnosticsExpanded ? this.resourceText('common_collapse') : this.resourceText('common_expand'))
           .height(40)
           .fontSize(12)
           .fontColor(EggClipColors.textSecondary)
@@ -449,7 +449,7 @@ export struct DevicesPage {
       .width('100%')
       .alignItems(VerticalAlign.Top)
 
-      Text($r('app.string.devices_connection_issues_desc'))
+      Text(this.resourceText('devices_connection_issues_desc'))
         .width('100%')
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
@@ -516,7 +516,7 @@ export struct DevicesPage {
   private RuntimeDeviceCard() {
     Column({ space: 12 }) {
       Row() {
-        Text($r('app.string.devices_runtime'))
+        Text(this.resourceText('devices_runtime'))
           .fontSize(EggClipTypography.bodySize)
           .fontWeight(FontWeight.Bold)
           .fontColor(EggClipColors.textPrimary)
@@ -551,13 +551,13 @@ export struct DevicesPage {
       .width('100%')
       .alignItems(VerticalAlign.Top)
 
-      this.DeviceInfoRow($r('app.string.devices_short_fingerprint'),
+      this.DeviceInfoRow(this.resourceText('devices_short_fingerprint'),
         this.transportState === PocLifecycleState.RUNNING ?
           this.resourceText('devices_unpaired') : this.resourceText('devices_waiting_pairing'))
-      this.DeviceInfoRow($r('app.string.devices_last_online'), this.runtimeLastSeenText())
-      this.DeviceInfoRow($r('app.string.devices_endpoint'), this.runtimeEndpointText())
+      this.DeviceInfoRow(this.resourceText('devices_last_online'), this.runtimeLastSeenText())
+      this.DeviceInfoRow(this.resourceText('devices_endpoint'), this.runtimeEndpointText())
 
-      Text($r('app.string.devices_runtime_notice'))
+      Text(this.resourceText('devices_runtime_notice'))
         .width('100%')
         .fontSize(11)
         .fontColor(EggClipColors.textSecondary)
@@ -591,7 +591,7 @@ export struct DevicesPage {
   private DiscoveryCard() {
     Column({ space: 10 }) {
       Row() {
-        Text($r('app.string.devices_discovery'))
+        Text(this.resourceText('devices_discovery'))
           .fontSize(EggClipTypography.bodySize)
           .fontWeight(FontWeight.Bold)
           .fontColor(EggClipColors.textPrimary)
@@ -621,7 +621,7 @@ export struct DevicesPage {
         })
 
       if (this.discoveryCandidates.length === 0) {
-        Text($r('app.string.devices_discovery_empty'))
+        Text(this.resourceText('devices_discovery_empty'))
           .width('100%')
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
@@ -641,7 +641,7 @@ export struct DevicesPage {
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1)
 
-            Button($r('app.string.common_connect'))
+            Button(this.resourceText('common_connect'))
               .height(40)
               .fontColor(EggClipColors.accentForeground)
               .backgroundColor(EggClipColors.cardBackground)
@@ -674,7 +674,7 @@ export struct DevicesPage {
   private ManualTransportCard() {
     Column({ space: 12 }) {
       Row() {
-        Text($r('app.string.devices_manual'))
+        Text(this.resourceText('devices_manual'))
           .fontSize(EggClipTypography.bodySize)
           .fontWeight(FontWeight.Bold)
           .fontColor(EggClipColors.textPrimary)
@@ -686,14 +686,14 @@ export struct DevicesPage {
       }
       .width('100%')
 
-      Text($r('app.string.devices_manual_desc'))
+      Text(this.resourceText('devices_manual_desc'))
         .width('100%')
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
         .lineHeight(20)
 
       Row({ space: 8 }) {
-        TextInput({ text: this.manualHost, placeholder: $r('app.string.pairing_desktop_ip') })
+        TextInput({ text: this.manualHost, placeholder: this.resourceText('pairing_desktop_ip') })
           .layoutWeight(1)
           .height(42)
           .backgroundColor(EggClipColors.controlBackground)
@@ -702,7 +702,7 @@ export struct DevicesPage {
             this.manualHost = value;
           })
 
-        TextInput({ text: this.manualPort, placeholder: $r('app.string.pairing_port') })
+        TextInput({ text: this.manualPort, placeholder: this.resourceText('pairing_port') })
           .width(96)
           .height(42)
           .backgroundColor(EggClipColors.controlBackground)
@@ -718,7 +718,7 @@ export struct DevicesPage {
         this.RecentEndpointCard()
       }
 
-      Button($r('app.string.devices_connect_desktop'))
+      Button(this.resourceText('devices_connect_desktop'))
         .width('100%')
         .height(44)
         .fontColor(EggClipColors.onPrimary)
@@ -728,7 +728,7 @@ export struct DevicesPage {
           pocConnectionStore.connectManualEndpoint(this.manualHost, this.manualPort);
         })
 
-      Button($r('app.string.devices_disconnect_desktop'))
+      Button(this.resourceText('devices_disconnect_desktop'))
         .width('100%')
         .height(40)
         .fontColor(EggClipColors.textSecondary)
@@ -761,7 +761,7 @@ export struct DevicesPage {
     Column({ space: 8 }) {
       Row({ space: 8 }) {
         Column({ space: 3 }) {
-          Text($r('app.string.devices_recent_endpoint'))
+          Text(this.resourceText('devices_recent_endpoint'))
             .fontSize(EggClipTypography.captionSize)
             .fontWeight(FontWeight.Medium)
             .fontColor(EggClipColors.textPrimary)
@@ -775,7 +775,7 @@ export struct DevicesPage {
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
 
-        Button($r('app.string.devices_fill_endpoint'))
+        Button(this.resourceText('devices_fill_endpoint'))
           .height(40)
           .fontSize(11)
           .fontColor(EggClipColors.textSecondary)
@@ -789,7 +789,7 @@ export struct DevicesPage {
       .width('100%')
       .alignItems(VerticalAlign.Top)
 
-      Button($r('app.string.devices_connect_recent'))
+      Button(this.resourceText('devices_connect_recent'))
         .width('100%')
         .height(40)
         .fontColor(EggClipColors.accentForeground)
@@ -809,7 +809,7 @@ export struct DevicesPage {
   @Builder
   private TroubleshootingCard() {
     Column({ space: 12 }) {
-      Text($r('app.string.devices_troubleshooting'))
+      Text(this.resourceText('devices_troubleshooting'))
         .fontSize(EggClipTypography.bodySize)
         .fontWeight(FontWeight.Bold)
         .fontColor(EggClipColors.textPrimary)
@@ -821,15 +821,15 @@ export struct DevicesPage {
         .fontColor(EggClipColors.textSecondary)
         .lineHeight(20)
 
-      this.TroubleshootingRow($r('app.string.devices_troubleshoot_discovery_title'), this.discoveryCandidates.length > 0
+      this.TroubleshootingRow(this.resourceText('devices_troubleshoot_discovery_title'), this.discoveryCandidates.length > 0
         ? this.pluralText('devices_candidates_connect_plural', this.discoveryCandidates.length)
-        : $r('app.string.devices_troubleshoot_discovery_empty'))
-      this.TroubleshootingRow($r('app.string.devices_troubleshoot_manual_title'),
-        $r('app.string.devices_troubleshoot_manual_desc'))
-      this.TroubleshootingRow($r('app.string.devices_troubleshoot_vpn_title'),
-        $r('app.string.devices_troubleshoot_vpn_desc'))
-      this.TroubleshootingRow($r('app.string.devices_troubleshoot_security_title'),
-        $r('app.string.devices_troubleshoot_security_desc'))
+        : this.resourceText('devices_troubleshoot_discovery_empty'))
+      this.TroubleshootingRow(this.resourceText('devices_troubleshoot_manual_title'),
+        this.resourceText('devices_troubleshoot_manual_desc'))
+      this.TroubleshootingRow(this.resourceText('devices_troubleshoot_vpn_title'),
+        this.resourceText('devices_troubleshoot_vpn_desc'))
+      this.TroubleshootingRow(this.resourceText('devices_troubleshoot_security_title'),
+        this.resourceText('devices_troubleshoot_security_desc'))
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -866,7 +866,7 @@ export struct DevicesPage {
   private TrustedDevicesCard() {
     if (this.trustedDevices.length > 0) {
       Column({ space: 12 }) {
-        Text($r('app.string.devices_trusted'))
+        Text(this.resourceText('devices_trusted'))
           .fontSize(20)
           .fontWeight(FontWeight.Bold)
           .fontColor(EggClipColors.textPrimary)
@@ -900,7 +900,7 @@ export struct DevicesPage {
 
             if (this.editingDeviceId === device.deviceId) {
               Row({ space: 8 }) {
-                TextInput({ text: this.deviceNameDraft, placeholder: $r('app.string.devices_name_placeholder') })
+                TextInput({ text: this.deviceNameDraft, placeholder: this.resourceText('devices_name_placeholder') })
                   .layoutWeight(1)
                   .height(40)
                   .fontSize(EggClipTypography.captionSize)
@@ -910,7 +910,7 @@ export struct DevicesPage {
                     this.deviceNameDraft = value;
                   })
 
-                Button($r('app.string.common_save'))
+                Button(this.resourceText('common_save'))
                   .height(40)
                   .fontSize(12)
                   .fontColor(this.busyDeviceId.length === 0 ?
@@ -923,7 +923,7 @@ export struct DevicesPage {
                     this.saveDeviceName(device.deviceId);
                   })
 
-                Button($r('app.string.common_cancel'))
+                Button(this.resourceText('common_cancel'))
                   .height(40)
                   .fontSize(12)
                   .fontColor(EggClipColors.textSecondary)
@@ -937,7 +937,7 @@ export struct DevicesPage {
               .width('100%')
             } else {
               Row({ space: 8 }) {
-                Button($r('app.string.common_rename'))
+                Button(this.resourceText('common_rename'))
                   .height(40)
                   .fontSize(12)
                   .fontColor(EggClipColors.textPrimary)
@@ -951,7 +951,7 @@ export struct DevicesPage {
                   })
 
                 Button(this.busyDeviceId === device.deviceId ?
-                  $r('app.string.devices_removing') : $r('app.string.devices_remove'))
+                  this.resourceText('devices_removing') : this.resourceText('devices_remove'))
                   .height(40)
                   .fontSize(12)
                   .fontColor(EggClipColors.statusError)
@@ -992,12 +992,12 @@ export struct DevicesPage {
           .fontColor(EggClipColors.accentForeground)
 
         Column({ space: 6 }) {
-          Text($r('app.string.devices_trusted'))
+          Text(this.resourceText('devices_trusted'))
             .fontSize(20)
             .fontWeight(FontWeight.Bold)
             .fontColor(EggClipColors.textPrimary)
 
-          Text($r('app.string.devices_empty_trusted'))
+          Text(this.resourceText('devices_empty_trusted'))
             .fontSize(EggClipTypography.captionSize)
             .fontColor(EggClipColors.textSecondary)
             .textAlign(TextAlign.Center)
@@ -1047,14 +1047,14 @@ export struct DevicesPage {
   private confirmRemoveDevice(device: TrustedDeviceSummary): void {
     this.getUIContext().showAlertDialog({
       title: this.resourceText('devices_remove_dialog_title', this.trustedDeviceDisplayName(device)),
-      message: $r('app.string.devices_remove_message'),
+      message: this.resourceText('devices_remove_message'),
       primaryButton: {
-        value: $r('app.string.common_cancel'),
+        value: this.resourceText('common_cancel'),
         action: () => {
         }
       },
       secondaryButton: {
-        value: $r('app.string.devices_remove_confirm'),
+        value: this.resourceText('devices_remove_confirm'),
         fontColor: EggClipColors.statusError,
         action: () => {
           this.removeDevice(device.deviceId);
@@ -1123,15 +1123,15 @@ export struct DevicesPage {
   @Builder
   private DevicePolicyCard() {
     Column({ space: 12 }) {
-      Text($r('app.string.devices_rules'))
+      Text(this.resourceText('devices_rules'))
         .fontSize(EggClipTypography.bodySize)
         .fontWeight(FontWeight.Bold)
         .fontColor(EggClipColors.textPrimary)
         .width('100%')
 
-      this.PolicyRow($r('app.string.devices_rule_limit_title'), $r('app.string.devices_rule_limit_desc'))
-      this.PolicyRow($r('app.string.devices_rule_pair_title'), $r('app.string.devices_rule_pair_desc'))
-      this.PolicyRow($r('app.string.devices_rule_rotate_title'), $r('app.string.devices_rule_rotate_desc'))
+      this.PolicyRow(this.resourceText('devices_rule_limit_title'), this.resourceText('devices_rule_limit_desc'))
+      this.PolicyRow(this.resourceText('devices_rule_pair_title'), this.resourceText('devices_rule_pair_desc'))
+      this.PolicyRow(this.resourceText('devices_rule_rotate_title'), this.resourceText('devices_rule_rotate_desc'))
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)

@@ -204,12 +204,12 @@ export struct HomePage {
   private ConnectionExperienceCard() {
     Column({ space: 10 }) {
       if (this.currentConnectionExperience().showFirstUse) {
-        Text($r('app.string.home_unpaired_title'))
+        Text(this.resourceText('home_unpaired_title'))
           .fontSize(EggClipTypography.bodySize)
           .fontWeight(FontWeight.Bold)
           .fontColor(EggClipColors.textPrimary)
           .width('100%')
-        Text($r('app.string.home_unpaired_description'))
+        Text(this.resourceText('home_unpaired_description'))
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
           .lineHeight(20)
@@ -221,7 +221,7 @@ export struct HomePage {
               .fontSize(EggClipTypography.bodySize)
               .fontWeight(FontWeight.Medium)
               .fontColor(EggClipColors.textPrimary)
-            Text(this.appInForeground ? this.connectionDescription : $r('app.string.home_background_paused'))
+            Text(this.appInForeground ? this.connectionDescription : this.resourceText('home_background_paused'))
               .fontSize(EggClipTypography.captionSize)
               .fontColor(EggClipColors.textSecondary)
               .lineHeight(19)
@@ -230,7 +230,7 @@ export struct HomePage {
           .layoutWeight(1)
 
           if (this.currentConnectionExperience().showRetry) {
-            Button(this.retryingTrustedConnection ? $r('app.string.common_retrying') : $r('app.string.common_retry_now'))
+            Button(this.retryingTrustedConnection ? this.resourceText('common_retrying') : this.resourceText('common_retry_now'))
               .height(40)
               .enabled(this.currentConnectionExperience().retryEnabled)
               .fontSize(12)
@@ -264,13 +264,13 @@ export struct HomePage {
         .objectFit(ImageFit.Contain)
 
       Column({ space: 4 }) {
-        Text($r('app.string.home_brand'))
+        Text(this.resourceText('home_brand'))
           .fontSize(EggClipTypography.titleSize)
           .fontWeight(FontWeight.Bold)
           .fontColor(EggClipColors.textPrimary)
           .width('100%')
 
-        Text($r('app.string.home_clipboard_title'))
+        Text(this.resourceText('home_clipboard_title'))
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
       }
@@ -285,13 +285,13 @@ export struct HomePage {
   private LatestClipboardCard() {
     Column({ space: 14 }) {
       Row() {
-        Text($r('app.string.home_clipboard_title'))
+        Text(this.resourceText('home_clipboard_title'))
           .fontSize(EggClipTypography.bodySize)
           .fontWeight(FontWeight.Bold)
           .fontColor(EggClipColors.textPrimary)
           .layoutWeight(1)
 
-        Text(this.latestReceivedPreview.length === 0 ? $r('app.string.home_empty_content') : this.latestReceivedSource)
+        Text(this.latestReceivedPreview.length === 0 ? this.resourceText('home_empty_content') : this.latestReceivedSource)
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
       }
@@ -310,7 +310,7 @@ export struct HomePage {
             .layoutWeight(1)
 
           if (this.latestReceivedText.length > 180) {
-            Button(this.latestReceivedExpanded ? $r('app.string.common_collapse') : $r('app.string.common_expand'))
+            Button(this.latestReceivedExpanded ? this.resourceText('common_collapse') : this.resourceText('common_expand'))
               .height(40)
               .fontSize(11)
               .fontColor(EggClipColors.textSecondary)
@@ -366,7 +366,7 @@ export struct HomePage {
       }
 
       if (this.latestReceivedText.length > 0) {
-        Button($r('app.string.home_copy'))
+        Button(this.resourceText('home_copy'))
           .width('100%')
           .height(46)
           .fontColor(EggClipColors.onPrimary)
@@ -438,13 +438,13 @@ export struct HomePage {
 
       Column({ space: 6 }) {
         Row({ space: 8 }) {
-          Text($r('app.string.home_recent_history'))
+          Text(this.resourceText('home_recent_history'))
             .fontSize(EggClipTypography.bodySize)
             .fontWeight(FontWeight.Bold)
             .fontColor(EggClipColors.textPrimary)
             .layoutWeight(1)
 
-          Button(this.clearingHistory ? $r('app.string.home_clearing') : $r('app.string.common_clear'))
+          Button(this.clearingHistory ? this.resourceText('home_clearing') : this.resourceText('common_clear'))
             .height(40)
             .enabled(this.historyUsed > 0 && !this.clearingHistory && this.deletingHistoryItemId.length === 0)
             .fontSize(11)
@@ -488,7 +488,7 @@ export struct HomePage {
   @Builder
   private EmptyHistoryState() {
     Column({ space: 6 }) {
-      Text(this.historyLimit === 0 ? $r('app.string.home_history_disabled') : $r('app.string.home_history_empty'))
+      Text(this.historyLimit === 0 ? this.resourceText('home_history_disabled') : this.resourceText('home_history_empty'))
         .fontSize(EggClipTypography.captionSize)
         .fontWeight(FontWeight.Medium)
         .fontColor(EggClipColors.textPrimary)
@@ -521,7 +521,7 @@ export struct HomePage {
             .fontColor(EggClipColors.textPrimary)
             .layoutWeight(1)
 
-          Text(this.copiedHistoryItemId === item.id ? $r('app.string.home_copied') :
+          Text(this.copiedHistoryItemId === item.id ? this.resourceText('home_copied') :
             this.localizedFormatter.formatTime(item.receivedAtMs))
             .fontSize(11)
             .fontColor(EggClipColors.textSecondary)
@@ -544,7 +544,7 @@ export struct HomePage {
             .fontSize(18)
             .fontColor(EggClipColors.textSecondary)
             .backgroundColor(Color.Transparent)
-            .accessibilityText($r('app.string.home_more_actions'))
+            .accessibilityText(this.resourceText('home_more_actions'))
             .onClick(() => {
               this.historyActionsItemId = this.historyActionsItemId === item.id ? '' : item.id;
             })
@@ -570,7 +570,7 @@ export struct HomePage {
 
           if (item.text.length > 180) {
             Button(this.expandedHistoryItemId === item.id ?
-              $r('app.string.home_collapse_details') : $r('app.string.home_view_details'))
+              this.resourceText('home_collapse_details') : this.resourceText('home_view_details'))
               .height(40)
               .fontSize(11)
               .fontColor(EggClipColors.textSecondary)
@@ -580,7 +580,7 @@ export struct HomePage {
               })
           }
 
-          Button($r('app.string.common_delete'))
+          Button(this.resourceText('common_delete'))
           .height(40)
           .enabled(this.deletingHistoryItemId.length === 0 && !this.clearingHistory)
           .fontSize(11)
@@ -601,11 +601,11 @@ export struct HomePage {
 
   private confirmDeleteHistoryItem(itemId: string): void {
     this.getUIContext().showAlertDialog({
-      title: $r('app.string.home_delete_dialog_title'),
-      message: $r('app.string.home_delete_dialog_message'),
-      primaryButton: { value: $r('app.string.common_cancel'), action: () => {} },
+      title: this.resourceText('home_delete_dialog_title'),
+      message: this.resourceText('home_delete_dialog_message'),
+      primaryButton: { value: this.resourceText('common_cancel'), action: () => {} },
       secondaryButton: {
-        value: $r('app.string.common_delete'),
+        value: this.resourceText('common_delete'),
         fontColor: EggClipColors.statusError,
         action: () => { this.deleteHistoryItem(itemId); }
       }
@@ -614,11 +614,11 @@ export struct HomePage {
 
   private confirmClearHistory(): void {
     this.getUIContext().showAlertDialog({
-      title: $r('app.string.home_clear_dialog_title'),
-      message: $r('app.string.home_clear_dialog_message'),
-      primaryButton: { value: $r('app.string.common_cancel'), action: () => {} },
+      title: this.resourceText('home_clear_dialog_title'),
+      message: this.resourceText('home_clear_dialog_message'),
+      primaryButton: { value: this.resourceText('common_cancel'), action: () => {} },
       secondaryButton: {
-        value: $r('app.string.common_clear'),
+        value: this.resourceText('common_clear'),
         fontColor: EggClipColors.statusError,
         action: () => { this.clearHistory(); }
       }

@@ -48,17 +48,17 @@ struct Index {
       TabContent() {
         HomePage()
       }
-      .tabBar(this.TabBarItem($r('app.string.nav_home'), 0))
+      .tabBar(this.TabBarItem(this.resourceText('nav_home'), 0))
 
       TabContent() {
         DevicesPage()
       }
-      .tabBar(this.TabBarItem($r('app.string.nav_devices'), 1))
+      .tabBar(this.TabBarItem(this.resourceText('nav_devices'), 1))
 
       TabContent() {
         SettingsPage()
       }
-      .tabBar(this.TabBarItem($r('app.string.nav_settings'), 2))
+      .tabBar(this.TabBarItem(this.resourceText('nav_settings'), 2))
     }
     .barOverlap(true)
     .barPosition(BarPosition.End)
@@ -247,6 +247,18 @@ struct Index {
       .borderRadius(2)
       .rotate({ angle })
       .offset({ x, y })
+  }
+
+  private resourceText(name: string, ...args: Array<string | number>): string {
+    const hostContext = this.getUIContext().getHostContext();
+    if (hostContext === undefined) {
+      return name;
+    }
+    try {
+      return hostContext.resourceManager.getStringByNameSync(name, ...args);
+    } catch (_) {
+      return name;
+    }
   }
 
   private applyThemeMode(context: common.UIAbilityContext, mode: ThemeMode): void {
