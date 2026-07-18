@@ -29,6 +29,7 @@ import {
 import { ConnectionState } from '../models/ShellModels';
 import { UiMessageDescriptor } from '../services/localization/UiMessageCodes';
 import { UiMessageFormatter } from '../services/localization/UiMessageFormatter';
+import { LocalizedFormatter } from '../services/localization/LocalizedFormatter';
 
 enum OutboundSendState {
   IDLE = 'idle',
@@ -46,13 +47,14 @@ export struct HomePage {
   private historyStore: HistoryStore | null = null;
   private trustedDeviceStore: TrustedDeviceStore | null = null;
   private messageFormatter: UiMessageFormatter | null = null;
+  private readonly localizedFormatter: LocalizedFormatter = new LocalizedFormatter();
   private lastPairingHistoryRevision: number = 0;
   private readonly connectionSnapshotListener = (snapshot: PocConnectionSnapshot): void => {
     const previousReceivedText = this.latestReceivedText;
     this.latestReceivedText = snapshot.latestReceivedText;
     this.latestReceivedPreview = snapshot.latestReceivedPreview;
-    this.latestReceivedSource = snapshot.latestReceivedSource;
-    this.latestReceivedAt = snapshot.latestReceivedAt;
+    this.latestReceivedSource = this.formatMessage(snapshot.latestReceivedSource);
+    this.latestReceivedAtMs = snapshot.latestReceivedAtMs;
     this.latestReceivedByteLength = snapshot.latestReceivedByteLength;
     if (pairingConnectionStore.snapshot().state !== PairingConnectionState.AUTHENTICATED) {
       this.connectionState = snapshot.connectionState;
@@ -62,8 +64,8 @@ export struct HomePage {
     if (previousReceivedText !== snapshot.latestReceivedText) {
       this.latestReceivedExpanded = false;
     }
-    if (snapshot.latestReceivedText.length > 0 && this.copyStatus === '收到桌面文本后可手动复制到本机') {
-      this.copyStatus = '已收到桌面端文本，可点击复制到本机';
+    if (snapshot.latestReceivedText.length > 0) {
+      this.copyStatus = this.resourceText('home_copy_ready');
     }
   };
   private readonly pairingSnapshotListener = (snapshot: PairingConnectionSnapshot): void => {
@@ -71,11 +73,11 @@ export struct HomePage {
       this.latestReceivedText = snapshot.latestReceivedText;
       this.latestReceivedPreview = snapshot.latestReceivedText.length > 180 ?
         `${snapshot.latestReceivedText.slice(0, 180)}…` : snapshot.latestReceivedText;
-      this.latestReceivedSource = snapshot.latestReceivedSource;
-      this.latestReceivedAt = snapshot.latestReceivedAt;
+      this.latestReceivedSource = this.formatMessage(snapshot.latestReceivedSource);
+      this.latestReceivedAtMs = snapshot.latestReceivedAtMs;
       this.latestReceivedByteLength = snapshot.latestReceivedByteLength;
       this.latestReceivedExpanded = false;
-      this.copyStatus = '已收到桌面端文本，可点击复制到本机';
+      this.copyStatus = this.resourceText('home_copy_ready');
     }
     if (snapshot.historyRevision !== this.lastPairingHistoryRevision) {
       this.lastPairingHistoryRevision = snapshot.historyRevision;
@@ -96,37 +98,39 @@ export struct HomePage {
     }
     if (snapshot.outboundDeliveryState === OutboundDeliveryState.QUEUED) {
       this.setOutboundStatus(OutboundSendState.WAITING,
-        `${snapshot.pendingOutboundCount} 条等待发送`, this.formatMessage(snapshot.outboundDeliveryDescription));
+        this.resourceText('home_outbound_queued_title', snapshot.pendingOutboundCount),
+        this.formatMessage(snapshot.outboundDeliveryDescription));
     } else if (snapshot.outboundDeliveryState === OutboundDeliveryState.SENDING) {
       this.setOutboundStatus(OutboundSendState.PENDING,
-        `${snapshot.pendingOutboundCount} 条等待确认`, this.formatMessage(snapshot.outboundDeliveryDescription));
+        this.resourceText('home_outbound_pending_title', snapshot.pendingOutboundCount),
+        this.formatMessage(snapshot.outboundDeliveryDescription));
     } else if (snapshot.outboundDeliveryState === OutboundDeliveryState.SENT) {
-      this.setOutboundStatus(OutboundSendState.SENT, '同步记录已确认',
+      this.setOutboundStatus(OutboundSendState.SENT, this.resourceText('home_outbound_confirmed_title'),
         this.formatMessage(snapshot.outboundDeliveryDescription));
     } else if (snapshot.outboundDeliveryState === OutboundDeliveryState.FAILED) {
-      this.setOutboundStatus(OutboundSendState.FAILED, '待同步状态读取失败',
+      this.setOutboundStatus(OutboundSendState.FAILED, this.resourceText('home_outbound_read_failed_title'),
         this.formatMessage(snapshot.outboundDeliveryDescription));
     }
   };
   @State private pasteStatus: string = '';
-  @State private copyStatus: string = '桌面端文本可手动复制到本机';
+  @State private copyStatus: string = '';
   @State private outboundState: OutboundSendState = OutboundSendState.IDLE;
-  @State private outboundTitle: string = '等待本机文本';
-  @State private outboundDescription: string = '点击系统 PasteButton 后，会先保存本机历史，再按同步策略尝试发送。';
+  @State private outboundTitle: string = '';
+  @State private outboundDescription: string = '';
   @State private outboundUpdatedAt: string = '';
-  @State private connectionTitle: string = '等待桌面端';
-  @State private connectionDescription: string = '连接和发现入口在设备页';
+  @State private connectionTitle: string = '';
+  @State private connectionDescription: string = '';
   @State private connectionState: ConnectionState = ConnectionState.OFFLINE;
   @State private latestReceivedText: string = '';
   @State private latestReceivedPreview: string = '';
-  @State private latestReceivedSource: string = '暂无内容';
-  @State private latestReceivedAt: string = '';
+  @State private latestReceivedSource: string = '';
+  @State private latestReceivedAtMs: number = 0;
   @State private latestReceivedByteLength: number = 0;
   @State private latestReceivedExpanded: boolean = false;
   @State private historyUsed: number = 0;
   @State private historyLimit: number = 50;
   @State private historyItems: HistoryPreviewItem[] = [];
-  @State private historyStatus: string = '正在读取本机历史摘要';
+  @State private historyStatus: string = '';
   @State private deletingHistoryItemId: string = '';
   @State private clearingHistory: boolean = false;
   @State private expandedHistoryItemId: string = '';
@@ -147,6 +151,12 @@ export struct HomePage {
         if (this.pasteStatus.length === 0) {
           this.pasteStatus = this.resourceText('home_paste_help');
         }
+        if (this.copyStatus.length === 0) this.copyStatus = this.resourceText('home_copy_initial');
+        if (this.outboundTitle.length === 0) this.outboundTitle = this.resourceText('home_outbound_initial_title');
+        if (this.outboundDescription.length === 0) {
+          this.outboundDescription = this.resourceText('home_outbound_initial_desc');
+        }
+        if (this.historyStatus.length === 0) this.historyStatus = this.resourceText('home_history_loading');
       }
     }
     pocConnectionStore.subscribe(this.connectionSnapshotListener);
@@ -339,7 +349,7 @@ export struct HomePage {
                 }
               })
               .catch(() => {
-                this.pasteStatus = '读取剪贴板失败，请确认当前内容是纯文本并重试';
+                this.pasteStatus = this.resourceText('ui_clipboard_read_failed');
               });
           })
 
@@ -409,7 +419,7 @@ export struct HomePage {
       .alignItems(VerticalAlign.Top)
 
       if (this.outboundUpdatedAt.length > 0) {
-        Text(`更新时间：${this.outboundUpdatedAt}`)
+        Text(this.resourceText('home_updated_at', this.outboundUpdatedAt))
           .width('100%')
           .fontSize(10)
           .fontColor(EggClipColors.textSecondary)
@@ -448,7 +458,7 @@ export struct HomePage {
         .width('100%')
         .alignItems(VerticalAlign.Center)
 
-        Text(`${this.historyUsed} / ${this.historyLimit} 条 · 离线补齐不会覆盖当前剪贴板`)
+        Text(this.resourceText('home_history_count', this.historyUsed, this.historyLimit))
           .width('100%')
           .fontSize(EggClipTypography.captionSize)
           .fontColor(EggClipColors.textSecondary)
@@ -505,20 +515,22 @@ export struct HomePage {
     Column({ space: 5 }) {
       Column({ space: 4 }) {
         Row({ space: 8 }) {
-          Text(item.title)
+          Text(this.historyItemTitle(item))
             .fontSize(EggClipTypography.captionSize)
             .fontWeight(FontWeight.Medium)
             .fontColor(EggClipColors.textPrimary)
             .layoutWeight(1)
 
-          Text(this.copiedHistoryItemId === item.id ? $r('app.string.home_copied') : item.receivedAt)
+          Text(this.copiedHistoryItemId === item.id ? $r('app.string.home_copied') :
+            this.localizedFormatter.formatTime(item.receivedAtMs))
             .fontSize(11)
             .fontColor(EggClipColors.textSecondary)
         }
         .width('100%')
 
         Row({ space: 8 }) {
-          Text(this.expandedHistoryItemId === item.id && item.text.length > 0 ? item.text : item.preview)
+          Text(this.expandedHistoryItemId === item.id && item.text.length > 0 ? item.text :
+            (item.preview.length > 0 ? item.preview : this.resourceText('home_history_content_unavailable')))
             .layoutWeight(1)
             .maxLines(this.expandedHistoryItemId === item.id ? 8 : 1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -543,15 +555,15 @@ export struct HomePage {
       .padding({ left: 8, right: 4, top: 8, bottom: 8 })
       .borderRadius(12)
       .accessibilityText(item.canCopy ?
-        this.resourceText('home_item_copy_accessibility', item.title) :
-        this.resourceText('home_item_unavailable_accessibility', item.title))
+        this.resourceText('home_item_copy_accessibility', this.historyItemTitle(item)) :
+        this.resourceText('home_item_unavailable_accessibility', this.historyItemTitle(item)))
       .onClick(() => {
         if (item.canCopy) this.copyHistoryItem(item.id);
       })
 
       if (this.historyActionsItemId === item.id) {
         Row({ space: 8 }) {
-          Text(item.source)
+          Text(this.resourceText('home_history_source', item.originDeviceId.slice(0, 8)))
             .fontSize(10)
             .fontColor(EggClipColors.textSecondary)
             .layoutWeight(1)
@@ -618,18 +630,21 @@ export struct HomePage {
     this.historyStore.copyItem(itemId)
       .then((copied: boolean) => {
         this.copiedHistoryItemId = copied ? itemId : '';
-        this.historyStatus = copied ? '已复制历史正文到本机剪贴板' : '历史正文不可用，无法复制';
+        this.historyStatus = copied ? this.resourceText('home_history_copy_success') :
+          this.resourceText('home_history_copy_unavailable');
       })
       .catch(() => {
         this.copiedHistoryItemId = '';
-        this.historyStatus = '复制历史正文失败';
+        this.historyStatus = this.resourceText('home_history_copy_failed');
       });
   }
 
   private sendPocClipboardText(text: string): void {
     if (this.historyStore === null) {
-      this.pasteStatus = '无法读取同步策略，未发送到桌面端';
-      this.setOutboundStatus(OutboundSendState.FAILED, '发送策略不可用', '无法读取本机设置，已保留本机历史但未发送。');
+      this.pasteStatus = this.resourceText('home_paste_policy_failed');
+      this.setOutboundStatus(OutboundSendState.FAILED,
+        this.resourceText('home_outbound_policy_unavailable_title'),
+        this.resourceText('home_outbound_policy_unavailable_desc'));
       return;
     }
 
@@ -637,33 +652,40 @@ export struct HomePage {
       .then((policy: LocalBroadcastPolicySnapshot) => {
         if (!policy.allowed) {
           this.pasteStatus = this.formatMessage(policy.message);
-          this.setOutboundStatus(OutboundSendState.PAUSED, '同步已暂停', '文本已进入本机历史；当前同步策略禁止发送到桌面端。');
+          this.setOutboundStatus(OutboundSendState.PAUSED,
+            this.resourceText('home_outbound_paused_title'), this.resourceText('home_outbound_paused_desc'));
           return;
         }
         if (!pocConnectionStore.isConnected()) {
-          this.pasteStatus = '已读取纯文本；尚未连接桌面端，未发送。请到设备页连接桌面端';
-          this.setOutboundStatus(OutboundSendState.WAITING, '等待桌面连接', '文本已进入本机历史；连接桌面端后可再次点击 PasteButton 发送。');
+          this.pasteStatus = this.resourceText('home_paste_not_connected');
+          this.setOutboundStatus(OutboundSendState.WAITING,
+            this.resourceText('home_outbound_waiting_connection_title'),
+            this.resourceText('home_outbound_waiting_connection_desc'));
           return;
         }
 
-        this.setOutboundStatus(OutboundSendState.PENDING, '正在发送到桌面端', '正在使用当前连接发送文本。');
+        this.setOutboundStatus(OutboundSendState.PENDING,
+          this.resourceText('home_outbound_sending_title'), this.resourceText('home_outbound_sending_desc'));
         pocConnectionStore.sendClipboardText(text)
           .then((sent) => {
-            this.pasteStatus = sent ? '已发送到桌面端' : '发送失败：连接已断开';
+            this.pasteStatus = sent ? this.resourceText('home_paste_sent') : this.resourceText('home_paste_link_down');
             this.setOutboundStatus(
               sent ? OutboundSendState.SENT : OutboundSendState.FAILED,
-              sent ? '已发送到桌面端' : '发送失败',
-              sent ? '文本已发送到桌面端。' : '连接已断开，本机历史已保留。'
+              sent ? this.resourceText('home_outbound_sent_title') : this.resourceText('home_outbound_failed_title'),
+              sent ? this.resourceText('home_outbound_sent_desc') : this.resourceText('home_outbound_failed_desc')
             );
           })
           .catch(() => {
-            this.pasteStatus = '发送到桌面端失败';
-            this.setOutboundStatus(OutboundSendState.FAILED, '发送到桌面端失败', '本机历史已保留，网络恢复后可重新触发发送。');
+            this.pasteStatus = this.resourceText('home_outbound_failed_title');
+            this.setOutboundStatus(OutboundSendState.FAILED,
+              this.resourceText('home_outbound_failed_title'), this.resourceText('home_outbound_retry_desc'));
           });
       })
       .catch(() => {
-        this.pasteStatus = '读取同步策略失败，未发送到桌面端';
-        this.setOutboundStatus(OutboundSendState.FAILED, '读取同步策略失败', '本机历史已保留，但未确认设置前不会发送。');
+        this.pasteStatus = this.resourceText('home_paste_policy_failed');
+        this.setOutboundStatus(OutboundSendState.FAILED,
+          this.resourceText('home_outbound_policy_unavailable_title'),
+          this.resourceText('home_outbound_policy_unavailable_desc'));
       });
   }
 
@@ -672,66 +694,68 @@ export struct HomePage {
   }
 
   private latestReceivedMetaText(): string {
-    const receivedAt = this.latestReceivedAt.length === 0 ? '未知时间' : this.latestReceivedAt;
-    return `来源：${this.latestReceivedSource} · ${receivedAt} · ${this.latestReceivedText.length} 字符 · ${this.latestReceivedByteLength} 字节`;
+    const receivedAt = this.latestReceivedAtMs === 0 ? this.resourceText('common_unknown_time') :
+      this.localizedFormatter.formatTime(this.latestReceivedAtMs);
+    return this.resourceText('home_latest_meta', this.latestReceivedSource, receivedAt,
+      this.latestReceivedText.length, this.latestReceivedByteLength);
   }
 
   private emptyClipboardHelpText(): string {
-    if (this.connectionTitle.indexOf('失败') >= 0 || this.connectionTitle.indexOf('不可用') >= 0) {
-      return `${this.connectionTitle}：${this.connectionDescription}。可以到设备页重新发现，或使用手动 IP 连接桌面端。`;
+    if (this.connectionState === ConnectionState.AUTH_FAILED) {
+      return this.resourceText('home_empty_failed_help', this.connectionTitle, this.connectionDescription);
     }
-    if (this.connectionTitle.indexOf('暂停') >= 0) {
-      return `${this.connectionTitle}：${this.connectionDescription}。恢复自动接收后，桌面端文本才会进入预览。`;
+    if (this.connectionState === ConnectionState.PAUSED) {
+      return this.resourceText('home_empty_paused_help', this.connectionTitle, this.connectionDescription);
     }
-    return '桌面端复制的文本会显示在这里；点击“粘贴”可发送手机剪贴板。';
+    return this.resourceText('home_empty_help');
   }
 
   private emptyHistoryHelpText(): string {
     if (this.historyLimit === 0) {
-      return '当前只保留实时同步，不写入本机历史。可以在设置页把历史数量改为 20、50 或 100 条。';
+      return this.resourceText('home_history_disabled_help');
     }
-    return '发送或收到文本后，最近记录会显示在这里。';
+    return this.resourceText('home_history_empty_help');
   }
 
   private persistLocalHistoryThenSend(text: string): void {
     pairingConnectionStore.persistAndSendAuthenticatedLocalText(text)
       .then((result) => {
         if (result.status === AuthenticatedLocalSendStatus.SENT) {
-          this.pasteStatus = '已通过认证加密会话发送到桌面端';
+          this.pasteStatus = this.resourceText('home_secure_sent_status');
           this.setOutboundStatus(
             OutboundSendState.SENT,
-            '已发送到桌面端',
-            '文本已安全保存并发送到桌面端。'
+            this.resourceText('home_outbound_sent_title'),
+            this.resourceText('home_secure_sent_desc')
           );
           this.loadHistorySummary();
           return;
         }
         if (result.status === AuthenticatedLocalSendStatus.SENDING) {
-          this.pasteStatus = '已提交到认证会话，正在等待桌面端确认';
+          this.pasteStatus = this.resourceText('home_secure_pending_status');
           this.setOutboundStatus(
             OutboundSendState.PENDING,
-            '等待桌面端确认',
-            '文本已安全保存，正在等待桌面端确认。'
+            this.resourceText('home_outbound_pending_title', 1),
+            this.resourceText('home_secure_pending_desc')
           );
           this.loadHistorySummary();
           return;
         }
         if (result.status === AuthenticatedLocalSendStatus.QUEUED) {
-          this.pasteStatus = '网络不可用，文本已进入待同步队列';
+          this.pasteStatus = this.resourceText('home_secure_queued_status');
           this.setOutboundStatus(
             OutboundSendState.WAITING,
-            '等待连接后自动发送',
-            '本机记录已安全保存；可信连接恢复后会通过同步头和范围补齐自动重发。'
+            this.resourceText('home_secure_queued_title'),
+            this.resourceText('home_secure_queued_desc')
           );
           this.loadHistorySummary();
           return;
         }
         if (result.status === AuthenticatedLocalSendStatus.INITIALIZING) {
-          this.pasteStatus = '同步正在初始化，文本会在就绪后自动发送';
+          this.pasteStatus = this.resourceText('home_secure_initializing_status');
           this.setOutboundStatus(
             OutboundSendState.WAITING,
-            '等待同步初始化',
-            '文本已安全保存；初始化完成后会自动发送，无需由电脑先发送。'
+            this.resourceText('home_secure_initializing_title'),
+            this.resourceText('home_secure_initializing_desc')
           );
           this.loadHistorySummary();
           return;
@@ -743,22 +767,25 @@ export struct HomePage {
         if (result.status === AuthenticatedLocalSendStatus.PAUSED) {
           this.captureLocalHistoryText(text)
             .then(() => {
-              this.pasteStatus = '文本已保存到本机历史；同步当前已暂停';
-              this.setOutboundStatus(OutboundSendState.PAUSED, '同步已暂停', '本机记录已保存，当前策略禁止发送到桌面端。');
+              this.pasteStatus = this.resourceText('home_secure_paused_status');
+              this.setOutboundStatus(OutboundSendState.PAUSED,
+                this.resourceText('home_outbound_paused_title'), this.resourceText('home_secure_paused_desc'));
             });
           return;
         }
         this.captureLocalHistoryText(text)
           .then(() => {
-            this.pasteStatus = '正式同步处理失败，文本已保存到本机历史';
-            this.setOutboundStatus(OutboundSendState.FAILED, '正式同步处理失败', '本机记录已保留；请检查可信设备和 HUKS 空间密钥状态。');
+            this.pasteStatus = this.resourceText('home_secure_failed_status');
+            this.setOutboundStatus(OutboundSendState.FAILED,
+              this.resourceText('home_secure_failed_title'), this.resourceText('home_secure_failed_desc'));
           });
       })
       .catch(() => {
         this.captureLocalHistoryText(text)
           .then(() => {
-            this.pasteStatus = '正式同步处理失败，文本已保存到本机历史';
-            this.setOutboundStatus(OutboundSendState.FAILED, '正式同步处理失败', '本机记录已保留；请检查可信设备和 HUKS 空间密钥状态。');
+            this.pasteStatus = this.resourceText('home_secure_failed_status');
+            this.setOutboundStatus(OutboundSendState.FAILED,
+              this.resourceText('home_secure_failed_title'), this.resourceText('home_secure_failed_desc'));
           });
       });
   }
@@ -774,67 +801,72 @@ export struct HomePage {
 
   private async captureLocalHistoryText(text: string): Promise<boolean> {
     if (this.historyStore === null) {
-      this.historyStatus = '无法获取页面上下文，未保存本机历史';
-      this.setOutboundStatus(OutboundSendState.FAILED, '本机历史不可用', '无法获取页面上下文，未发送到桌面端。');
+      this.historyStatus = this.resourceText('home_history_context_failed');
+      this.setOutboundStatus(OutboundSendState.FAILED,
+        this.resourceText('home_history_unavailable_title'), this.resourceText('home_history_unavailable_desc'));
       return false;
     }
 
-    this.historyStatus = '正在保存本机历史';
-    this.setOutboundStatus(OutboundSendState.LOCAL, '正在确认本机记录', '本机记录处理完成后才会按同步策略尝试发送。');
+    this.historyStatus = this.resourceText('home_history_saving');
+    this.setOutboundStatus(OutboundSendState.LOCAL,
+      this.resourceText('home_history_confirming_title'), this.resourceText('home_history_confirming_desc'));
     return this.historyStore.captureLocalText(text)
       .then((snapshot: HistoryStoreSnapshot) => {
         this.historyUsed = snapshot.used;
         this.historyLimit = snapshot.limit;
         this.historyItems = snapshot.items;
-        this.historyStatus = snapshot.errorMessage === null ? '已保存到本机历史' :
+        this.historyStatus = snapshot.errorMessage === null ? this.resourceText('home_history_saved') :
           this.formatMessage(snapshot.errorMessage);
         if (snapshot.errorMessage !== null) {
-          this.setOutboundStatus(OutboundSendState.FAILED, '保存本机历史失败', '本机事务未确认成功，已停止发送。');
+          this.setOutboundStatus(OutboundSendState.FAILED,
+            this.resourceText('home_history_save_failed_title'), this.resourceText('home_history_save_failed_desc'));
           return false;
         }
-        this.setOutboundStatus(OutboundSendState.LOCAL, '本机记录已确认', '本机事务已完成，准备检查同步策略。');
+        this.setOutboundStatus(OutboundSendState.LOCAL,
+          this.resourceText('home_history_confirmed_title'), this.resourceText('home_history_confirmed_desc'));
         return true;
       })
       .catch(() => {
-        this.historyStatus = '保存本机历史失败';
-        this.setOutboundStatus(OutboundSendState.FAILED, '保存本机历史失败', '本机事务未确认成功，已停止发送。');
+        this.historyStatus = this.resourceText('home_history_save_failed_title');
+        this.setOutboundStatus(OutboundSendState.FAILED,
+          this.resourceText('home_history_save_failed_title'), this.resourceText('home_history_save_failed_desc'));
         return false;
       });
   }
 
   private copyLatestReceivedToLocal(): void {
     if (this.latestReceivedText.length === 0) {
-      this.copyStatus = '暂无可复制内容';
+      this.copyStatus = this.resourceText('home_copy_empty');
       return;
     }
 
-    this.copyStatus = '正在写入本机剪贴板';
+    this.copyStatus = this.resourceText('home_copy_writing');
     this.clipboardBridge.writePlainTextByUserAction(this.latestReceivedText)
       .then((result) => {
         this.copyStatus = this.formatMessage(result.message);
       })
       .catch(() => {
-        this.copyStatus = '写入本机剪贴板失败，请稍后重试';
+        this.copyStatus = this.resourceText('home_copy_write_failed');
       });
   }
 
   private loadHistorySummary(): void {
     if (this.historyStore === null) {
-      this.historyStatus = '无法获取页面上下文，历史摘要不可用';
+      this.historyStatus = this.resourceText('ui_history_load_failed');
       return;
     }
-    this.historyStatus = '正在读取本机历史摘要';
+    this.historyStatus = this.resourceText('home_history_loading');
     this.historyStore.loadSummary()
       .then((snapshot: HistoryStoreSnapshot) => {
         this.historyUsed = snapshot.used;
         this.historyLimit = snapshot.limit;
         this.historyItems = snapshot.items;
-        this.historyStatus = snapshot.errorMessage === null ? '只显示数量，不展示历史正文' :
+        this.historyStatus = snapshot.errorMessage === null ? this.resourceText('home_history_count_only') :
           this.formatMessage(snapshot.errorMessage);
       })
       .catch(() => {
         this.historyItems = [];
-        this.historyStatus = '读取历史摘要失败';
+        this.historyStatus = this.resourceText('home_history_load_failed_status');
       });
   }
 
@@ -854,8 +886,8 @@ export struct HomePage {
     this.retryingTrustedConnection = true;
     pairingConnectionStore.retryTrustedConnection()
       .catch(() => {
-        this.connectionTitle = '可信连接重试失败';
-        this.connectionDescription = '请检查桌面端是否运行、当前 Wi-Fi 和 Windows 防火墙设置。';
+        this.connectionTitle = this.resourceText('home_trusted_retry_failed_title');
+        this.connectionDescription = this.resourceText('home_trusted_retry_failed_desc');
       })
       .finally(() => {
         this.retryingTrustedConnection = false;
@@ -877,7 +909,7 @@ export struct HomePage {
     }
 
     this.deletingHistoryItemId = itemId;
-    this.historyStatus = '正在删除历史记录';
+    this.historyStatus = this.resourceText('home_history_deleting');
     this.historyStore.deleteItem(itemId)
       .then((snapshot: HistoryStoreSnapshot) => {
         this.historyUsed = snapshot.used;
@@ -885,11 +917,11 @@ export struct HomePage {
         this.historyItems = snapshot.items;
         this.historyActionsItemId = '';
         this.expandedHistoryItemId = '';
-        this.historyStatus = snapshot.errorMessage === null ? '已删除历史记录' :
+        this.historyStatus = snapshot.errorMessage === null ? this.resourceText('home_history_deleted') :
           this.formatMessage(snapshot.errorMessage);
       })
       .catch(() => {
-        this.historyStatus = '删除历史记录失败';
+        this.historyStatus = this.resourceText('home_history_delete_failed_status');
       })
       .finally(() => {
         this.deletingHistoryItemId = '';
@@ -902,7 +934,7 @@ export struct HomePage {
     }
 
     this.clearingHistory = true;
-    this.historyStatus = '正在清空本机历史';
+    this.historyStatus = this.resourceText('home_history_clearing');
     this.historyStore.clearAll()
       .then((snapshot: HistoryStoreSnapshot) => {
         this.historyUsed = snapshot.used;
@@ -910,11 +942,11 @@ export struct HomePage {
         this.historyItems = snapshot.items;
         this.historyActionsItemId = '';
         this.expandedHistoryItemId = '';
-        this.historyStatus = snapshot.errorMessage === null ? '已清空本机历史；不会修改系统剪贴板' :
+        this.historyStatus = snapshot.errorMessage === null ? this.resourceText('home_history_cleared') :
           this.formatMessage(snapshot.errorMessage);
       })
       .catch(() => {
-        this.historyStatus = '清空历史失败';
+        this.historyStatus = this.resourceText('home_history_clear_failed_status');
       })
       .finally(() => {
         this.clearingHistory = false;
@@ -925,7 +957,7 @@ export struct HomePage {
     this.outboundState = state;
     this.outboundTitle = title;
     this.outboundDescription = description;
-    this.outboundUpdatedAt = this.formatTime(Date.now());
+    this.outboundUpdatedAt = this.localizedFormatter.formatTime(Date.now());
   }
 
   private formatMessage(message: UiMessageDescriptor): string {
@@ -944,35 +976,30 @@ export struct HomePage {
     }
   }
 
-  private formatTime(milliseconds: number): string {
-    const date = new Date(milliseconds);
-    return `${this.padTime(date.getHours())}:${this.padTime(date.getMinutes())}:${this.padTime(date.getSeconds())}`;
-  }
-
-  private padTime(value: number): string {
-    return value < 10 ? `0${value}` : `${value}`;
+  private historyItemTitle(item: HistoryPreviewItem): string {
+    return this.resourceText('home_history_item_title', item.contentLength);
   }
 
   private outboundStateLabel(): string {
     if (this.outboundState === OutboundSendState.SENT) {
-      return '已发送';
+      return this.resourceText('home_outbound_state_sent');
     }
     if (this.outboundState === OutboundSendState.PENDING) {
-      return '发送中';
+      return this.resourceText('home_outbound_state_sending');
     }
     if (this.outboundState === OutboundSendState.WAITING) {
-      return '待连接';
+      return this.resourceText('home_outbound_state_waiting');
     }
     if (this.outboundState === OutboundSendState.FAILED) {
-      return '失败';
+      return this.resourceText('home_outbound_state_failed');
     }
     if (this.outboundState === OutboundSendState.PAUSED) {
-      return '已暂停';
+      return this.resourceText('home_outbound_state_paused');
     }
     if (this.outboundState === OutboundSendState.LOCAL) {
-      return '本机';
+      return this.resourceText('home_outbound_state_local');
     }
-    return '空闲';
+    return this.resourceText('home_outbound_state_idle');
   }
 
   private outboundStateColor(): ResourceColor {

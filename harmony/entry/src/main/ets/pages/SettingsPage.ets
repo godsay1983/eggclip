@@ -23,14 +23,16 @@ import {
   LanguageMode,
   LanguagePreferenceService
 } from '../services/localization/LanguagePreferenceService';
+import { LocalizedFormatter } from '../services/localization/LocalizedFormatter';
 
 @Component
 export struct SettingsPage {
   private settingsStore: SettingsStore | null = null;
   private messageFormatter: UiMessageFormatter | null = null;
   private languagePreferenceService: LanguagePreferenceService | null = null;
+  private readonly localizedFormatter: LocalizedFormatter = new LocalizedFormatter();
   @State private storeState: SettingsStoreState = SettingsStoreState.IDLE;
-  @State private statusText: string = '设置尚未加载';
+  @State private statusText: string = '';
   @State private syncEnabled: boolean = true;
   @State private autoReceiveEnabled: boolean = true;
   @State private autoWriteEnabled: boolean = false;
@@ -40,12 +42,12 @@ export struct SettingsPage {
   @State private themeMode: ThemeMode = ThemeMode.SYSTEM;
   @State private languageMode: LanguageMode = LanguageMode.SYSTEM;
   @State private languageReopenHintVisible: boolean = false;
-  @State private historyActionStatus: string = '清空历史只影响本机历史，不会修改系统剪贴板';
+  @State private historyActionStatus: string = '';
   @State private spaceKeyDiagnosticRunning: boolean = false;
-  @State private spaceKeyDiagnosticStatus: string = '配对成功后可运行 HUKS 空间密钥与摘要自检';
-  @State private spaceKeyDiagnosticDetail: string = '自检只使用固定测试文本，不读取或显示剪贴板内容。';
+  @State private spaceKeyDiagnosticStatus: string = '';
+  @State private spaceKeyDiagnosticDetail: string = '';
   @State private spaceKeyDiagnosticTone: number = 0;
-  @State private spaceKeyDiagnosticUpdatedAt: string = '尚未运行';
+  @State private spaceKeyDiagnosticUpdatedAt: string = '';
   @State private spaceKeyRecoveryRunning: boolean = false;
 
   aboutToAppear(): void {
@@ -53,7 +55,7 @@ export struct SettingsPage {
       const hostContext = this.getUIContext().getHostContext();
       if (hostContext === undefined) {
         this.storeState = SettingsStoreState.ERROR;
-        this.statusText = '无法获取页面上下文，设置不可用';
+        this.statusText = this.resourceText('settings_context_failed');
         return;
       }
       const context = hostContext as common.UIAbilityContext;
@@ -61,6 +63,11 @@ export struct SettingsPage {
       this.settingsStore = new SettingsStore(context);
       this.languagePreferenceService = new LanguagePreferenceService();
       this.languageMode = this.languagePreferenceService.loadMode();
+      this.statusText = this.resourceText('settings_not_loaded');
+      this.historyActionStatus = this.resourceText('settings_history_clear_notice');
+      this.spaceKeyDiagnosticStatus = this.resourceText('settings_self_test_intro');
+      this.spaceKeyDiagnosticDetail = this.resourceText('settings_self_test_privacy');
+      this.spaceKeyDiagnosticUpdatedAt = this.resourceText('settings_not_run');
     }
     this.loadSettings();
   }
@@ -157,7 +164,8 @@ export struct SettingsPage {
 
       this.HistoryEnabledRow()
 
-      Text(`历史数量：${this.historyLimit === 0 ? '不保存' : `${this.historyLimit} 条`}`)
+      Text(this.resourceText('settings_history_limit', this.historyLimit === 0 ?
+        this.resourceText('common_not_saved') : this.pluralText('settings_history_items_plural', this.historyLimit)))
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
         .width('100%')
@@ -169,7 +177,8 @@ export struct SettingsPage {
       }
       .width('100%')
 
-      Text(`最长保留：${this.retentionDays === 0 ? '不限' : `${this.retentionDays} 天`}`)
+      Text(this.resourceText('settings_retention', this.retentionDays === 0 ?
+        this.resourceText('common_unlimited') : this.pluralText('settings_retention_days_plural', this.retentionDays)))
         .fontSize(EggClipTypography.captionSize)
         .fontColor(EggClipColors.textSecondary)
         .width('100%')
@@ -560,22 +569,22 @@ export struct SettingsPage {
       return;
     }
     this.storeState = SettingsStoreState.LOADING;
-    this.statusText = '正在读取本机设置';
+    this.statusText = this.resourceText('settings_loading');
     this.settingsStore.load()
       .then((snapshot: SettingsStoreSnapshot) => {
         this.applySnapshot(snapshot);
         this.statusText = snapshot.state === SettingsStoreState.ERROR && snapshot.errorMessage !== null ?
-          this.formatMessage(snapshot.errorMessage) : '设置已从本机 RDB 读取';
+          this.formatMessage(snapshot.errorMessage) : this.resourceText('settings_loaded');
       })
       .catch(() => {
         this.storeState = SettingsStoreState.ERROR;
-        this.statusText = '读取设置失败';
+        this.statusText = this.resourceText('settings_load_failed');
       });
   }
 
   private saveCurrentSettings(): void {
     if (this.settingsStore === null) {
-      this.statusText = '设置服务未初始化';
+      this.statusText = this.resourceText('settings_service_unavailable');
       return;
     }
     const settings: AppSettings = {
@@ -588,69 +597,69 @@ export struct SettingsPage {
       themeMode: this.themeMode
     };
     this.storeState = SettingsStoreState.SAVING;
-    this.statusText = '正在保存设置';
+    this.statusText = this.resourceText('settings_saving');
     this.settingsStore.save(settings)
       .then((snapshot: SettingsStoreSnapshot) => {
         this.applySnapshot(snapshot);
         this.statusText = snapshot.state === SettingsStoreState.ERROR && snapshot.errorMessage !== null ?
-          this.formatMessage(snapshot.errorMessage) : '设置已保存到本机';
+          this.formatMessage(snapshot.errorMessage) : this.resourceText('settings_saved');
       })
       .catch(() => {
         this.storeState = SettingsStoreState.ERROR;
-        this.statusText = '保存设置失败';
+        this.statusText = this.resourceText('settings_save_failed_status');
       });
   }
 
   private clearLocalHistory(): void {
     if (this.settingsStore === null) {
-      this.historyActionStatus = '设置服务未初始化，无法清空历史';
+      this.historyActionStatus = this.resourceText('settings_clear_service_unavailable');
       return;
     }
     this.storeState = SettingsStoreState.SAVING;
-    this.historyActionStatus = '正在清空本机历史';
+    this.historyActionStatus = this.resourceText('settings_history_clearing');
     this.settingsStore.clearLocalHistory()
       .then((snapshot: SettingsStoreSnapshot) => {
         this.applySnapshot(snapshot);
         this.historyActionStatus = snapshot.state === SettingsStoreState.ERROR && snapshot.errorMessage !== null
           ? this.formatMessage(snapshot.errorMessage)
-          : '已清空本机历史；系统剪贴板不受影响';
+          : this.resourceText('settings_history_cleared');
         this.statusText = snapshot.state === SettingsStoreState.ERROR && snapshot.errorMessage !== null
           ? this.formatMessage(snapshot.errorMessage)
-          : '本机历史已清空';
+          : this.resourceText('settings_history_cleared_short');
       })
       .catch(() => {
         this.storeState = SettingsStoreState.ERROR;
-        this.historyActionStatus = '清空历史失败';
-        this.statusText = '清空历史失败';
+        this.historyActionStatus = this.resourceText('settings_history_clear_failed_status');
+        this.statusText = this.resourceText('settings_history_clear_failed_status');
       });
   }
 
   private runSpaceKeySelfTest(): void {
     if (this.settingsStore === null) {
-      this.spaceKeyDiagnosticStatus = '设置服务未初始化，无法运行自检';
-      this.spaceKeyDiagnosticDetail = '请重新打开设置页后再试。';
+      this.spaceKeyDiagnosticStatus = this.resourceText('settings_self_test_unavailable');
+      this.spaceKeyDiagnosticDetail = this.resourceText('settings_reopen_retry');
       this.spaceKeyDiagnosticTone = 3;
-      this.spaceKeyDiagnosticUpdatedAt = this.formatDiagnosticTime(new Date());
+      this.spaceKeyDiagnosticUpdatedAt = this.localizedFormatter.formatTime(Date.now());
       return;
     }
     this.spaceKeyDiagnosticRunning = true;
     this.spaceKeyDiagnosticTone = 1;
-    this.spaceKeyDiagnosticStatus = '正在自检';
-      this.spaceKeyDiagnosticDetail = '正在使用已保存的空间密钥引用进行固定文本加解密和 HMAC 摘要校验。';
-    this.spaceKeyDiagnosticUpdatedAt = this.formatDiagnosticTime(new Date());
+    this.spaceKeyDiagnosticStatus = this.resourceText('settings_self_test_running');
+    this.spaceKeyDiagnosticDetail = this.resourceText('settings_self_test_running_desc');
+    this.spaceKeyDiagnosticUpdatedAt = this.localizedFormatter.formatTime(Date.now());
     this.settingsStore.runSpaceKeyCryptoSelfTest()
       .then((result: SpaceKeyCryptoSelfTestResult) => {
         this.spaceKeyDiagnosticStatus = this.describeSpaceKeySelfTest(result);
         this.spaceKeyDiagnosticDetail = this.describeSpaceKeySelfTestDetail(result);
         this.spaceKeyDiagnosticTone = result.ok ? 2 : 3;
-        this.spaceKeyDiagnosticUpdatedAt = this.formatDiagnosticTime(new Date());
+        this.spaceKeyDiagnosticUpdatedAt = this.localizedFormatter.formatTime(Date.now());
         this.spaceKeyDiagnosticRunning = false;
       })
       .catch(() => {
-        this.spaceKeyDiagnosticStatus = '空间密钥自检异常';
-        this.spaceKeyDiagnosticDetail = '自检流程出现未分类异常，未读取或展示任何密钥材料。';
+        this.spaceKeyDiagnosticStatus = this.resourceText('settings_self_test_exception');
+        this.spaceKeyDiagnosticDetail = this.resourceText('settings_self_test_exception_desc');
         this.spaceKeyDiagnosticTone = 3;
-        this.spaceKeyDiagnosticUpdatedAt = this.formatDiagnosticTime(new Date());
+        this.spaceKeyDiagnosticUpdatedAt = this.localizedFormatter.formatTime(Date.now());
         this.spaceKeyDiagnosticRunning = false;
       });
   }
@@ -680,98 +689,99 @@ export struct SettingsPage {
     }
     this.spaceKeyRecoveryRunning = true;
     this.spaceKeyDiagnosticTone = 1;
-    this.spaceKeyDiagnosticStatus = '正在重新初始化配对安全状态';
-    this.spaceKeyDiagnosticDetail = '正在删除本机 HUKS 空间密钥并清理配对记录。';
-    this.spaceKeyDiagnosticUpdatedAt = this.formatDiagnosticTime(new Date());
+    this.spaceKeyDiagnosticStatus = this.resourceText('settings_recovery_running');
+    this.spaceKeyDiagnosticDetail = this.resourceText('settings_recovery_running_desc');
+    this.spaceKeyDiagnosticUpdatedAt = this.localizedFormatter.formatTime(Date.now());
     pairingConnectionStore.close();
     this.settingsStore.reinitializePairingSecurityState()
       .then((result: SpaceKeyRecoveryResult) => {
         this.spaceKeyRecoveryRunning = false;
-        this.spaceKeyDiagnosticUpdatedAt = this.formatDiagnosticTime(new Date());
+        this.spaceKeyDiagnosticUpdatedAt = this.localizedFormatter.formatTime(Date.now());
         if (result.ok) {
           this.spaceKeyDiagnosticTone = 2;
-          this.spaceKeyDiagnosticStatus = '配对安全状态已重新初始化';
-          const invalidHint = result.invalidKeyRefs > 0 ? `；忽略 ${result.invalidKeyRefs} 条已损坏且无法定位 HUKS 别名的引用` : '';
-          this.spaceKeyDiagnosticDetail = `已清理 ${result.clearedKeyRefs} 组 HUKS 空间密钥和本机配对数据${invalidHint}，请重新配对。`;
+          this.spaceKeyDiagnosticStatus = this.resourceText('settings_recovery_success');
+          this.spaceKeyDiagnosticDetail = result.invalidKeyRefs > 0 ?
+            this.resourceText('settings_recovery_success_invalid_desc', result.clearedKeyRefs, result.invalidKeyRefs) :
+            this.resourceText('settings_recovery_success_desc', result.clearedKeyRefs);
           return;
         }
         this.spaceKeyDiagnosticTone = 3;
-        this.spaceKeyDiagnosticStatus = '重新初始化失败';
+        this.spaceKeyDiagnosticStatus = this.resourceText('settings_recovery_failed');
         this.spaceKeyDiagnosticDetail = this.describeSpaceKeyRecoveryFailure(result);
       })
       .catch(() => {
         this.spaceKeyRecoveryRunning = false;
         this.spaceKeyDiagnosticTone = 3;
-        this.spaceKeyDiagnosticStatus = '重新初始化失败';
-        this.spaceKeyDiagnosticDetail = '恢复流程发生异常；未生成或展示任何密钥材料，请重启应用后重试。';
-        this.spaceKeyDiagnosticUpdatedAt = this.formatDiagnosticTime(new Date());
+        this.spaceKeyDiagnosticStatus = this.resourceText('settings_recovery_failed');
+        this.spaceKeyDiagnosticDetail = this.resourceText('settings_recovery_exception_desc');
+        this.spaceKeyDiagnosticUpdatedAt = this.localizedFormatter.formatTime(Date.now());
       });
   }
 
   private describeSpaceKeyRecoveryFailure(result: SpaceKeyRecoveryResult): string {
     if (result.error === SpaceKeyRecoveryError.STORE_READ_FAILED) {
-      return '无法读取同步空间密钥引用，数据库尚未修改。';
+      return this.resourceText('settings_recovery_read_failed');
     }
     if (result.error === SpaceKeyRecoveryError.HUKS_DELETE_FAILED) {
-      return `HUKS 密钥清理失败（阶段：${result.field ?? 'deleteSpaceKey'}），配对数据库尚未清除，可重启后重试。`;
+      return this.resourceText('settings_recovery_huks_failed', result.field ?? 'deleteSpaceKey');
     }
     if (result.error === SpaceKeyRecoveryError.STORE_RESET_FAILED) {
-      return 'HUKS 空间密钥已清理，但配对数据库重置失败；请重启应用后再次执行重新初始化。';
+      return this.resourceText('settings_recovery_store_failed');
     }
-    return '重新初始化未完成，请重启应用后重试。';
+    return this.resourceText('settings_recovery_incomplete');
   }
 
   private describeSpaceKeySelfTest(result: SpaceKeyCryptoSelfTestResult): string {
     if (result.ok) {
-      return 'HUKS 空间密钥加解密与摘要自检通过';
+      return this.resourceText('settings_self_test_passed');
     }
     if (result.error === SpaceKeyCryptoSelfTestError.NO_SPACE_KEY) {
-      return '未找到已配对的同步空间密钥引用';
+      return this.resourceText('settings_self_test_no_key');
     }
     if (result.error === SpaceKeyCryptoSelfTestError.ENCRYPT_FAILED) {
-      return 'HUKS 空间密钥加密自检失败';
+      return this.resourceText('settings_self_test_encrypt_failed');
     }
     if (result.error === SpaceKeyCryptoSelfTestError.DECRYPT_FAILED) {
-      return 'HUKS 空间密钥解密自检失败';
+      return this.resourceText('settings_self_test_decrypt_failed');
     }
     if (result.error === SpaceKeyCryptoSelfTestError.PLAINTEXT_MISMATCH) {
-      return 'HUKS 空间密钥自检结果不一致';
+      return this.resourceText('settings_self_test_mismatch');
     }
     if (result.error === SpaceKeyCryptoSelfTestError.HMAC_FAILED) {
-      return 'HUKS 空间密钥摘要自检失败';
+      return this.resourceText('settings_self_test_hmac_failed');
     }
     if (result.error === SpaceKeyCryptoSelfTestError.STORE_FAILED) {
-      return '读取同步空间密钥引用失败';
+      return this.resourceText('settings_self_test_store_failed');
     }
-    return '空间密钥自检失败';
+    return this.resourceText('settings_self_test_failed');
   }
 
   private describeSpaceKeySelfTestDetail(result: SpaceKeyCryptoSelfTestResult): string {
     if (result.ok) {
       if (result.hmacConfirmationCode !== undefined) {
-        return `已完成加解密与 HMAC 校验。跨端确认码：${result.hmacConfirmationCode}；与桌面端一致即表示空间密钥 HMAC 互通。`;
+        return this.resourceText('settings_self_test_code_desc', result.hmacConfirmationCode);
       }
-      return '已完成固定文本加密、解密和一致性校验；未展示密钥或完整摘要。';
+      return this.resourceText('settings_self_test_passed_desc');
     }
     if (result.error === SpaceKeyCryptoSelfTestError.NO_SPACE_KEY) {
-      return '请先完成一次桌面端配对，让本机保存同步空间密钥引用。';
+      return this.resourceText('settings_self_test_pair_first');
     }
     if (result.error === SpaceKeyCryptoSelfTestError.ENCRYPT_FAILED) {
-      return `失败阶段：${result.field ?? 'encryptBase64Url'}。`;
+      return this.resourceText('settings_self_test_stage', result.field ?? 'encryptBase64Url');
     }
     if (result.error === SpaceKeyCryptoSelfTestError.DECRYPT_FAILED) {
-      return `失败阶段：${result.field ?? 'decryptBase64Url'}。`;
+      return this.resourceText('settings_self_test_stage', result.field ?? 'decryptBase64Url');
     }
     if (result.error === SpaceKeyCryptoSelfTestError.PLAINTEXT_MISMATCH) {
-      return '加解密往返完成，但解密结果与固定测试文本不一致。';
+      return this.resourceText('settings_self_test_mismatch_desc');
     }
     if (result.error === SpaceKeyCryptoSelfTestError.HMAC_FAILED) {
-      return `摘要失败阶段：${result.field ?? 'hmacSha256Base64Url'}。请重新配对后重试。`;
+      return this.resourceText('settings_self_test_hmac_stage', result.field ?? 'hmacSha256Base64Url');
     }
     if (result.error === SpaceKeyCryptoSelfTestError.STORE_FAILED) {
-      return '读取本机同步空间记录失败，请检查数据库状态或重新配对。';
+      return this.resourceText('settings_self_test_store_desc');
     }
-    return '自检失败，未读取或展示任何密钥材料。';
+    return this.resourceText('settings_self_test_safe_failure');
   }
 
   private spaceKeyDiagnosticColor(): ResourceColor {
@@ -785,14 +795,6 @@ export struct SettingsPage {
       return EggClipColors.statusError;
     }
     return EggClipColors.textSecondary;
-  }
-
-  private formatDiagnosticTime(date: Date): string {
-    return `${this.pad2(date.getHours())}:${this.pad2(date.getMinutes())}:${this.pad2(date.getSeconds())}`;
-  }
-
-  private pad2(value: number): string {
-    return value < 10 ? `0${value}` : `${value}`;
   }
 
   private applySnapshot(snapshot: SettingsStoreSnapshot): void {
@@ -836,6 +838,16 @@ export struct SettingsPage {
     }
     try {
       return hostContext.resourceManager.getStringByNameSync(name, ...args);
+    } catch (_) {
+      return name;
+    }
+  }
+
+  private pluralText(name: string, count: number): string {
+    const hostContext = this.getUIContext().getHostContext();
+    if (hostContext === undefined) return name;
+    try {
+      return hostContext.resourceManager.getIntPluralStringByNameSync(name, count, count);
     } catch (_) {
       return name;
     }

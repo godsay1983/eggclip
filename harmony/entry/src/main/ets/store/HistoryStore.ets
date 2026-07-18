@@ -41,10 +41,9 @@ export interface HistoryStoreSnapshot {
 
 export interface HistoryPreviewItem {
   id: string;
-  title: string;
   preview: string;
-  source: string;
-  receivedAt: string;
+  originDeviceId: string;
+  receivedAtMs: number;
   text: string;
   canCopy: boolean;
   contentLength: number;
@@ -189,10 +188,9 @@ export function createInitialHistorySnapshot(): HistoryStoreSnapshot {
 function toHistoryPreviewItem(record: ClipboardItemRecord, text: string): HistoryPreviewItem {
   return {
     id: record.item.itemId,
-    title: `${record.item.contentLength} 字节文本`,
-    preview: text.length > 0 ? trimPreview(text) : '内容暂不可用',
-    source: `来源设备 ${record.item.originDeviceId.slice(0, 8)}`,
-    receivedAt: formatTime(record.receivedAt),
+    preview: text.length > 0 ? trimPreview(text) : '',
+    originDeviceId: record.item.originDeviceId,
+    receivedAtMs: record.receivedAt,
     text,
     canCopy: text.length > 0,
     contentLength: record.item.contentLength
@@ -201,18 +199,6 @@ function toHistoryPreviewItem(record: ClipboardItemRecord, text: string): Histor
 
 function trimPreview(text: string): string {
   return text.length > 180 ? `${text.slice(0, 180)}…` : text;
-}
-
-function formatTime(milliseconds: number): string {
-  const date = new Date(milliseconds);
-  const hours = padTime(date.getHours());
-  const minutes = padTime(date.getMinutes());
-  const seconds = padTime(date.getSeconds());
-  return `${hours}:${minutes}:${seconds}`;
-}
-
-function padTime(value: number): string {
-  return value < 10 ? `0${value}` : `${value}`;
 }
 
 function localHistoryDigest(): string {

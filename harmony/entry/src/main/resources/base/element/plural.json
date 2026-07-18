@@ -1,0 +1,46 @@
+{
+  "plural": [
+    {
+      "name": "pairing_seconds_plural",
+      "value": [
+        { "quantity": "one", "value": "%d second" },
+        { "quantity": "other", "value": "%d seconds" }
+      ]
+    },
+    {
+      "name": "pairing_candidates_plural",
+      "value": [
+        { "quantity": "one", "value": "%d candidate" },
+        { "quantity": "other", "value": "%d candidates" }
+      ]
+    },
+    {
+      "name": "settings_history_items_plural",
+      "value": [
+        { "quantity": "one", "value": "%d item" },
+        { "quantity": "other", "value": "%d items" }
+      ]
+    },
+    {
+      "name": "settings_retention_days_plural",
+      "value": [
+        { "quantity": "one", "value": "%d day" },
+        { "quantity": "other", "value": "%d days" }
+      ]
+    },
+    {
+      "name": "devices_candidates_connect_plural",
+      "value": [
+        { "quantity": "one", "value": "%d candidate found. Tap Connect." },
+        { "quantity": "other", "value": "%d candidates found. Tap Connect." }
+      ]
+    },
+    {
+      "name": "devices_summary_candidates_plural",
+      "value": [
+        { "quantity": "one", "value": "%d desktop found; expand to choose it" },
+        { "quantity": "other", "value": "%d desktops found; expand to choose one" }
+      ]
+    }
+  ]
+}

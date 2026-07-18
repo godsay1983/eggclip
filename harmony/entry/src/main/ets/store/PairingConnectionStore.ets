@@ -101,8 +101,8 @@ export interface PairingConnectionSnapshot {
   clientHelloSent: boolean;
   authProofSent: boolean;
   latestReceivedText: string;
-  latestReceivedSource: string;
-  latestReceivedAt: string;
+  latestReceivedSource: UiMessageDescriptor;
+  latestReceivedAtMs: number;
   latestReceivedByteLength: number;
   historyRevision: number;
   pendingOutboundCount: number;
@@ -211,15 +211,15 @@ class PairingConnectionStore {
   private state: PairingConnectionState = PairingConnectionState.IDLE;
   private manualHost: string = '127.0.0.1';
   private manualPort: string = '0';
-  private endpointLabel: string = '未设置';
+  private endpointLabel: string = '';
   private title: UiMessageDescriptor = uiMessage(UiMessageCode.CONNECTION_WAITING_TITLE);
   private description: UiMessageDescriptor = uiMessage(UiMessageCode.CONNECTION_WAITING_DESCRIPTION);
   private lastError: UiMessageDescriptor | null = null;
   private clientHelloSent: boolean = false;
   private authProofSent: boolean = false;
   private latestReceivedText: string = '';
-  private latestReceivedSource: string = '';
-  private latestReceivedAt: string = '';
+  private latestReceivedSource: UiMessageDescriptor = uiMessage(UiMessageCode.SOURCE_NONE);
+  private latestReceivedAtMs: number = 0;
   private latestReceivedByteLength: number = 0;
   private historyRevision: number = 0;
   private pendingOutboundCount: number = 0;
@@ -277,8 +277,8 @@ class PairingConnectionStore {
       clientHelloSent: this.clientHelloSent,
       authProofSent: this.authProofSent,
       latestReceivedText: this.latestReceivedText,
-      latestReceivedSource: this.latestReceivedSource,
-      latestReceivedAt: this.latestReceivedAt,
+      latestReceivedSource: cloneUiMessage(this.latestReceivedSource),
+      latestReceivedAtMs: this.latestReceivedAtMs,
       latestReceivedByteLength: this.latestReceivedByteLength,
       historyRevision: this.historyRevision,
       pendingOutboundCount: this.pendingOutboundCount,
@@ -290,8 +290,7 @@ class PairingConnectionStore {
   updateEndpoint(host: string, portText: string): PairingConnectionSnapshot {
     this.manualHost = host;
     this.manualPort = portText;
-    const port = portText.length > 0 ? portText : '未设置';
-    this.endpointLabel = `${host}:${port}`;
+    this.endpointLabel = host.length > 0 && portText.length > 0 ? `${host}:${portText}` : '';
     this.emit();
     return this.snapshot();
   }
@@ -695,8 +694,10 @@ class PairingConnectionStore {
       if (received.status === InboundItemLiveStatus.STORED) {
         if (parsedItem !== undefined) {
           this.latestReceivedText = parsedItem.content;
-          this.latestReceivedSource = `桌面端 #${shortId(parsedItem.originDeviceId)}`;
-          this.latestReceivedAt = formatClockTime(Date.now());
+          this.latestReceivedSource = uiMessage(UiMessageCode.SOURCE_DESKTOP_DEVICE, [
+            uiParameter(UiMessageParameterName.DEVICE_SHORT_ID, shortId(parsedItem.originDeviceId))
+          ]);
+          this.latestReceivedAtMs = Date.now();
           this.latestReceivedByteLength = parsedItem.contentLength;
         }
         this.historyRevision += 1;
@@ -709,8 +710,10 @@ class PairingConnectionStore {
       if (received.status === InboundItemLiveStatus.RELAYED) {
         if (parsedItem !== undefined) {
           this.latestReceivedText = parsedItem.content;
-          this.latestReceivedSource = `同空间设备 #${shortId(parsedItem.originDeviceId)}`;
-          this.latestReceivedAt = formatClockTime(Date.now());
+          this.latestReceivedSource = uiMessage(UiMessageCode.SOURCE_SPACE_DEVICE, [
+            uiParameter(UiMessageParameterName.DEVICE_SHORT_ID, shortId(parsedItem.originDeviceId))
+          ]);
+          this.latestReceivedAtMs = Date.now();
           this.latestReceivedByteLength = parsedItem.contentLength;
         }
         this.markAuthenticatedActivity();
@@ -1400,14 +1403,6 @@ function nextMessageId(): string {
 
 function shortId(value: string): string {
   return value.length >= 8 ? value.slice(0, 8) : value;
-}
-
-function formatClockTime(milliseconds: number): string {
-  const date = new Date(milliseconds);
-  const hours = date.getHours().toString().padStart(2, '0');
-  const minutes = date.getMinutes().toString().padStart(2, '0');
-  const seconds = date.getSeconds().toString().padStart(2, '0');
-  return `${hours}:${minutes}:${seconds}`;
 }
 
 function failedPersist(failureStage: string): PairingCompletionPersistResult {

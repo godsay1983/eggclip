@@ -103,16 +103,16 @@
 
 完成标准：HarmonyOS 冷启动后使用选择的语言，应用名称、权限原因、导航和静态页面没有混合语言。
 
-### [ ] I18N-06 完成 HarmonyOS 动态文案和格式化
+### [x] I18N-06 完成 HarmonyOS 动态文案和格式化
 
-- [ ] PairingConnectionStore、PocConnectionStore、PairingStore 状态全部改为 code。
-- [ ] HistoryStore、TrustedDeviceStore、SettingsStore 状态全部改为 code。
-- [ ] 发现、WebSocket、剪贴板、配对和 HUKS 用户错误映射到资源。
-- [ ] 动态设备数量、历史数量、过期时间和日期时间按当前语言格式化。
-- [ ] 页面不拼接可翻译句子，资源占位参数在中英文中一致。
-- [ ] 配对、重连、网络失败、认证失败和安全自检在两种语言下可读且可操作。
-- [ ] ArkTS 单元测试不依赖某一句中文，改为断言状态码和参数。
-- [ ] `hvigorw test` 和 `assembleHap` 通过，手机和平板英文长文案不破坏布局。
+- [x] PairingConnectionStore、PocConnectionStore、PairingStore 状态全部改为 code。
+- [x] HistoryStore、TrustedDeviceStore、SettingsStore 状态全部改为 code。
+- [x] 发现、WebSocket、剪贴板、配对和 HUKS 用户错误映射到资源。
+- [x] 动态设备数量、历史数量、过期时间和日期时间按当前语言格式化。
+- [x] 页面不拼接可翻译句子，资源占位参数在中英文中一致。
+- [x] 配对、重连、网络失败、认证失败和安全自检在两种语言下可读且可操作。
+- [x] ArkTS 单元测试不依赖某一句中文，改为断言状态码和参数。
+- [x] `hvigorw test` 和 `assembleHap` 通过，手机和平板英文长文案不破坏布局。
 
 完成标准：HarmonyOS 的静态和动态界面完整支持中英文，Store、Service 与显示语言解耦。
 

@@ -88,7 +88,11 @@ export enum UiMessageCode {
   POC_DISCONNECTED = 'ui_poc_disconnected',
   POC_RECENT_MISSING = 'ui_poc_recent_missing',
   POC_BACKGROUND = 'ui_poc_background',
-  POC_DIAGNOSTICS = 'ui_poc_diagnostics'
+  POC_DIAGNOSTICS = 'ui_poc_diagnostics',
+  SOURCE_NONE = 'ui_source_none',
+  SOURCE_DESKTOP = 'ui_source_desktop',
+  SOURCE_DESKTOP_DEVICE = 'ui_source_desktop_device',
+  SOURCE_SPACE_DEVICE = 'ui_source_space_device'
 }
 
 export enum UiMessageParameterName {
@@ -99,7 +103,8 @@ export enum UiMessageParameterName {
   VERSION = 'version',
   STORED_COUNT = 'storedCount',
   DUPLICATE_COUNT = 'duplicateCount',
-  GAP_COUNT = 'gapCount'
+  GAP_COUNT = 'gapCount',
+  DEVICE_SHORT_ID = 'deviceShortId'
 }
 
 export interface UiMessageParameter {
@@ -152,5 +157,6 @@ function isSafeParameterName(name: string): boolean {
     name === UiMessageParameterName.VERSION ||
     name === UiMessageParameterName.STORED_COUNT ||
     name === UiMessageParameterName.DUPLICATE_COUNT ||
-    name === UiMessageParameterName.GAP_COUNT;
+    name === UiMessageParameterName.GAP_COUNT ||
+    name === UiMessageParameterName.DEVICE_SHORT_ID;
 }

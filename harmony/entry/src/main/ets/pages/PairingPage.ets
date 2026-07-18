@@ -93,7 +93,7 @@ export struct PairingPage {
       if (this.snapshot.summary === null) {
         TextInput({
           text: this.invitationInputText,
-          placeholder: '粘贴 eggclip://pair?p=...'
+          placeholder: $r('app.string.pairing_input_placeholder')
         })
           .width('100%')
           .backgroundColor(EggClipColors.controlBackground)
@@ -137,10 +137,10 @@ export struct PairingPage {
                       this.pasteImportStatus = this.formatMessage(readResult.message);
                       return;
                     }
-                    this.importInvitationText(readResult.text, '已从剪贴板读取并校验邀请');
+                    this.importInvitationText(readResult.text, this.resourceText('pairing_imported_clipboard'));
                   })
                   .catch(() => {
-                    this.pasteImportStatus = '读取剪贴板失败，请确认当前内容是纯文本邀请';
+                    this.pasteImportStatus = this.resourceText('pairing_import_clipboard_failed');
                   });
               })
           }
@@ -223,7 +223,8 @@ export struct PairingPage {
         `#${summary.spaceShortId} · key v${summary.spaceKeyVersion}`)
       this.SummaryRow($r('app.string.pairing_issuer_device'),
         `${summary.issuerDeviceName} · #${summary.issuerShortFingerprint}`)
-      this.SummaryRow($r('app.string.pairing_time_remaining'), `${summary.expiresInSeconds} 秒`)
+      this.SummaryRow($r('app.string.pairing_time_remaining'),
+        this.pluralText('pairing_seconds_plural', summary.expiresInSeconds))
 
       if (summary.endpoints.length > 0) {
         this.ConnectionCandidateSelector(summary)
@@ -288,7 +289,7 @@ export struct PairingPage {
           .fontColor(EggClipColors.textPrimary)
           .layoutWeight(1)
 
-        Text(`${summary.endpoints.length} 个候选`)
+        Text(this.pluralText('pairing_candidates_plural', summary.endpoints.length))
           .fontSize(10)
           .fontColor(EggClipColors.textSecondary)
       }
@@ -308,7 +309,7 @@ export struct PairingPage {
               .borderRadius(16)
               .onClick(() => {
                 this.connectionSnapshot = pairingConnectionStore.updateEndpoint(endpoint.host, `${endpoint.port}`);
-                this.pasteImportStatus = `已选择桌面端地址 ${endpoint.host}:${endpoint.port}`;
+                this.pasteImportStatus = this.resourceText('pairing_endpoint_selected', `${endpoint.host}:${endpoint.port}`);
               })
           }, (endpoint: PairingConnectionEndpoint) => `${endpoint.host}:${endpoint.port}`)
         }
@@ -457,18 +458,18 @@ export struct PairingPage {
 
   private statusBadgeText(): string {
     if (this.snapshot.state === PairingStoreState.COMPLETED) {
-      return '配对完成';
+      return this.resourceText('pairing_badge_completed');
     }
     if (this.snapshot.state === PairingStoreState.READY) {
-      return '有效邀请';
+      return this.resourceText('pairing_badge_valid');
     }
     if (this.snapshot.state === PairingStoreState.PENDING) {
-      return '待握手';
+      return this.resourceText('pairing_badge_pending');
     }
     if (this.snapshot.state === PairingStoreState.ERROR) {
-      return '校验失败';
+      return this.resourceText('pairing_badge_invalid');
     }
-    return '待校验';
+    return this.resourceText('pairing_badge_unvalidated');
   }
 
   private statusColor(): ResourceColor {
@@ -489,46 +490,47 @@ export struct PairingPage {
 
   private connectionBadgeText(): string {
     if (this.isAuthenticatedConnection()) {
-      return this.connectionSnapshot.syncReady ? '已就绪' : '初始化中';
+      return this.connectionSnapshot.syncReady ? this.resourceText('pairing_connection_ready') :
+        this.resourceText('pairing_connection_initializing');
     }
     if (this.connectionSnapshot.state === PairingConnectionState.FAILED) {
-      return '失败';
+      return this.resourceText('common_failed');
     }
     if (this.connectionSnapshot.state === PairingConnectionState.CLIENT_HELLO_SENT ||
       this.connectionSnapshot.state === PairingConnectionState.WAITING_AUTH_OK) {
-      return '握手中';
+      return this.resourceText('pairing_connection_handshaking');
     }
     if (this.connectionSnapshot.state === PairingConnectionState.CONNECTING ||
       this.connectionSnapshot.state === PairingConnectionState.PREPARING) {
-      return '连接中';
+      return this.resourceText('common_connecting');
     }
-    return '待连接';
+    return this.resourceText('pairing_connection_waiting');
   }
 
   private connectionButtonText(): string {
     if (this.isAuthenticatedConnection()) {
-      return '已认证连接';
+      return this.resourceText('pairing_button_authenticated');
     }
     if (this.snapshot.state !== PairingStoreState.PENDING) {
-      return '先确认六位码';
+      return this.resourceText('pairing_button_compare_code');
     }
     if (this.connectionSnapshot.state === PairingConnectionState.FAILED) {
-      return '重试配对握手';
+      return this.resourceText('pairing_button_retry_handshake');
     }
     if (this.pairingCompleted) {
-      return '邀请已完成配对';
+      return this.resourceText('pairing_button_completed');
     }
-    return '连接并发送握手';
+    return this.resourceText('pairing_button_send_handshake');
   }
 
   private invitationConfirmButtonText(): string {
     if (this.isAuthenticatedConnection()) {
-      return '已连接，无需重复配对';
+      return this.resourceText('pairing_confirm_already_connected');
     }
     if (this.snapshot.state === PairingStoreState.PENDING) {
-      return '已确认，正在连接桌面端';
+      return this.resourceText('pairing_confirm_connecting');
     }
-    return '确认码一致，连接所选地址';
+    return this.resourceText('pairing_confirm_selected');
   }
 
   private canConfirmInvitation(): boolean {
@@ -538,10 +540,10 @@ export struct PairingPage {
 
   private connectionDescriptionText(): string {
     if (this.isAuthenticatedConnection()) {
-      return '认证会话已建立，当前无需再次发送配对握手。';
+      return this.resourceText('pairing_desc_authenticated');
     }
     if (this.snapshot.state !== PairingStoreState.PENDING) {
-      return '首次配对请先核对六位确认码；已经配对过的设备可直接使用下方按钮恢复可信连接。';
+      return this.resourceText('pairing_desc_compare');
     }
     return this.formatMessage(this.connectionSnapshot.description);
   }
@@ -582,12 +584,12 @@ export struct PairingPage {
 
   private startPairingConnection(): void {
     if (this.snapshot.state !== PairingStoreState.PENDING) {
-      this.pasteImportStatus = '请先核对六位确认码，并点击“确认码一致，继续配对”';
+      this.pasteImportStatus = this.resourceText('pairing_compare_required');
       return;
     }
     const hostContext = this.getUIContext().getHostContext();
     if (hostContext === undefined) {
-      this.pasteImportStatus = '无法连接桌面端：未获取到页面上下文';
+      this.pasteImportStatus = this.resourceText('pairing_context_connect_failed');
       return;
     }
     pairingConnectionStore.initialize(hostContext as common.Context);
@@ -598,14 +600,14 @@ export struct PairingPage {
       })
       .catch(() => {
         this.pairingHandshakeInFlight = false;
-        this.pasteImportStatus = '配对连接异常，请检查桌面端地址、端口和邀请是否仍有效';
+        this.pasteImportStatus = this.resourceText('pairing_connection_exception');
       });
   }
 
   private startTrustedReconnect(): void {
     const hostContext = this.getUIContext().getHostContext();
     if (hostContext === undefined) {
-      this.pasteImportStatus = '无法恢复可信连接：未获取到页面上下文';
+      this.pasteImportStatus = this.resourceText('pairing_context_reconnect_failed');
       return;
     }
     const context = hostContext as common.Context;
@@ -613,7 +615,7 @@ export struct PairingPage {
     new TrustedDeviceStore(context).loadFirstReconnectTarget()
       .then((target) => {
         if (target === null) {
-          this.pasteImportStatus = '没有可重连的可信桌面端，请先完成一次配对。';
+          this.pasteImportStatus = this.resourceText('pairing_no_reconnect_target');
           return;
         }
         pairingConnectionStore.startTrustedReconnect(target)
@@ -621,11 +623,11 @@ export struct PairingPage {
             this.connectionSnapshot = snapshot;
           })
           .catch(() => {
-            this.pasteImportStatus = '恢复可信连接异常，请检查桌面端地址和网络。';
+            this.pasteImportStatus = this.resourceText('pairing_reconnect_exception');
           });
       })
       .catch(() => {
-        this.pasteImportStatus = '无法读取可信设备记录，请重启应用后重试。';
+        this.pasteImportStatus = this.resourceText('pairing_trusted_read_failed');
       });
   }
 
@@ -656,13 +658,14 @@ export struct PairingPage {
     }
     this.pasteImportStatus = this.snapshot.state === PairingStoreState.READY
       ? (this.snapshot.summary !== null && this.snapshot.summary.endpoints.length > 0 ?
-        `${successStatus}；已识别桌面端地址 ${this.connectionSnapshot.endpointLabel}` : successStatus)
+        this.resourceText('pairing_imported_with_endpoint', successStatus, this.connectionSnapshot.endpointLabel) :
+        successStatus)
       : this.formatMessage(this.snapshot.statusMessage);
   }
 
   private confirmCodeAndPrepareConnection(): void {
     if (this.connectionSnapshot.state === PairingConnectionState.AUTHENTICATED) {
-      this.pasteImportStatus = '当前已经建立认证连接；如需重新配对，请先停止当前连接。';
+      this.pasteImportStatus = this.resourceText('pairing_existing_connection');
       return;
     }
     const nextSnapshot = this.pairingStore.confirmCodeMatched();
@@ -670,7 +673,7 @@ export struct PairingPage {
     if (nextSnapshot.state === PairingStoreState.PENDING) {
       this.updateVisibleInvitationInput('');
       if (this.connectionSnapshot.manualPort !== '0') {
-        this.pasteImportStatus = `确认码一致，正在连接 ${this.connectionSnapshot.endpointLabel}`;
+        this.pasteImportStatus = this.resourceText('pairing_code_connecting', this.connectionSnapshot.endpointLabel);
         this.startPairingConnection();
       }
     }
@@ -679,20 +682,20 @@ export struct PairingPage {
   private importInvitationFromScan(): void {
     const hostContext = this.getUIContext().getHostContext();
     if (hostContext === undefined) {
-      this.pasteImportStatus = '无法打开扫码界面：未获取到页面上下文';
+      this.pasteImportStatus = this.resourceText('pairing_scan_context_failed');
       return;
     }
-    this.pasteImportStatus = '正在打开系统扫码界面';
+    this.pasteImportStatus = this.resourceText('pairing_scan_opening');
     this.pairingScanService.scanPairingInvitation(hostContext as common.Context)
       .then((scanResult) => {
         if (!scanResult.ok) {
           this.pasteImportStatus = this.formatMessage(scanResult.message);
           return;
         }
-        this.importInvitationText(scanResult.invitationText, '已从二维码读取并校验邀请');
+        this.importInvitationText(scanResult.invitationText, this.resourceText('pairing_imported_qr'));
       })
       .catch(() => {
-        this.pasteImportStatus = '扫码导入失败，请改用复制邀请字符串导入';
+        this.pasteImportStatus = this.resourceText('pairing_scan_import_failed');
       });
   }
 
@@ -707,6 +710,16 @@ export struct PairingPage {
     }
     try {
       return hostContext.resourceManager.getStringByNameSync(name, ...args);
+    } catch (_) {
+      return name;
+    }
+  }
+
+  private pluralText(name: string, count: number): string {
+    const hostContext = this.getUIContext().getHostContext();
+    if (hostContext === undefined) return name;
+    try {
+      return hostContext.resourceManager.getIntPluralStringByNameSync(name, count, count);
     } catch (_) {
       return name;
     }

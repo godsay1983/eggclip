@@ -23,18 +23,20 @@ import { APP_FOREGROUND_STORAGE_KEY } from '../utils/AppLifecycle';
 import { PairingPage } from './PairingPage';
 import { UiMessageDescriptor } from '../services/localization/UiMessageCodes';
 import { UiMessageFormatter } from '../services/localization/UiMessageFormatter';
+import { LocalizedFormatter } from '../services/localization/LocalizedFormatter';
 
 @Component
 export struct DevicesPage {
   private trustedDeviceStore: TrustedDeviceStore | null = null;
   private messageFormatter: UiMessageFormatter | null = null;
+  private readonly localizedFormatter: LocalizedFormatter = new LocalizedFormatter();
   private readonly connectionSnapshotListener = (snapshot: PocConnectionSnapshot): void => {
     this.manualHost = snapshot.manualHost;
     this.manualPort = snapshot.manualPort;
     this.lastSuccessfulHost = snapshot.lastSuccessfulHost;
     this.lastSuccessfulPort = snapshot.lastSuccessfulPort;
     this.lastSuccessfulEndpointLabel = snapshot.lastSuccessfulEndpointLabel;
-    this.lastSuccessfulAt = snapshot.lastSuccessfulAt;
+    this.lastSuccessfulAtMs = snapshot.lastSuccessfulAtMs;
     this.discoveryState = snapshot.discoveryState;
     this.discoveryStatus = this.formatMessage(snapshot.discoveryStatus);
     this.discoveryCandidates = snapshot.discoveryCandidates;
@@ -58,16 +60,16 @@ export struct DevicesPage {
   @State private lastSuccessfulHost: string = '';
   @State private lastSuccessfulPort: string = '';
   @State private lastSuccessfulEndpointLabel: string = '';
-  @State private lastSuccessfulAt: string = '';
+  @State private lastSuccessfulAtMs: number = 0;
   @State private discoveryState: PocLifecycleState = PocLifecycleState.IDLE;
-  @State private discoveryStatus: string = '等待开始局域网发现';
+  @State private discoveryStatus: string = '';
   @State private discoveryCandidates: MdnsServiceCandidate[] = [];
   @State private transportState: PocLifecycleState = PocLifecycleState.IDLE;
-  @State private transportStatus: string = '输入桌面端 IP 和端口后手动连接';
-  @State private transportDiagnostics: string = '帧诊断：接收 0 · 接受 0 · 拒绝 0';
+  @State private transportStatus: string = '';
+  @State private transportDiagnostics: string = '';
   @State private connectionState: ConnectionState = ConnectionState.OFFLINE;
-  @State private connectionTitle: string = '等待桌面端';
-  @State private connectionDescription: string = '正在等待 mDNS 候选，也可以使用手动 IP';
+  @State private connectionTitle: string = '';
+  @State private connectionDescription: string = '';
   @State private pairingExpanded: boolean = false;
   @State private diagnosticsExpanded: boolean = false;
   @State private trustedDevices: TrustedDeviceSummary[] = [];
@@ -549,7 +551,8 @@ export struct DevicesPage {
       .alignItems(VerticalAlign.Top)
 
       this.DeviceInfoRow($r('app.string.devices_short_fingerprint'),
-        this.transportState === PocLifecycleState.RUNNING ? '未配对' : '等待配对')
+        this.transportState === PocLifecycleState.RUNNING ?
+          this.resourceText('devices_unpaired') : this.resourceText('devices_waiting_pairing'))
       this.DeviceInfoRow($r('app.string.devices_last_online'), this.runtimeLastSeenText())
       this.DeviceInfoRow($r('app.string.devices_endpoint'), this.runtimeEndpointText())
 
@@ -629,7 +632,8 @@ export struct DevicesPage {
               Text(`${candidate.host}:${candidate.port}`)
                 .fontSize(EggClipTypography.captionSize)
                 .fontColor(EggClipColors.textPrimary)
-              Text(`协议版本 ${candidate.protocolVersion === 0 ? '实验版' : candidate.protocolVersion}`)
+              Text(this.resourceText('devices_protocol_version', candidate.protocolVersion === 0 ?
+                this.resourceText('devices_protocol_experimental') : candidate.protocolVersion))
                 .fontSize(EggClipTypography.captionSize)
                 .fontColor(EggClipColors.textSecondary)
             }
@@ -652,7 +656,8 @@ export struct DevicesPage {
         }, (candidate: MdnsServiceCandidate) => candidate.instanceId)
       }
 
-      Text(`服务 ${EGGCLIP_MDNS_SERVICE_TYPE} · WebSocket ${this.lifecycleStateLabel(this.transportState)}`)
+      Text(this.resourceText('devices_service_state', EGGCLIP_MDNS_SERVICE_TYPE,
+        this.lifecycleStateLabel(this.transportState)))
         .width('100%')
         .fontSize(11)
         .fontColor(EggClipColors.textSecondary)
@@ -760,7 +765,8 @@ export struct DevicesPage {
             .fontWeight(FontWeight.Medium)
             .fontColor(EggClipColors.textPrimary)
 
-          Text(`${this.lastSuccessfulEndpointLabel} · ${this.lastSuccessfulAt} · 仅代表网络地址，不代表设备可信`)
+          Text(this.resourceText('devices_recent_endpoint_meta', this.lastSuccessfulEndpointLabel,
+            this.localizedFormatter.formatTime(this.lastSuccessfulAtMs)))
             .fontSize(11)
             .fontColor(EggClipColors.textSecondary)
             .lineHeight(18)
@@ -815,7 +821,7 @@ export struct DevicesPage {
         .lineHeight(20)
 
       this.TroubleshootingRow($r('app.string.devices_troubleshoot_discovery_title'), this.discoveryCandidates.length > 0
-        ? `已发现 ${this.discoveryCandidates.length} 个候选，可直接点“连接”。`
+        ? this.pluralText('devices_candidates_connect_plural', this.discoveryCandidates.length)
         : $r('app.string.devices_troubleshoot_discovery_empty'))
       this.TroubleshootingRow($r('app.string.devices_troubleshoot_manual_title'),
         $r('app.string.devices_troubleshoot_manual_desc'))
@@ -872,7 +878,9 @@ export struct DevicesPage {
                   .fontSize(EggClipTypography.bodySize)
                   .fontWeight(FontWeight.Medium)
                   .fontColor(EggClipColors.textPrimary)
-                Text(`指纹 ${device.shortFingerprint} · 最后在线 ${device.lastSeen}`)
+                Text(this.resourceText('devices_fingerprint_last_seen', device.shortFingerprint,
+                  device.lastSeenAt === undefined ? this.resourceText('devices_never_online') :
+                    this.localizedFormatter.formatDateTime(device.lastSeenAt)))
                   .fontSize(EggClipTypography.captionSize)
                   .fontColor(EggClipColors.textSecondary)
               }
@@ -1020,24 +1028,24 @@ export struct DevicesPage {
       .then((result) => {
         this.busyDeviceId = '';
         if (!result.ok) {
-          this.deviceActionStatus = result.reason === undefined ? '设备重命名失败' :
+          this.deviceActionStatus = result.reason === undefined ? this.resourceText('devices_rename_failed') :
             this.formatMessage(result.reason);
           return;
         }
         this.editingDeviceId = '';
         this.deviceNameDraft = '';
-        this.deviceActionStatus = '设备名称已更新';
+        this.deviceActionStatus = this.resourceText('devices_renamed');
         this.loadTrustedDevices();
       })
       .catch(() => {
         this.busyDeviceId = '';
-        this.deviceActionStatus = '设备重命名失败，请稍后重试';
+        this.deviceActionStatus = this.resourceText('devices_rename_retry');
       });
   }
 
   private confirmRemoveDevice(device: TrustedDeviceSummary): void {
     this.getUIContext().showAlertDialog({
-      title: `移除“${device.displayName}”？`,
+      title: this.resourceText('devices_remove_dialog_title', device.displayName),
       message: $r('app.string.devices_remove_message'),
       primaryButton: {
         value: $r('app.string.common_cancel'),
@@ -1064,36 +1072,45 @@ export struct DevicesPage {
         this.busyDeviceId = '';
         if (!result.ok) {
           this.deviceActionStatus = result.reason === undefined ?
-            '设备移除未完整完成，请到设置中重新初始化配对安全状态' : this.formatMessage(result.reason);
+            this.resourceText('devices_remove_incomplete') : this.formatMessage(result.reason);
           this.loadTrustedDevices();
           return;
         }
-        this.deviceActionStatus = '设备已移除，本机旧空间密钥和历史已清理，请在桌面端同步移除本设备';
+        this.deviceActionStatus = this.resourceText('devices_removed');
         this.loadTrustedDevices();
       })
       .catch(() => {
         this.busyDeviceId = '';
-        this.deviceActionStatus = '设备移除失败，请到设置中重新初始化配对安全状态';
+        this.deviceActionStatus = this.resourceText('devices_remove_failed');
         this.loadTrustedDevices();
       });
   }
 
   private trustedDeviceStateLabel(deviceId: string): string {
-    if (deviceId !== this.pairingTrustedDeviceId) return '离线';
-    if (this.pairingAuthenticated || this.pairingConnectionState === PairingConnectionState.AUTHENTICATED) return '在线';
+    if (deviceId !== this.pairingTrustedDeviceId) return this.resourceText('common_offline');
+    if (this.pairingAuthenticated || this.pairingConnectionState === PairingConnectionState.AUTHENTICATED) {
+      return this.resourceText('common_online');
+    }
     if (this.pairingConnectionState === PairingConnectionState.PREPARING ||
       this.pairingConnectionState === PairingConnectionState.CONNECTING ||
       this.pairingConnectionState === PairingConnectionState.CLIENT_HELLO_SENT ||
-      this.pairingConnectionState === PairingConnectionState.WAITING_AUTH_OK) return '连接中';
-    if (this.pairingConnectionState === PairingConnectionState.FAILED) return '连接失败';
-    return '离线';
+      this.pairingConnectionState === PairingConnectionState.WAITING_AUTH_OK) return this.resourceText('common_connecting');
+    if (this.pairingConnectionState === PairingConnectionState.FAILED) {
+      return this.resourceText('common_connection_failed');
+    }
+    return this.resourceText('common_offline');
   }
 
   private trustedDeviceStateColor(deviceId: string): ResourceColor {
-    const label = this.trustedDeviceStateLabel(deviceId);
-    if (label === '在线') return EggClipColors.statusOnline;
-    if (label === '连接中') return EggClipColors.statusPending;
-    if (label === '连接失败') return EggClipColors.statusError;
+    if (deviceId !== this.pairingTrustedDeviceId) return EggClipColors.textSecondary;
+    if (this.pairingAuthenticated || this.pairingConnectionState === PairingConnectionState.AUTHENTICATED) {
+      return EggClipColors.statusOnline;
+    }
+    if (this.pairingConnectionState === PairingConnectionState.PREPARING ||
+      this.pairingConnectionState === PairingConnectionState.CONNECTING ||
+      this.pairingConnectionState === PairingConnectionState.CLIENT_HELLO_SENT ||
+      this.pairingConnectionState === PairingConnectionState.WAITING_AUTH_OK) return EggClipColors.statusPending;
+    if (this.pairingConnectionState === PairingConnectionState.FAILED) return EggClipColors.statusError;
     return EggClipColors.textSecondary;
   }
 
@@ -1146,18 +1163,18 @@ export struct DevicesPage {
 
   private connectionStateLabel(): string {
     if (this.connectionState === ConnectionState.ONLINE) {
-      return '在线';
+      return this.resourceText('common_online');
     }
     if (this.connectionState === ConnectionState.CONNECTING) {
-      return '连接中';
+      return this.resourceText('common_connecting');
     }
     if (this.connectionState === ConnectionState.AUTH_FAILED) {
-      return '认证失败';
+      return this.resourceText('common_authentication_failed');
     }
     if (this.connectionState === ConnectionState.PAUSED) {
-      return '已暂停';
+      return this.resourceText('common_paused');
     }
-    return '离线';
+    return this.resourceText('common_offline');
   }
 
   private connectionStateColor(): ResourceColor {
@@ -1175,43 +1192,43 @@ export struct DevicesPage {
 
   private runtimeDeviceKind(): string {
     if (this.transportState === PocLifecycleState.RUNNING) {
-      return '诊断连接';
+      return this.resourceText('devices_runtime_diagnostic');
     }
-    return '连接记录';
+    return this.resourceText('devices_runtime_record');
   }
 
   private runtimeDeviceName(): string {
     if (this.transportState === PocLifecycleState.RUNNING) {
-      return '桌面端临时连接';
+      return this.resourceText('devices_runtime_temporary');
     }
     if (this.transportState === PocLifecycleState.FAILED) {
-      return '桌面端连接失败';
+      return this.resourceText('devices_runtime_failed');
     }
-    return '等待可信设备';
+    return this.resourceText('devices_runtime_waiting');
   }
 
   private runtimeDeviceDescription(): string {
     if (this.transportState === PocLifecycleState.RUNNING) {
-      return '网络通道已建立，可回到首页使用系统粘贴按钮发送文本。';
+      return this.resourceText('devices_runtime_online_desc');
     }
     if (this.transportState === PocLifecycleState.FAILED) {
-      return '当前没有可信设备记录；可根据排障提示重试手动连接。';
+      return this.resourceText('devices_runtime_failed_desc');
     }
-    return '正式配对完成后，这里会显示可信设备状态、短指纹和最后在线时间。';
+    return this.resourceText('devices_runtime_waiting_desc');
   }
 
   private runtimeLastSeenText(): string {
     if (this.transportState === PocLifecycleState.RUNNING) {
-      return '当前在线';
+      return this.resourceText('devices_current_online');
     }
     if (this.transportState === PocLifecycleState.FAILED) {
-      return '连接失败';
+      return this.resourceText('common_connection_failed');
     }
-    return '暂无';
+    return this.resourceText('common_none');
   }
 
   private runtimeEndpointText(): string {
-    const port = this.manualPort.length > 0 ? this.manualPort : '未设置';
+    const port = this.manualPort.length > 0 ? this.manualPort : this.resourceText('common_not_set');
     return `${this.manualHost}:${port}`;
   }
 
@@ -1224,15 +1241,15 @@ export struct DevicesPage {
 
   private lifecycleStateLabel(state: PocLifecycleState): string {
     if (state === PocLifecycleState.STARTING) {
-      return '启动中';
+      return this.resourceText('common_starting');
     }
     if (state === PocLifecycleState.RUNNING) {
-      return '运行中';
+      return this.resourceText('common_running');
     }
     if (state === PocLifecycleState.FAILED) {
-      return '失败';
+      return this.resourceText('common_failed');
     }
-    return '未启动';
+    return this.resourceText('common_not_started');
   }
 
   private isDiscoveryActive(): boolean {
@@ -1242,12 +1259,12 @@ export struct DevicesPage {
 
   private discoveryActionLabel(): string {
     if (this.isDiscoveryActive()) {
-      return '停止发现';
+      return this.resourceText('devices_discovery_stop');
     }
     if (this.discoveryState === PocLifecycleState.FAILED) {
-      return '重新发现';
+      return this.resourceText('devices_discovery_retry');
     }
-    return '开始发现';
+    return this.resourceText('devices_discovery_start');
   }
 
   private toggleDiscovery(): void {
@@ -1260,34 +1277,54 @@ export struct DevicesPage {
 
   private troubleshootingHint(): string {
     if (this.transportState === PocLifecycleState.RUNNING) {
-      return 'WebSocket 已连接。现在可以回到首页，通过 PasteButton 发送本机剪贴板文本。';
+      return this.resourceText('devices_hint_connected');
     }
     if (this.transportState === PocLifecycleState.FAILED) {
-      return '连接失败时，优先检查桌面端是否运行、端口是否正确、Windows 防火墙是否允许，以及两端是否在同一局域网。';
+      return this.resourceText('devices_hint_connection_failed');
     }
     if (this.discoveryState === PocLifecycleState.FAILED) {
-      return '自动发现失败时，不要卡在 mDNS；直接使用桌面端显示的 IPv4 和端口进行手动连接。';
+      return this.resourceText('devices_hint_discovery_failed');
     }
     if (!this.appInForeground) {
-      return '应用在后台时会停止发现和连接；回到前台后再重新发现。';
+      return this.resourceText('devices_hint_background');
     }
-    return '先开始发现桌面端；如果没有候选地址，再使用手动 IP 回退。';
+    return this.resourceText('devices_hint_initial');
   }
 
   private diagnosticsSummary(): string {
     if (this.transportState === PocLifecycleState.RUNNING) {
-      return '桌面端连接正常';
+      return this.resourceText('devices_summary_connected');
     }
     if (this.discoveryCandidates.length > 0) {
-      return `发现 ${this.discoveryCandidates.length} 个桌面端，可展开选择`;
+      return this.pluralText('devices_summary_candidates_plural', this.discoveryCandidates.length);
     }
     if (this.transportState === PocLifecycleState.FAILED || this.discoveryState === PocLifecycleState.FAILED) {
-      return '发现或连接失败，可展开查看排障建议';
+      return this.resourceText('devices_summary_failed');
     }
-    return '自动连接异常时可展开检查';
+    return this.resourceText('devices_summary_check');
   }
 
   private formatMessage(message: UiMessageDescriptor): string {
     return this.messageFormatter === null ? message.code : this.messageFormatter.format(message);
+  }
+
+  private resourceText(name: string, ...args: Array<string | number>): string {
+    const hostContext = this.getUIContext().getHostContext();
+    if (hostContext === undefined) return name;
+    try {
+      return hostContext.resourceManager.getStringByNameSync(name, ...args);
+    } catch (_) {
+      return name;
+    }
+  }
+
+  private pluralText(name: string, count: number): string {
+    const hostContext = this.getUIContext().getHostContext();
+    if (hostContext === undefined) return name;
+    try {
+      return hostContext.resourceManager.getIntPluralStringByNameSync(name, count, count);
+    } catch (_) {
+      return name;
+    }
   }
 }

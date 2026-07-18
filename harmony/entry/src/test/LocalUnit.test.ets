@@ -25,6 +25,7 @@ import {
 } from '../main/ets/services/transport/ProtocolFrameBuilderService';
 import {
   PairingHandshakeTransportCallbacks,
+  TransportReasonCode,
   WebSocketTransportService
 } from '../main/ets/services/transport/WebSocketTransportService';
 import {
@@ -237,6 +238,10 @@ import {
   UiStringResolver,
   formatUiMessage
 } from '../main/ets/services/localization/UiMessageFormatter';
+import {
+  formatLocalizedDateTime,
+  formatLocalizedTime
+} from '../main/ets/services/localization/LocalizedFormatter';
 import { ConnectionState } from '../main/ets/models/ShellModels';
 import {
   AeadAlgorithm,
@@ -370,6 +375,26 @@ export default function localUnitTest() {
       expect(rejected).assertTrue();
     });
 
+    it('keepsDynamicSourcesAsCodesWithSafeParameters', 0, () => {
+      const source = uiMessage(UiMessageCode.SOURCE_DESKTOP_DEVICE, [
+        { name: 'deviceShortId', value: '15a91e5a' }
+      ]);
+      expect(source.code).assertEqual(UiMessageCode.SOURCE_DESKTOP_DEVICE);
+      expect(source.parameters.length).assertEqual(1);
+      expect(source.parameters[0].value).assertEqual('15a91e5a');
+    });
+
+    it('formatsTimeAndDateWithTheSelectedLocale', 0, () => {
+      const value = Date.UTC(2026, 6, 18, 9, 5, 4);
+      expect(formatLocalizedTime(value, SupportedLocale.EN_US).length > 0).assertTrue();
+      expect(formatLocalizedTime(value, SupportedLocale.ZH_CN).length > 0).assertTrue();
+      const english = formatLocalizedDateTime(value, SupportedLocale.EN_US);
+      const chinese = formatLocalizedDateTime(value, SupportedLocale.ZH_CN);
+      expect(english.length > 0).assertTrue();
+      expect(chinese.length > 0).assertTrue();
+      expect(english === chinese).assertFalse();
+    });
+
     it('normalizesTrustedDeviceNamesForSafeDisplay', 0, () => {
       expect(normalizeTrustedDeviceName('  我的   桌面端  ')).assertEqual('我的 桌面端');
       expect(normalizeTrustedDeviceName('   ')).assertEqual('');
@@ -404,9 +429,9 @@ export default function localUnitTest() {
       expect(transport.parseClipboardTextMessage('{"kind":"other","text":"ignored"}')).assertEqual(null);
       expect(transport.parseClipboardTextMessage('not json')).assertEqual(null);
       expect(transport.parseClipboardTextMessage('{"kind":"clipboardText","text":""}')).assertEqual(null);
-      expect(transport.decodeClipboardTextMessage('not json').reason).assertEqual('POC 消息不是有效 JSON');
+      expect(transport.decodeClipboardTextMessage('not json').reason).assertEqual(TransportReasonCode.JSON_INVALID);
       expect(transport.decodeClipboardTextMessage('{"kind":"clipboardText","text":""}').reason)
-        .assertEqual('POC 文本为空');
+        .assertEqual(TransportReasonCode.TEXT_EMPTY);
       const exactText = 'a'.repeat(MAX_TEXT_BYTES);
       const exactMessage = transport.encodeClipboardTextMessage(exactText);
       expect(exactMessage === null).assertEqual(false);
@@ -415,7 +440,7 @@ export default function localUnitTest() {
       expect(transport.encodeClipboardTextMessage('a'.repeat(MAX_TEXT_BYTES + 1))).assertEqual(null);
       const oversizedTextMessage = `{"kind":"clipboardText","text":"${'a'.repeat(MAX_TEXT_BYTES + 1)}"}`;
       expect(transport.decodeClipboardTextMessage(oversizedTextMessage).reason)
-        .assertEqual('POC 文本超过 256 KiB 上限');
+        .assertEqual(TransportReasonCode.TEXT_TOO_LARGE);
       expect(transport.parseClipboardTextMessage('a'.repeat(POC_MAX_FRAME_BYTES + 1))).assertEqual(null);
     });
 
@@ -443,7 +468,7 @@ export default function localUnitTest() {
       expect(diagnostics.receivedFrames).assertEqual(2);
       expect(diagnostics.acceptedItems).assertEqual(1);
       expect(diagnostics.rejectedFrames).assertEqual(1);
-      expect(diagnostics.lastRejection).assertEqual('POC 消息不是有效 JSON');
+      expect(diagnostics.lastRejection).assertEqual(TransportReasonCode.JSON_INVALID);
 
       transport.resetDiagnostics();
       expect(transport.currentDiagnostics().receivedFrames).assertEqual(0);
@@ -1470,7 +1495,8 @@ export default function localUnitTest() {
       expect(diagnostics.receivedFrames).assertEqual(3);
       expect(diagnostics.acceptedItems).assertEqual(1);
       expect(diagnostics.rejectedFrames).assertEqual(2);
-      expect(diagnostics.lastRejection).assertEqual('正式协议拒绝：sessionClosed');
+      expect(diagnostics.lastRejection)
+        .assertEqual(`${TransportReasonCode.PROTOCOL_REJECTED}:sessionClosed`);
     });
 
     it('routesPairingHandshakeFramesThroughWebSocketTransportDiagnostics', 0, () => {
@@ -1495,7 +1521,8 @@ export default function localUnitTest() {
       expect(diagnostics.receivedFrames).assertEqual(3);
       expect(diagnostics.acceptedItems).assertEqual(1);
       expect(diagnostics.rejectedFrames).assertEqual(2);
-      expect(diagnostics.lastRejection).assertEqual('配对握手拒绝：sessionClosed');
+      expect(diagnostics.lastRejection)
+        .assertEqual(`${TransportReasonCode.HANDSHAKE_REJECTED}:sessionClosed`);
     });
 
     it('parsesProtocolEncryptedItemLiveFixture', 0, () => {

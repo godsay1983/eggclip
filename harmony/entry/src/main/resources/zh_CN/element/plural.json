@@ -1,0 +1,40 @@
+{
+  "plural": [
+    {
+      "name": "pairing_seconds_plural",
+      "value": [
+        { "quantity": "other", "value": "%d 秒" }
+      ]
+    },
+    {
+      "name": "pairing_candidates_plural",
+      "value": [
+        { "quantity": "other", "value": "%d 个候选" }
+      ]
+    },
+    {
+      "name": "settings_history_items_plural",
+      "value": [
+        { "quantity": "other", "value": "%d 条" }
+      ]
+    },
+    {
+      "name": "settings_retention_days_plural",
+      "value": [
+        { "quantity": "other", "value": "%d 天" }
+      ]
+    },
+    {
+      "name": "devices_candidates_connect_plural",
+      "value": [
+        { "quantity": "other", "value": "已发现 %d 个候选，可直接点“连接”。" }
+      ]
+    },
+    {
+      "name": "devices_summary_candidates_plural",
+      "value": [
+        { "quantity": "other", "value": "发现 %d 个桌面端，可展开选择" }
+      ]
+    }
+  ]
+}

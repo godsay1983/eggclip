@@ -35,7 +35,7 @@ export interface PocConnectionSnapshot {
   lastSuccessfulHost: string;
   lastSuccessfulPort: string;
   lastSuccessfulEndpointLabel: string;
-  lastSuccessfulAt: string;
+  lastSuccessfulAtMs: number;
   discoveryState: PocLifecycleState;
   discoveryStatus: UiMessageDescriptor;
   discoveryCandidates: MdnsServiceCandidate[];
@@ -47,8 +47,8 @@ export interface PocConnectionSnapshot {
   connectionDescription: UiMessageDescriptor;
   latestReceivedText: string;
   latestReceivedPreview: string;
-  latestReceivedSource: string;
-  latestReceivedAt: string;
+  latestReceivedSource: UiMessageDescriptor;
+  latestReceivedAtMs: number;
   latestReceivedByteLength: number;
 }
 
@@ -66,7 +66,7 @@ class PocConnectionStore {
   private lastSuccessfulHost: string = '';
   private lastSuccessfulPort: string = '';
   private lastSuccessfulEndpointLabel: string = '';
-  private lastSuccessfulAt: string = '';
+  private lastSuccessfulAtMs: number = 0;
   private discoveryState: PocLifecycleState = PocLifecycleState.IDLE;
   private discoveryStatus: UiMessageDescriptor = uiMessage(UiMessageCode.DISCOVERY_WAITING);
   private discoveryCandidates: MdnsServiceCandidate[] = [];
@@ -82,8 +82,8 @@ class PocConnectionStore {
   private connectionDescription: UiMessageDescriptor = uiMessage(UiMessageCode.CONNECTION_WAITING_DESCRIPTION);
   private latestReceivedText: string = '';
   private latestReceivedPreview: string = '';
-  private latestReceivedSource: string = '暂无内容';
-  private latestReceivedAt: string = '';
+  private latestReceivedSource: UiMessageDescriptor = uiMessage(UiMessageCode.SOURCE_NONE);
+  private latestReceivedAtMs: number = 0;
   private latestReceivedByteLength: number = 0;
 
   initialize(context: common.UIAbilityContext): void {
@@ -117,7 +117,7 @@ class PocConnectionStore {
       lastSuccessfulHost: this.lastSuccessfulHost,
       lastSuccessfulPort: this.lastSuccessfulPort,
       lastSuccessfulEndpointLabel: this.lastSuccessfulEndpointLabel,
-      lastSuccessfulAt: this.lastSuccessfulAt,
+      lastSuccessfulAtMs: this.lastSuccessfulAtMs,
       discoveryState: this.discoveryState,
       discoveryStatus: cloneUiMessage(this.discoveryStatus),
       discoveryCandidates: this.discoveryCandidates.slice(),
@@ -129,8 +129,8 @@ class PocConnectionStore {
       connectionDescription: cloneUiMessage(this.connectionDescription),
       latestReceivedText: this.latestReceivedText,
       latestReceivedPreview: this.latestReceivedPreview,
-      latestReceivedSource: this.latestReceivedSource,
-      latestReceivedAt: this.latestReceivedAt,
+      latestReceivedSource: cloneUiMessage(this.latestReceivedSource),
+      latestReceivedAtMs: this.latestReceivedAtMs,
       latestReceivedByteLength: this.latestReceivedByteLength
     };
   }
@@ -333,7 +333,7 @@ class PocConnectionStore {
     this.lastSuccessfulHost = host;
     this.lastSuccessfulPort = port.toString();
     this.lastSuccessfulEndpointLabel = `${host}:${port}`;
-    this.lastSuccessfulAt = this.formatTime(connectedAt);
+    this.lastSuccessfulAtMs = connectedAt;
     this.saveRecentEndpoint({
       host,
       port,
@@ -354,7 +354,7 @@ class PocConnectionStore {
         this.lastSuccessfulHost = record.host;
         this.lastSuccessfulPort = record.port.toString();
         this.lastSuccessfulEndpointLabel = `${record.host}:${record.port}`;
-        this.lastSuccessfulAt = this.formatTime(record.connectedAt);
+        this.lastSuccessfulAtMs = record.connectedAt;
         if (this.manualPort === '0') {
           this.manualHost = record.host;
           this.manualPort = record.port.toString();
@@ -365,7 +365,7 @@ class PocConnectionStore {
         this.lastSuccessfulHost = '';
         this.lastSuccessfulPort = '';
         this.lastSuccessfulEndpointLabel = '';
-        this.lastSuccessfulAt = '';
+        this.lastSuccessfulAtMs = 0;
         this.emit();
       });
   }
@@ -394,8 +394,8 @@ class PocConnectionStore {
 
         this.latestReceivedText = decoded.text;
         this.latestReceivedPreview = this.trimPreview(decoded.text);
-        this.latestReceivedSource = '桌面端';
-        this.latestReceivedAt = this.formatTime(Date.now());
+        this.latestReceivedSource = uiMessage(UiMessageCode.SOURCE_DESKTOP);
+        this.latestReceivedAtMs = Date.now();
         this.latestReceivedByteLength = decoded.byteLength;
         this.transportStatus = uiMessage(UiMessageCode.CONNECTION_RECEIVED_DESCRIPTION);
         this.connectionState = ConnectionState.ONLINE;
@@ -424,15 +424,6 @@ class PocConnectionStore {
       return text;
     }
     return `${text.slice(0, 90)}\n……\n${text.slice(-60)}`;
-  }
-
-  private formatTime(milliseconds: number): string {
-    const date = new Date(milliseconds);
-    return `${this.padTime(date.getHours())}:${this.padTime(date.getMinutes())}:${this.padTime(date.getSeconds())}`;
-  }
-
-  private padTime(value: number): string {
-    return value < 10 ? `0${value}` : `${value}`;
   }
 
   private refreshTransportDiagnostics(): void {

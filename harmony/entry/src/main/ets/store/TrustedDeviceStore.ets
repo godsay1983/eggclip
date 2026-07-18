@@ -12,7 +12,7 @@ export interface TrustedDeviceSummary {
   deviceId: string;
   displayName: string;
   shortFingerprint: string;
-  lastSeen: string;
+  lastSeenAt?: number;
 }
 
 export interface TrustedDeviceRenameResult {
@@ -53,7 +53,7 @@ export class TrustedDeviceStore {
         deviceId: record.device.deviceId,
         displayName: record.device.displayName,
         shortFingerprint: shortId(record.device.identityPublicKeyRef),
-        lastSeen: record.device.lastSeenAt === undefined ? '尚未在线' : formatTime(record.device.lastSeenAt)
+        lastSeenAt: record.device.lastSeenAt
       }));
   }
 
@@ -137,13 +137,4 @@ export function normalizeTrustedDeviceName(value: string): string {
 
 function shortId(value: string): string {
   return value.length >= 8 ? value.slice(0, 8) : value;
-}
-
-function formatTime(value: number): string {
-  const date = new Date(value);
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-}
-
-function pad(value: number): string {
-  return value < 10 ? `0${value}` : `${value}`;
 }

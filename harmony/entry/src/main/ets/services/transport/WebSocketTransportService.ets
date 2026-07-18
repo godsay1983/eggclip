@@ -11,6 +11,29 @@ import {
 
 const CONNECT_TIMEOUT_MS: number = 8000;
 
+// Transport layers expose stable, non-localized reason codes. Stores decide
+// which user-facing message is appropriate without coupling sockets to UI text.
+export enum TransportReasonCode {
+  INVALID_IPV4 = 'invalidIpv4',
+  INVALID_PORT = 'invalidPort',
+  POC_TIMEOUT = 'pocTimeout',
+  POC_CONNECT_FAILED = 'pocConnectFailed',
+  PROTOCOL_TIMEOUT = 'protocolTimeout',
+  PROTOCOL_CONNECT_FAILED = 'protocolConnectFailed',
+  PAIRING_TIMEOUT = 'pairingTimeout',
+  PAIRING_CONNECT_FAILED = 'pairingConnectFailed',
+  BINARY_UNSUPPORTED = 'binaryUnsupported',
+  FRAME_PROCESSING_FAILED = 'frameProcessingFailed',
+  HANDSHAKE_REJECTED = 'handshakeRejected',
+  PROTOCOL_REJECTED = 'protocolRejected',
+  RECOVERABLE_TRANSPORT_ERROR = 'recoverableTransportError',
+  FRAME_TOO_LARGE = 'frameTooLarge',
+  MESSAGE_INVALID = 'messageInvalid',
+  TEXT_EMPTY = 'textEmpty',
+  TEXT_TOO_LARGE = 'textTooLarge',
+  JSON_INVALID = 'jsonInvalid'
+}
+
 export interface PocTransportCallbacks {
   onOpen: () => void;
   onClose: (reason: string) => void;
@@ -97,14 +120,14 @@ export class WebSocketTransportService {
       return {
         ok: false,
         normalizedUrl: '',
-        reason: '请输入有效的 IPv4 地址，例如 192.168.1.10'
+        reason: TransportReasonCode.INVALID_IPV4
       };
     }
     if (endpoint.port < 1 || endpoint.port > 65535) {
       return {
         ok: false,
         normalizedUrl: '',
-        reason: '请输入 1 到 65535 之间的端口'
+        reason: TransportReasonCode.INVALID_PORT
       };
     }
     return {
@@ -115,15 +138,15 @@ export class WebSocketTransportService {
 
   async connect(endpoint: ManualEndpoint, callbacks: PocTransportCallbacks): Promise<EndpointValidationResult> {
     return this.connectInternal(endpoint, {
-      timeoutMessage: '连接桌面 POC 超时',
-      connectFailureMessage: '连接桌面 POC 失败',
+      timeoutMessage: TransportReasonCode.POC_TIMEOUT,
+      connectFailureMessage: TransportReasonCode.POC_CONNECT_FAILED,
       onOpen: callbacks.onOpen,
       onClose: callbacks.onClose,
       onError: callbacks.onError,
       onTextMessage: callbacks.onMessage,
       onBinaryMessage: () => {
-        this.recordBinaryRejection('POC 不支持二进制消息');
-        callbacks.onError('POC 不支持二进制消息');
+        this.recordBinaryRejection(TransportReasonCode.BINARY_UNSUPPORTED);
+        callbacks.onError(TransportReasonCode.BINARY_UNSUPPORTED);
       }
     });
   }
@@ -134,8 +157,8 @@ export class WebSocketTransportService {
     callbacks: ProtocolTransportCallbacks
   ): Promise<EndpointValidationResult> {
     return this.connectInternal(endpoint, {
-      timeoutMessage: '连接桌面正式协议超时',
-      connectFailureMessage: '连接桌面正式协议失败',
+      timeoutMessage: TransportReasonCode.PROTOCOL_TIMEOUT,
+      connectFailureMessage: TransportReasonCode.PROTOCOL_CONNECT_FAILED,
       onOpen: callbacks.onOpen,
       onClose: callbacks.onClose,
       onError: callbacks.onError,
@@ -144,12 +167,12 @@ export class WebSocketTransportService {
       },
       onBinaryMessage: () => {
         session.close();
-        this.recordBinaryRejection('正式协议不支持二进制 WebSocket 消息');
+        this.recordBinaryRejection(TransportReasonCode.BINARY_UNSUPPORTED);
         callbacks.onFrame({
           ok: false,
           error: ProtocolTransportFrameError.BINARY_UNSUPPORTED
         });
-        callbacks.onError('正式协议不支持二进制 WebSocket 消息');
+        callbacks.onError(TransportReasonCode.BINARY_UNSUPPORTED);
       }
     });
   }
@@ -161,8 +184,8 @@ export class WebSocketTransportService {
   ): Promise<EndpointValidationResult> {
     let frameProcessing: Promise<void> = Promise.resolve();
     return this.connectInternal(endpoint, {
-      timeoutMessage: '连接桌面配对握手超时',
-      connectFailureMessage: '连接桌面配对握手失败',
+      timeoutMessage: TransportReasonCode.PAIRING_TIMEOUT,
+      connectFailureMessage: TransportReasonCode.PAIRING_CONNECT_FAILED,
       onOpen: callbacks.onOpen,
       onClose: callbacks.onClose,
       onError: callbacks.onError,
@@ -180,17 +203,17 @@ export class WebSocketTransportService {
             }
           })
           .catch(() => {
-            callbacks.onError('处理桌面端协议帧时出现异常');
+            callbacks.onError(TransportReasonCode.FRAME_PROCESSING_FAILED);
           });
       },
       onBinaryMessage: () => {
         session.close();
-        this.recordBinaryRejection('配对握手不支持二进制 WebSocket 消息');
+        this.recordBinaryRejection(TransportReasonCode.BINARY_UNSUPPORTED);
         callbacks.onFrame({
           ok: false,
           error: ProtocolTransportFrameError.BINARY_UNSUPPORTED
         });
-        callbacks.onError('配对握手不支持二进制 WebSocket 消息');
+        callbacks.onError(TransportReasonCode.BINARY_UNSUPPORTED);
       }
     });
   }
@@ -207,9 +230,8 @@ export class WebSocketTransportService {
     }
 
     this.diagnostics.rejectedFrames += 1;
-    this.diagnostics.lastRejection = result.protocolError !== undefined ?
-      `配对握手拒绝：${result.protocolError}` :
-      `配对握手拒绝：${result.error ?? ProtocolTransportFrameError.PROTOCOL_REJECTED}`;
+    const reason = result.protocolError ?? result.error ?? ProtocolTransportFrameError.PROTOCOL_REJECTED;
+    this.diagnostics.lastRejection = `${TransportReasonCode.HANDSHAKE_REJECTED}:${reason}`;
     return result;
   }
 
@@ -225,9 +247,8 @@ export class WebSocketTransportService {
     }
 
     this.diagnostics.rejectedFrames += 1;
-    this.diagnostics.lastRejection = result.protocolError !== undefined ?
-      `正式协议拒绝：${result.protocolError}` :
-      `正式协议拒绝：${result.error ?? ProtocolTransportFrameError.PROTOCOL_REJECTED}`;
+    const reason = result.protocolError ?? result.error ?? ProtocolTransportFrameError.PROTOCOL_REJECTED;
+    this.diagnostics.lastRejection = `${TransportReasonCode.PROTOCOL_REJECTED}:${reason}`;
     return result;
   }
 
@@ -281,7 +302,7 @@ export class WebSocketTransportService {
       // The connect result/timeout handles startup failures, and `close` is the
       // authoritative signal after open. Do not turn a live session into a
       // false UI failure from this advisory event alone.
-      this.diagnostics.lastRejection = 'WebSocket 报告了可恢复的传输异常，连接仍在观察中';
+      this.diagnostics.lastRejection = TransportReasonCode.RECOVERABLE_TRANSPORT_ERROR;
     });
 
     try {
@@ -341,19 +362,19 @@ export class WebSocketTransportService {
   decodeClipboardTextMessage(message: string): PocClipboardTextDecodeResult {
     this.diagnostics.receivedFrames += 1;
     if (estimateUtf8Bytes(message) > POC_MAX_FRAME_BYTES) {
-      return this.rejectedMessage('POC 消息超过 1 MiB 帧上限');
+      return this.rejectedMessage(TransportReasonCode.FRAME_TOO_LARGE);
     }
     try {
       const parsed = JSON.parse(message) as PocClipboardTextMessage;
       if (parsed.kind !== 'clipboardText' || typeof parsed.text !== 'string') {
-        return this.rejectedMessage('POC 消息类型或字段无效');
+        return this.rejectedMessage(TransportReasonCode.MESSAGE_INVALID);
       }
       const byteLength = estimateUtf8Bytes(parsed.text);
       if (byteLength === 0) {
-        return this.rejectedMessage('POC 文本为空');
+        return this.rejectedMessage(TransportReasonCode.TEXT_EMPTY);
       }
       if (byteLength > MAX_TEXT_BYTES) {
-        return this.rejectedMessage('POC 文本超过 256 KiB 上限');
+        return this.rejectedMessage(TransportReasonCode.TEXT_TOO_LARGE);
       }
       this.diagnostics.acceptedItems += 1;
       return {
@@ -363,7 +384,7 @@ export class WebSocketTransportService {
         reason: ''
       };
     } catch (_) {
-      return this.rejectedMessage('POC 消息不是有效 JSON');
+      return this.rejectedMessage(TransportReasonCode.JSON_INVALID);
     }
   }
 
