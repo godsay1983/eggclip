@@ -28,12 +28,17 @@ import {
   createPersistentLanguagePreferenceService
 } from '../services/localization/LanguagePreferenceService';
 import { LocalizedFormatter } from '../services/localization/LocalizedFormatter';
+import { AppReviewPromptCoordinator } from '../services/review/AppReviewPromptCoordinator';
+import { getAppReviewPromptCoordinator } from '../services/review/AppReviewRuntime';
+import { AppReviewService } from '../services/review/AppReviewService';
 
 @Component
 export struct SettingsPage {
   private settingsStore: SettingsStore | null = null;
   private messageFormatter: UiMessageFormatter | null = null;
   private languagePreferenceService: LanguagePreferenceService | null = null;
+  private appReviewPromptCoordinator: AppReviewPromptCoordinator | null = null;
+  private readonly appReviewService: AppReviewService = new AppReviewService();
   private readonly localizedFormatter: LocalizedFormatter = new LocalizedFormatter();
   @State private storeState: SettingsStoreState = SettingsStoreState.IDLE;
   @State private statusText: string = '';
@@ -54,6 +59,7 @@ export struct SettingsPage {
   @State private spaceKeyDiagnosticTone: number = 0;
   @State private spaceKeyDiagnosticUpdatedAt: string = '';
   @State private spaceKeyRecoveryRunning: boolean = false;
+  @State private appReviewBusy: boolean = false;
 
   aboutToAppear(): void {
     if (this.settingsStore === null) {
@@ -67,6 +73,7 @@ export struct SettingsPage {
       this.messageFormatter = new UiMessageFormatter(context);
       this.settingsStore = new SettingsStore(context);
       this.languagePreferenceService = createPersistentLanguagePreferenceService(context);
+      this.appReviewPromptCoordinator = getAppReviewPromptCoordinator(context);
       this.languageMode = this.languagePreferenceService.loadMode();
       this.statusText = this.resourceText('settings_not_loaded');
       this.historyActionStatus = this.resourceText('settings_history_clear_notice');
@@ -104,6 +111,7 @@ export struct SettingsPage {
           }
         }
         .width('100%')
+        this.SupportCard()
       }
       .width('100%')
       .constraintSize({ maxWidth: 960 })
@@ -270,6 +278,56 @@ export struct SettingsPage {
           .lineHeight(18)
           .width('100%')
       }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(EggClipSpacing.cardPadding)
+    .backgroundColor(EggClipColors.cardBackground)
+    .borderRadius(EggClipSpacing.radiusMedium)
+  }
+
+  @Builder
+  private SupportCard() {
+    Column({ space: 12 }) {
+      GridRow({
+        columns: { sm: 12, md: 12, lg: 12 },
+        gutter: { x: 12, y: 12 }
+      }) {
+        GridCol({ span: { sm: 12, md: 8, lg: 9 } }) {
+          Column({ space: 4 }) {
+            Text(this.resourceText('settings_support_title'))
+              .fontSize(EggClipTypography.bodySize)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(EggClipColors.textPrimary)
+              .width('100%')
+
+            Text(this.resourceText('settings_support_description'))
+              .fontSize(EggClipTypography.captionSize)
+              .fontColor(EggClipColors.textSecondary)
+              .lineHeight(20)
+              .width('100%')
+          }
+          .alignItems(HorizontalAlign.Start)
+          .width('100%')
+        }
+
+        GridCol({ span: { sm: 12, md: 4, lg: 3 } }) {
+          Button(this.appReviewBusy ?
+            this.resourceText('settings_rate_opening') : this.resourceText('settings_rate_app'))
+            .width('100%')
+            .height(40)
+            .enabled(!this.appReviewBusy)
+            .fontSize(13)
+            .fontColor(this.appReviewBusy ? EggClipColors.textSecondary : EggClipColors.onPrimary)
+            .backgroundColor(this.appReviewBusy ? EggClipColors.controlBackground : EggClipColors.primary)
+            .borderRadius(20)
+            .onClick(() => {
+              this.requestManualAppReview();
+            })
+        }
+      }
+      .width('100%')
+      .alignItems(ItemAlign.Center)
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -594,6 +652,45 @@ export struct SettingsPage {
     this.languageRestarting = true;
     this.languageReopenHintVisible = true;
     this.restartForLanguageChange();
+  }
+
+  private async requestManualAppReview(): Promise<void> {
+    if (this.appReviewBusy) {
+      return;
+    }
+    const hostContext = this.getUIContext().getHostContext();
+    if (hostContext === undefined) {
+      promptAction.showToast({ message: this.resourceText('settings_rate_failed') });
+      return;
+    }
+    const context = hostContext as common.UIAbilityContext;
+    const now = Date.now();
+    const versionName = this.appReviewService.currentAppVersionName();
+    this.appReviewBusy = true;
+    try {
+      const result = await this.appReviewService.requestReview(context);
+      if (result.shown) {
+        await this.appReviewPromptCoordinator?.markPromptShown(now, versionName).catch((): void => {
+          // The system dialog remains valid even if local frequency metadata cannot be saved.
+        });
+        return;
+      }
+      await this.appReviewPromptCoordinator?.markPromptFailed(now).catch((): void => {
+        // Continue to the user-requested AppGallery fallback.
+      });
+      const opened = await this.appReviewService.openAppGalleryReviewPage(context);
+      promptAction.showToast({
+        message: opened ?
+          this.resourceText('settings_rate_store_opened') : this.resourceText('settings_rate_failed')
+      });
+    } catch (_) {
+      await this.appReviewPromptCoordinator?.markPromptFailed(now).catch((): void => {
+        // A metadata failure does not replace the user-facing platform error.
+      });
+      promptAction.showToast({ message: this.resourceText('settings_rate_failed') });
+    } finally {
+      this.appReviewBusy = false;
+    }
   }
 
   private async confirmLanguageRestart(): Promise<boolean> {

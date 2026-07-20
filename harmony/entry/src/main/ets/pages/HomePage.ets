@@ -12,6 +12,7 @@ import {
 } from '../store/PocConnectionStore';
 import {
   AuthenticatedLocalSendStatus,
+  OutboundAcknowledgementListener,
   OutboundDeliveryState,
   PairingConnectionSnapshot,
   PairingConnectionState,
@@ -31,6 +32,9 @@ import { ConnectionState } from '../models/ShellModels';
 import { UiMessageDescriptor } from '../services/localization/UiMessageCodes';
 import { UiMessageFormatter } from '../services/localization/UiMessageFormatter';
 import { LocalizedFormatter } from '../services/localization/LocalizedFormatter';
+import { AppReviewPromptCoordinator } from '../services/review/AppReviewPromptCoordinator';
+import { getAppReviewPromptCoordinator } from '../services/review/AppReviewRuntime';
+import { AppReviewService } from '../services/review/AppReviewService';
 
 enum OutboundSendState {
   IDLE = 'idle',
@@ -48,9 +52,13 @@ export struct HomePage {
   private historyStore: HistoryStore | null = null;
   private trustedDeviceStore: TrustedDeviceStore | null = null;
   private messageFormatter: UiMessageFormatter | null = null;
+  private appReviewPromptCoordinator: AppReviewPromptCoordinator | null = null;
+  private readonly appReviewService: AppReviewService = new AppReviewService();
   private readonly localizedFormatter: LocalizedFormatter = new LocalizedFormatter();
   private lastPairingHistoryRevision: number = 0;
   private historyLoadRequestId: number = 0;
+  private appReviewTimer: number = -1;
+  private pendingReviewOutboundActions: number = 0;
   private readonly settingsChangeListener = (_revision: number): void => {
     this.loadHistorySummary();
   };
@@ -117,6 +125,15 @@ export struct HomePage {
         this.formatMessage(snapshot.outboundDeliveryDescription));
     }
   };
+  private readonly outboundAcknowledgementListener: OutboundAcknowledgementListener =
+    (confirmedCount: number): void => {
+      const eligibleCount = Math.min(confirmedCount, this.pendingReviewOutboundActions);
+      if (eligibleCount <= 0) {
+        return;
+      }
+      this.pendingReviewOutboundActions -= eligibleCount;
+      this.recordSuccessfulAppReviewActions(eligibleCount);
+    };
   @State private pasteStatus: string = '';
   @State private copyStatus: string = '';
   @State private outboundState: OutboundSendState = OutboundSendState.IDLE;
@@ -143,6 +160,7 @@ export struct HomePage {
   @State private copiedHistoryItemId: string = '';
   @State private trustedDeviceCount: number = 0;
   @State private retryingTrustedConnection: boolean = false;
+  @State private appReviewBusy: boolean = false;
   @StorageLink(APP_FOREGROUND_STORAGE_KEY) private appInForeground: boolean = false;
 
   aboutToAppear(): void {
@@ -153,6 +171,7 @@ export struct HomePage {
         this.messageFormatter = new UiMessageFormatter(context);
         this.historyStore = new HistoryStore(context);
         this.trustedDeviceStore = new TrustedDeviceStore(context);
+        this.appReviewPromptCoordinator = getAppReviewPromptCoordinator(context);
         if (this.pasteStatus.length === 0) {
           this.pasteStatus = this.resourceText('home_paste_help');
         }
@@ -166,6 +185,7 @@ export struct HomePage {
     }
     pocConnectionStore.subscribe(this.connectionSnapshotListener);
     pairingConnectionStore.subscribe(this.pairingSnapshotListener);
+    pairingConnectionStore.subscribeOutboundAcknowledgements(this.outboundAcknowledgementListener);
     settingsChangeStore.subscribe(this.settingsChangeListener);
     this.loadHistorySummary();
     this.loadTrustedDeviceCount();
@@ -174,7 +194,9 @@ export struct HomePage {
   aboutToDisappear(): void {
     pocConnectionStore.unsubscribe(this.connectionSnapshotListener);
     pairingConnectionStore.unsubscribe(this.pairingSnapshotListener);
+    pairingConnectionStore.unsubscribeOutboundAcknowledgements(this.outboundAcknowledgementListener);
     settingsChangeStore.unsubscribe(this.settingsChangeListener);
+    this.clearAppReviewTimer();
   }
 
   build() {
@@ -725,9 +747,14 @@ export struct HomePage {
   }
 
   private persistLocalHistoryThenSend(text: string): void {
+    this.pendingReviewOutboundActions += 1;
     pairingConnectionStore.persistAndSendAuthenticatedLocalText(text)
       .then((result) => {
         if (result.status === AuthenticatedLocalSendStatus.SENT) {
+          const confirmedCount = this.takePendingReviewOutboundActions(1);
+          if (confirmedCount > 0) {
+            this.recordSuccessfulAppReviewActions(confirmedCount);
+          }
           this.pasteStatus = this.resourceText('home_secure_sent_status');
           this.setOutboundStatus(
             OutboundSendState.SENT,
@@ -768,10 +795,12 @@ export struct HomePage {
           return;
         }
         if (result.status === AuthenticatedLocalSendStatus.NOT_READY) {
+          this.takePendingReviewOutboundActions(1);
           this.persistLocalHistoryThenSendPocFallback(text);
           return;
         }
         if (result.status === AuthenticatedLocalSendStatus.PAUSED) {
+          this.takePendingReviewOutboundActions(1);
           this.captureLocalHistoryText(text)
             .then(() => {
               this.pasteStatus = this.resourceText('home_secure_paused_status');
@@ -780,6 +809,7 @@ export struct HomePage {
             });
           return;
         }
+        this.takePendingReviewOutboundActions(1);
         this.captureLocalHistoryText(text)
           .then(() => {
             this.pasteStatus = this.resourceText('home_secure_failed_status');
@@ -788,6 +818,7 @@ export struct HomePage {
           });
       })
       .catch(() => {
+        this.takePendingReviewOutboundActions(1);
         this.captureLocalHistoryText(text)
           .then(() => {
             this.pasteStatus = this.resourceText('home_secure_failed_status');
@@ -851,10 +882,91 @@ export struct HomePage {
     this.clipboardBridge.writePlainTextByUserAction(this.latestReceivedText)
       .then((result) => {
         this.copyStatus = this.formatMessage(result.message);
+        if (result.ok) {
+          this.recordSuccessfulAppReviewActions(1);
+        }
       })
       .catch(() => {
         this.copyStatus = this.resourceText('home_copy_write_failed');
       });
+  }
+
+  private takePendingReviewOutboundActions(maxCount: number): number {
+    const count = Math.min(Math.max(0, maxCount), this.pendingReviewOutboundActions);
+    this.pendingReviewOutboundActions -= count;
+    return count;
+  }
+
+  private recordSuccessfulAppReviewActions(count: number): void {
+    if (count <= 0 || this.appReviewPromptCoordinator === null) {
+      return;
+    }
+    this.appReviewPromptCoordinator.recordSuccessfulActions(count)
+      .then((): void => {
+        this.scheduleAutomaticAppReview();
+      })
+      .catch((): void => {
+        // Rating metadata never changes clipboard success or user-facing status.
+      });
+  }
+
+  private scheduleAutomaticAppReview(): void {
+    this.clearAppReviewTimer();
+    this.appReviewTimer = setTimeout((): void => {
+      this.appReviewTimer = -1;
+      this.tryShowAutomaticAppReview().catch((): void => {
+        // Automatic review failures remain silent after a successful clipboard action.
+      });
+    }, 1200);
+  }
+
+  private clearAppReviewTimer(): void {
+    if (this.appReviewTimer >= 0) {
+      clearTimeout(this.appReviewTimer);
+      this.appReviewTimer = -1;
+    }
+  }
+
+  private canShowAutomaticAppReview(): boolean {
+    return this.appInForeground &&
+      !this.appReviewBusy &&
+      !this.clearingHistory &&
+      this.deletingHistoryItemId.length === 0 &&
+      this.historyActionsItemId.length === 0 &&
+      this.outboundState !== OutboundSendState.PENDING;
+  }
+
+  private async tryShowAutomaticAppReview(): Promise<void> {
+    const coordinator = this.appReviewPromptCoordinator;
+    if (coordinator === null || !this.canShowAutomaticAppReview()) {
+      return;
+    }
+    const now = Date.now();
+    const versionName = this.appReviewService.currentAppVersionName();
+    try {
+      if (!await coordinator.isAutoPromptEligible(now, versionName)) {
+        return;
+      }
+      this.appReviewBusy = true;
+      const hostContext = this.getUIContext().getHostContext();
+      if (hostContext === undefined) {
+        await coordinator.markPromptFailed(now);
+        return;
+      }
+      const context = hostContext as common.UIAbilityContext;
+      const result = await this.appReviewService.requestReview(context);
+      if (result.shown) {
+        await coordinator.markPromptShown(now, versionName);
+      } else {
+        await coordinator.markPromptFailed(now);
+      }
+    } catch (_) {
+      await coordinator.markPromptFailed(now).catch((): void => {
+        // Neither AppGallery nor Preferences failures affect clipboard behavior.
+      });
+    } finally {
+      this.appReviewBusy = false;
+    }
   }
 
   private loadHistorySummary(): void {

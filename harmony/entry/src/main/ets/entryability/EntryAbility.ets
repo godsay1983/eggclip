@@ -10,6 +10,7 @@ import {
   APP_FOREGROUND_STORAGE_KEY,
   APP_LOCALE_REVISION_STORAGE_KEY
 } from '../utils/AppLifecycle';
+import { getAppReviewPromptCoordinator } from '../services/review/AppReviewRuntime';
 
 const DOMAIN = 0x0000;
 
@@ -70,6 +71,9 @@ export default class EntryAbility extends UIAbility {
     pairingConnectionStore.setForeground(true);
     pocConnectionStore.startDiscovery();
     AppStorage.setOrCreate<boolean>(APP_FOREGROUND_STORAGE_KEY, true);
+    getAppReviewPromptCoordinator(this.context).recordActiveDay().catch((): void => {
+      // Rating metadata must never block foreground connection recovery.
+    });
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground');
   }
 

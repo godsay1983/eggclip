@@ -172,6 +172,7 @@ export interface AuthenticatedLocalSendResult {
 }
 
 export type PairingConnectionSnapshotListener = (snapshot: PairingConnectionSnapshot) => void;
+export type OutboundAcknowledgementListener = (confirmedCount: number) => void;
 
 interface PairingCompletionPersistResult {
   ok: boolean;
@@ -188,6 +189,7 @@ interface InboundBatchResult {
 
 class PairingConnectionStore {
   private readonly listeners: PairingConnectionSnapshotListener[] = [];
+  private readonly outboundAcknowledgementListeners: OutboundAcknowledgementListener[] = [];
   private readonly transport: WebSocketTransportService;
   private context: common.Context | null = null;
   private identityService: LocalDeviceIdentityService | null = null;
@@ -259,6 +261,19 @@ class PairingConnectionStore {
     const index = this.listeners.indexOf(listener);
     if (index >= 0) {
       this.listeners.splice(index, 1);
+    }
+  }
+
+  subscribeOutboundAcknowledgements(listener: OutboundAcknowledgementListener): void {
+    if (this.outboundAcknowledgementListeners.indexOf(listener) < 0) {
+      this.outboundAcknowledgementListeners.push(listener);
+    }
+  }
+
+  unsubscribeOutboundAcknowledgements(listener: OutboundAcknowledgementListener): void {
+    const index = this.outboundAcknowledgementListeners.indexOf(listener);
+    if (index >= 0) {
+      this.outboundAcknowledgementListeners.splice(index, 1);
     }
   }
 
@@ -1334,16 +1349,22 @@ class PairingConnectionStore {
       this.pendingTrustServerHello.deviceId
     );
     const current = existing.find((record: SyncHeadRecord) => record.head.originDeviceId === localDeviceId);
+    const previousAcknowledgedSeq = current?.head.latestOriginSeq ?? 0;
+    const nextAcknowledgedSeq = Math.max(previousAcknowledgedSeq, acknowledgedSeq);
     await repository.upsert({
       head: {
         spaceId: this.pendingTrustDraft.spaceId,
         originDeviceId: localDeviceId,
-        latestOriginSeq: Math.max(current?.head.latestOriginSeq ?? 0, acknowledgedSeq),
+        latestOriginSeq: nextAcknowledgedSeq,
         minimumAvailable: current?.head.minimumAvailable ?? 1,
         updatedAt: nowMs
       },
       peerDeviceId: this.pendingTrustServerHello.deviceId
     });
+    const newlyConfirmed = calculateNewlyAcknowledgedCount(previousAcknowledgedSeq, nextAcknowledgedSeq);
+    if (newlyConfirmed > 0) {
+      this.emitOutboundAcknowledgement(newlyConfirmed);
+    }
     await this.refreshPendingOutboundState();
   }
 
@@ -1395,6 +1416,12 @@ class PairingConnectionStore {
     const current = this.snapshot();
     for (let index = 0; index < this.listeners.length; index += 1) {
       this.listeners[index](current);
+    }
+  }
+
+  private emitOutboundAcknowledgement(confirmedCount: number): void {
+    for (let index = 0; index < this.outboundAcknowledgementListeners.length; index += 1) {
+      this.outboundAcknowledgementListeners[index](confirmedCount);
     }
   }
 
@@ -1464,4 +1491,10 @@ export function calculatePendingOutboundCount(localLatest: number, acknowledgedL
   if (!Number.isSafeInteger(localLatest) || !Number.isSafeInteger(acknowledgedLatest) ||
     localLatest < 0 || acknowledgedLatest < 0) return 0;
   return Math.max(0, localLatest - acknowledgedLatest);
+}
+
+export function calculateNewlyAcknowledgedCount(previousAcknowledged: number, nextAcknowledged: number): number {
+  if (!Number.isSafeInteger(previousAcknowledged) || !Number.isSafeInteger(nextAcknowledged) ||
+    previousAcknowledged < 0 || nextAcknowledged < 0) return 0;
+  return Math.max(0, nextAcknowledged - previousAcknowledged);
 }

@@ -148,11 +148,26 @@ import {
   PairingConnectionState,
   PairingConnectionStore,
   OutboundDeliveryState,
+  calculateNewlyAcknowledgedCount,
   calculatePendingOutboundCount,
   pairingAuthErrorCode,
   resolveOutboundDelivery,
   trustedDiscoveryEndpoint
 } from '../main/ets/store/PairingConnectionStore';
+import {
+  AppReviewPromptState,
+  createAppReviewPromptState,
+  parseAppReviewPromptState,
+  serializeAppReviewPromptState
+} from '../main/ets/models/AppReviewPrompt';
+import {
+  appReviewLocalDateKey,
+  isAutoAppReviewEligible,
+  recordAppReviewActiveDay,
+  recordAppReviewPromptFailure,
+  recordAppReviewPromptShown,
+  recordAppReviewSuccessfulActions
+} from '../main/ets/services/review/AppReviewPromptCoordinator';
 import { normalizeTrustedDeviceName } from '../main/ets/store/TrustedDeviceStore';
 import { connectionExperiencePolicy } from '../main/ets/services/ui/ConnectionExperiencePolicy';
 import {
@@ -343,6 +358,66 @@ export default function localUnitTest() {
       expect(calculatePendingOutboundCount(8, 5)).assertEqual(3);
       expect(calculatePendingOutboundCount(5, 8)).assertEqual(0);
       expect(calculatePendingOutboundCount(-1, 0)).assertEqual(0);
+    });
+
+    it('countsOnlyNewOutboundAcknowledgementsForReviewMilestones', 0, () => {
+      expect(calculateNewlyAcknowledgedCount(8, 11)).assertEqual(3);
+      expect(calculateNewlyAcknowledgedCount(11, 11)).assertEqual(0);
+      expect(calculateNewlyAcknowledgedCount(11, 8)).assertEqual(0);
+      expect(calculateNewlyAcknowledgedCount(-1, 8)).assertEqual(0);
+    });
+
+    it('serializesAppReviewStateAndRejectsMalformedContent', 0, () => {
+      const state = createAppReviewPromptState(APP_REVIEW_TEST_START_AT);
+      const parsed = parseAppReviewPromptState(serializeAppReviewPromptState(state));
+      expect(parsed?.firstUsedAt).assertEqual(APP_REVIEW_TEST_START_AT);
+      expect(parseAppReviewPromptState('{bad json')).assertNull();
+
+      const invalid = createAppReviewPromptState(APP_REVIEW_TEST_START_AT);
+      invalid.successfulActionCount = -1;
+      expect(parseAppReviewPromptState(JSON.stringify(invalid))).assertNull();
+    });
+
+    it('countsOneAppReviewActiveDayPerLocalDate', 0, () => {
+      const initial = createAppReviewPromptState(APP_REVIEW_TEST_START_AT);
+      const first = recordAppReviewActiveDay(initial, APP_REVIEW_TEST_START_AT);
+      const duplicate = recordAppReviewActiveDay(first, APP_REVIEW_TEST_START_AT + 60 * 60 * 1000);
+      const nextDay = recordAppReviewActiveDay(duplicate, APP_REVIEW_TEST_START_AT + APP_REVIEW_DAY_MS);
+      expect(first.lastActiveDate).assertEqual(appReviewLocalDateKey(APP_REVIEW_TEST_START_AT));
+      expect(duplicate.activeDayCount).assertEqual(1);
+      expect(nextDay.activeDayCount).assertEqual(2);
+    });
+
+    it('detectsAppReviewMilestonesAcrossAcknowledgementBatches', 0, () => {
+      const initial = createAppReviewPromptState(APP_REVIEW_TEST_START_AT);
+      initial.successfulActionCount = 9;
+      const first = recordAppReviewSuccessfulActions(initial, 3);
+      expect(first.successfulActionCount).assertEqual(12);
+      expect(first.pendingMilestone).assertTrue();
+
+      first.pendingMilestone = false;
+      first.successfulActionCount = 49;
+      expect(recordAppReviewSuccessfulActions(first, 2).pendingMilestone).assertTrue();
+    });
+
+    it('appliesAppReviewUsageVersionCooldownAndAnnualLimits', 0, () => {
+      const state = eligibleAppReviewState();
+      const eligibleAt = APP_REVIEW_TEST_START_AT + 7 * APP_REVIEW_DAY_MS;
+      expect(isAutoAppReviewEligible(state, eligibleAt, '1.0.8')).assertTrue();
+
+      const shown = recordAppReviewPromptShown(state, eligibleAt, '1.0.8');
+      shown.pendingMilestone = true;
+      expect(isAutoAppReviewEligible(shown, eligibleAt + 91 * APP_REVIEW_DAY_MS, '1.0.8')).assertFalse();
+      expect(isAutoAppReviewEligible(shown, eligibleAt + 89 * APP_REVIEW_DAY_MS, '1.0.9')).assertFalse();
+      expect(isAutoAppReviewEligible(shown, eligibleAt + 91 * APP_REVIEW_DAY_MS, '1.0.9')).assertTrue();
+
+      shown.promptYear = new Date(eligibleAt + 91 * APP_REVIEW_DAY_MS).getFullYear();
+      shown.promptCountInYear = 2;
+      expect(isAutoAppReviewEligible(shown, eligibleAt + 91 * APP_REVIEW_DAY_MS, '1.0.9')).assertFalse();
+
+      const failed = recordAppReviewPromptFailure(state, eligibleAt);
+      expect(isAutoAppReviewEligible(failed, eligibleAt + 6 * APP_REVIEW_DAY_MS, '1.0.8')).assertFalse();
+      expect(isAutoAppReviewEligible(failed, eligibleAt + 7 * APP_REVIEW_DAY_MS, '1.0.8')).assertTrue();
     });
 
     it('mapsReliableOutboundQueueToVisibleDeliveryStates', 0, () => {
@@ -4045,6 +4120,17 @@ function pairingMaterialFixture(): PairingGeneratedHandshakeMaterialResult | nul
 }
 
 const PAIRING_INVITATION_FIXTURE: string = 'eggclip://pair?p=eyJhcHAiOiJlZ2djbGlwIiwidmVyc2lvbiI6Miwia2luZCI6InBhaXJpbmdJbnZpdGF0aW9uIiwiaW52aXRhdGlvbklkIjoiMDE4ZmY2ZjAtMTExMS03MjIyLTgzMzMtMTIzNDU2Nzg5YWJjIiwic3BhY2VJZCI6IjAxOGZmNmVmLWMzOTQtN2QwOC04Yjk5LTRiN2QxMGYyNzY3YSIsInNwYWNlS2V5VmVyc2lvbiI6MSwiaXNzdWVyRGV2aWNlSWQiOiIwMThmZjZmMC0wYTNiLTc4MTUtYTRkYi0zZWI2ZTIzZDkzMzgiLCJpc3N1ZXJJZGVudGl0eVB1YmxpY0tleSI6IjExcVlBWUt4Q3JmVlNfN1R5V1FIT2c3aGN2UGFwaU1scndJYWFQY0hVUm8iLCJwYWlyaW5nU2VjcmV0IjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsImV4cGlyZXNBdE1zIjoxNzAwMDAwMzAwMDAwfQ';
+
+const APP_REVIEW_DAY_MS: number = 24 * 60 * 60 * 1000;
+const APP_REVIEW_TEST_START_AT: number = new Date(2026, 0, 1, 12, 0, 0).getTime();
+
+function eligibleAppReviewState(): AppReviewPromptState {
+  const state = createAppReviewPromptState(APP_REVIEW_TEST_START_AT);
+  state.activeDayCount = 3;
+  state.successfulActionCount = 10;
+  state.pendingMilestone = true;
+  return state;
+}
 
 const BAD_PAIRING_SECRET_INVITATION_FIXTURE: string = 'eggclip://pair?p=eyJhcHAiOiJlZ2djbGlwIiwidmVyc2lvbiI6Miwia2luZCI6InBhaXJpbmdJbnZpdGF0aW9uIiwic3BhY2VJZCI6IjAxOGZmNmVmLWMzOTQtN2QwOC04Yjk5LTRiN2QxMGYyNzY3YSIsInNwYWNlS2V5VmVyc2lvbiI6MSwiaXNzdWVyRGV2aWNlSWQiOiIwMThmZjZmMC0wYTNiLTc4MTUtYTRkYi0zZWI2ZTIzZDkzMzgiLCJpc3N1ZXJJZGVudGl0eVB1YmxpY0tleSI6IjExcVlBWUt4Q3JmVlNfN1R5V1FIT2c3aGN2UGFwaU1scndJYWFQY0hVUm8iLCJwYWlyaW5nU2VjcmV0IjoiQUEiLCJleHBpcmVzQXRNcyI6MTcwMDAwMDMwMDAwMH0';
 
