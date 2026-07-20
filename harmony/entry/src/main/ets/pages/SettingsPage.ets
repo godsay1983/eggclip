@@ -7,6 +7,7 @@ import {
   SettingsStoreSnapshot,
   SettingsStoreState
 } from '../store/SettingsStore';
+import { settingsChangeStore } from '../store/SettingsChangeStore';
 import { pairingConnectionStore } from '../store/PairingConnectionStore';
 import {
   SpaceKeyCryptoSelfTestError,
@@ -683,6 +684,9 @@ export struct SettingsPage {
     this.settingsStore.save(settings)
       .then((snapshot: SettingsStoreSnapshot) => {
         this.applySnapshot(snapshot);
+        if (snapshot.state === SettingsStoreState.READY) {
+          settingsChangeStore.publish();
+        }
         this.statusText = snapshot.state === SettingsStoreState.ERROR && snapshot.errorMessage !== null ?
           this.formatMessage(snapshot.errorMessage) : this.resourceText('settings_saved');
       })
@@ -702,6 +706,9 @@ export struct SettingsPage {
     this.settingsStore.clearLocalHistory()
       .then((snapshot: SettingsStoreSnapshot) => {
         this.applySnapshot(snapshot);
+        if (snapshot.state === SettingsStoreState.READY) {
+          settingsChangeStore.publish();
+        }
         this.historyActionStatus = snapshot.state === SettingsStoreState.ERROR && snapshot.errorMessage !== null
           ? this.formatMessage(snapshot.errorMessage)
           : this.resourceText('settings_history_cleared');

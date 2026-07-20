@@ -34,6 +34,7 @@ import {
   createInitialSettingsSnapshot,
   normalizeHarmonySettings
 } from '../main/ets/store/SettingsStore';
+import { SettingsChangeStore } from '../main/ets/store/SettingsChangeStore';
 import {
   CryptoVectorErrorCode,
   CryptoVectorService,
@@ -630,6 +631,28 @@ export default function localUnitTest() {
       expect(snapshot.settings.historyLimit).assertEqual(50);
       expect(cloned.syncEnabled).assertEqual(false);
       expect(cloned.historyLimit).assertEqual(20);
+    });
+
+    it('notifiesMountedPagesAfterSettingsChangeWithoutDuplicateListeners', 0, () => {
+      const changes = new SettingsChangeStore();
+      let receivedRevision = 0;
+      const failingListener = (_revision: number): void => {
+        throw new Error('stale page');
+      };
+      const listener = (revision: number): void => {
+        receivedRevision = revision;
+      };
+
+      changes.subscribe(failingListener);
+      changes.subscribe(listener);
+      changes.subscribe(listener);
+      expect(changes.revision()).assertEqual(0);
+      expect(changes.publish()).assertEqual(1);
+      expect(receivedRevision).assertEqual(1);
+
+      changes.unsubscribe(listener);
+      expect(changes.publish()).assertEqual(2);
+      expect(receivedRevision).assertEqual(1);
     });
 
     it('keepsHarmonyLanguageModesOnTheSystemPreferenceBoundary', 0, () => {

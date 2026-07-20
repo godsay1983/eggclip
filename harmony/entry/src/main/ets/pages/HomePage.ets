@@ -21,6 +21,7 @@ import { EggClipColors } from '../theme/Colors';
 import { EggClipSpacing } from '../theme/Spacing';
 import { EggClipTypography } from '../theme/Typography';
 import { TrustedDeviceStore } from '../store/TrustedDeviceStore';
+import { settingsChangeStore } from '../store/SettingsChangeStore';
 import { APP_FOREGROUND_STORAGE_KEY } from '../utils/AppLifecycle';
 import {
   ConnectionExperiencePolicy,
@@ -49,6 +50,10 @@ export struct HomePage {
   private messageFormatter: UiMessageFormatter | null = null;
   private readonly localizedFormatter: LocalizedFormatter = new LocalizedFormatter();
   private lastPairingHistoryRevision: number = 0;
+  private historyLoadRequestId: number = 0;
+  private readonly settingsChangeListener = (_revision: number): void => {
+    this.loadHistorySummary();
+  };
   private readonly connectionSnapshotListener = (snapshot: PocConnectionSnapshot): void => {
     const previousReceivedText = this.latestReceivedText;
     this.latestReceivedText = snapshot.latestReceivedText;
@@ -161,6 +166,7 @@ export struct HomePage {
     }
     pocConnectionStore.subscribe(this.connectionSnapshotListener);
     pairingConnectionStore.subscribe(this.pairingSnapshotListener);
+    settingsChangeStore.subscribe(this.settingsChangeListener);
     this.loadHistorySummary();
     this.loadTrustedDeviceCount();
   }
@@ -168,6 +174,7 @@ export struct HomePage {
   aboutToDisappear(): void {
     pocConnectionStore.unsubscribe(this.connectionSnapshotListener);
     pairingConnectionStore.unsubscribe(this.pairingSnapshotListener);
+    settingsChangeStore.unsubscribe(this.settingsChangeListener);
   }
 
   build() {
@@ -855,9 +862,14 @@ export struct HomePage {
       this.historyStatus = this.resourceText('ui_history_load_failed');
       return;
     }
+    const requestId = this.historyLoadRequestId + 1;
+    this.historyLoadRequestId = requestId;
     this.historyStatus = this.resourceText('home_history_loading');
     this.historyStore.loadSummary()
       .then((snapshot: HistoryStoreSnapshot) => {
+        if (requestId !== this.historyLoadRequestId) {
+          return;
+        }
         this.historyUsed = snapshot.used;
         this.historyLimit = snapshot.limit;
         this.historyItems = snapshot.items;
@@ -865,6 +877,9 @@ export struct HomePage {
           this.formatMessage(snapshot.errorMessage);
       })
       .catch(() => {
+        if (requestId !== this.historyLoadRequestId) {
+          return;
+        }
         this.historyItems = [];
         this.historyStatus = this.resourceText('home_history_load_failed_status');
       });
